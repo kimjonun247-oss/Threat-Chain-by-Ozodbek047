@@ -104,5 +104,5 @@
       for(const kind of ['web','assessment']) {const rows=await history(kind);if(rows.length){if(['queued','running'].includes(rows[0].state))follow(kind,rows[0].id).catch(showError);else render(kind,await api(prefixes[kind]+'/reports/'+rows[0].id));}}
     } catch(error) {showError(error);}
   }
-  init();
+  whenShown(['web', 'assessments'], init);
 })();

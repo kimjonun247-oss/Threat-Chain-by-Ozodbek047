@@ -56,12 +56,14 @@ BUNDLED = {'crapi': {'name': 'OWASP crAPI · to‘liq namuna', 'owner': 'Bundled
 
 def registered_targets():
     """Target ids each stage currently knows about."""
+    # One scanners.targets() call, not three: it walks every registry.
+    sources = {t['id'] for t in scanners.targets() if t.get('available')}
     return {
-        'code': {t['id'] for t in scanners.targets() if t.get('available')},
+        'code': set(sources),
         'repository': {p['id'] for p in repo_store.list_profiles()},
-        'dependencies': {t['id'] for t in scanners.targets() if t.get('available')} | {p['id'] for p in code_targets.profiles()},
+        'dependencies': sources | {p['id'] for p in code_targets.profiles()},
         # The IaC stage reads the same registered project roots the code scanner does.
-        'iac': {t['id'] for t in scanners.targets() if t.get('available')},
+        'iac': set(sources),
         'images': {t['id'] for t in images.targets()},
         'web': {t['id'] for t in webscan.targets()},
     }
@@ -251,14 +253,14 @@ def projects():
     return groups
 
 
-def unknown_targets(meta):
+def unknown_targets(meta, registry=None):
     """Ids a grouping names that no registry knows about.
 
     A bundled grouping lists crAPI's nine image ids by name. If one is renamed or
     removed, the group would quietly cover less than it claims and the portfolio
     would look healthier than it is -- so the mismatch is surfaced instead.
     """
-    registry = registered_targets()
+    registry = registry or registered_targets()
     missing = []
     for stage, ids in meta['stages'].items():
         missing += [i for i in ids if i not in registry[stage]]
@@ -297,6 +299,7 @@ def stage_state(rows, targets):
 
 def overview():
     rows = histories()
+    known = registered_targets()
     result = []
     for identifier, meta in sorted(projects().items(), key=lambda item: item[1]['name'].lower()):
         stages = {}
@@ -309,7 +312,7 @@ def overview():
         result.append({'id': identifier, 'name': meta['name'], 'owner': meta.get('owner', ''),
                        'bundled': meta.get('bundled', False), 'derived': meta.get('derived', False),
                        'single_stage': meta.get('single_stage', False),
-                       'stages': stages, 'unknown_targets': unknown_targets(meta),
+                       'stages': stages, 'unknown_targets': unknown_targets(meta, known),
                        'gaps': [stage for stage in STAGES if stages[stage]['state'] in ('never_scanned', 'not_registered')],
                        'last_scan': max((s['last_scan'] for s in scanned), default=None)})
     return {'projects': result, 'stages': [{'key': s, 'title': STAGE_TITLES[s]} for s in STAGES],

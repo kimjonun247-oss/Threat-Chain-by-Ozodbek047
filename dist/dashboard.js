@@ -149,6 +149,7 @@
   async function load() {
     try {
       const d = await api('/api/dashboard');
+      document.dispatchEvent(new CustomEvent('dashboard-data', {detail: d}));
       const s = d.system, t = d.totals, c = d.coverage, st = t.status || {};
       const gaps = c.unscanned + c.incomplete;
       const decided = t.findings - (st.untriaged || 0);

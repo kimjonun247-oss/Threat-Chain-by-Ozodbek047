@@ -38,5 +38,5 @@
   $('image-scan').addEventListener('click',async()=>{try{const row=await api('/api/images/scan',{target:$('image-target').value,online:true});await follow(row.id);}catch(error){showError(error);}});
   $('image-cancel').addEventListener('click',async()=>{try{await api('/api/images/cancel',{report_id:job});}catch(error){showError(error);}});
   async function init(){try{const targets=await api('/api/images/targets');$('image-target').innerHTML=targets.map(t=>`<option value="${e(t.id)}" ${t.id==='pilot-crapi-web'?'selected':''}>${e(t.name)}</option>`).join('');const rows=await history();if(rows.length){if(['queued','running'].includes(rows[0].state))follow(rows[0].id).catch(showError);else render(await api('/api/images/reports/'+rows[0].id));}}catch(error){showError(error);}}
-  view('readiness');init();  // dashboard.js renders the overview on view-shown
+  whenShown(['images'], init);view('readiness');  // dashboard.js renders the overview on view-shown
 })();

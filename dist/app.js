@@ -3,7 +3,25 @@ const $ = id => document.getElementById(id);
 const state = { busy: false, repository:null, reviews:{}, projects:[], project:'crapi' };
 const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const time = value => new Date(value).toLocaleString('uz-UZ', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
-async function api(path, body) {
+// Identical GETs issued while one is still in flight share its answer. On page
+// load three modules asked for /api/scanners/targets at the same moment and each
+// paid the full server cost; POSTs are never shared.
+const inflight = new Map();
+function api(path, body) {
+  if (body !== undefined) return request(path, body);
+  if (!inflight.has(path)) inflight.set(path, request(path).finally(() => inflight.delete(path)));
+  return inflight.get(path);
+}
+// Run `start` the first time one of `names` becomes the visible view. Every
+// section used to load its data at page load -- 51 requests and ~0.5 MB before
+// the operator had looked at anything but the overview.
+function whenShown(names, start) {
+  let started = false;
+  const run = () => { if (!started) { started = true; start(); } };
+  document.addEventListener('view-shown', event => { if (names.includes(event.detail)) run(); });
+  if (names.some(name => $(name + '-view') && !$(name + '-view').hidden)) run();
+}
+async function request(path, body) {
   const response = await fetch(path, body === undefined ? {} : { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
   let data;
   try { data = await response.json(); } catch { throw new Error('Server javobini o‘qib bo‘lmadi. Serverni tekshiring.'); }
@@ -127,6 +145,9 @@ async function init() {
   document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>view(b.dataset.view)));
   $('repo-scan').addEventListener('click',()=>scanRepository().catch(()=>{}));
   $('project').addEventListener('change',()=>{state.project=$('project').value;loadRepository().catch(showError);});
+  whenShown(['repository'], loadProjects);
+}
+async function loadProjects() {
   try {
     state.projects=await api('/api/repository/profiles');
     $('project').innerHTML=state.projects.map(p=>`<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)}</option>`).join('');

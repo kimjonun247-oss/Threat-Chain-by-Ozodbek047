@@ -94,8 +94,25 @@ def merged_rules():
     return RULES/'semgrep-merged.yml'
 
 
-def registry_manifest():
+def registry_manifest(cached=False):
     """Manifest of the installed pack, or None when it is not installed.
+
+    cached=True (status views only) reuses the last full verification while no
+    rule file's size or mtime has changed; hashing 1327 files on every dashboard
+    request was a third of its time. A scan always verifies every hash.
+    """
+    if cached:
+        # The manifest and the merged file are what an install or a re-install
+        # rewrites, and the merged file is what a scan actually loads; walking
+        # 1327 rule files for a status line cost 45 ms per dashboard request.
+        root=semgrep_registry()
+        signature=(repo_store.folder_signature(root),repo_store.folder_signature(merged_rules().parent))
+        return repo_store.memo(('registry_manifest',str(root)),signature,registry_manifest)
+    return _verify_registry_manifest()
+
+
+def _verify_registry_manifest():
+    """Full check: every rule file against its recorded SHA-256.
 
     Raises ValueError when the manifest is present but a rule file on disk no
     longer matches its recorded SHA-256: rules decide what a scan can find, so a

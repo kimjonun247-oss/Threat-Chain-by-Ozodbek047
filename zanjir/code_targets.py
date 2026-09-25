@@ -8,6 +8,10 @@ PROFILES=ROOT/'profiles/code'
 
 
 def profiles():
+    return repo_store.memo(('code_profiles',str(PROFILES)),repo_store.folder_signature(PROFILES),_profiles)
+
+
+def _profiles():
     result=[]
     if PROFILES.exists():
         for path in sorted(PROFILES.glob('*.json')):

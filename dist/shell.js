@@ -304,27 +304,28 @@
   const STAGE_TITLE = {code: 'Kod', dependencies: 'CVE', iac: 'IaC', images: 'Image', web: 'Sayt', repository: 'Repository'};
   const STATE_TITLE = {completed: 'tugadi', partial: 'qisman', failed: 'yiqildi', running: 'ishlamoqda', queued: 'navbatda',
                        cancelled: 'bekor qilindi', no_supported_packages: 'manifest yo‘q'};
-  let historyLoading = false;
-  async function loadHistory() {
+  // Fed by the overview's own /api/dashboard answer (dashboard-data) instead of a
+  // second identical request; other views refresh it at most every 20 seconds.
+  const HISTORY_TTL = 20000;
+  let historyAt = 0;
+  function renderHistory(rows) {
+    historyAt = Date.now();
     const box = $('history');
-    if (!box || historyLoading) return;
-    historyLoading = true;
-    try {
-      const rows = (await api('/api/dashboard')).recent || [];
-      box.innerHTML = rows.length ? rows.map(r => `<button type="button" data-history-stage="${e(r.stage)}">
-          <b>${e(STAGE_TITLE[r.stage] || r.stage)}</b> · ${e(r.target)} · ${e(STATE_TITLE[r.state] || r.state || '—')}${r.count == null ? '' : ' · ' + e(r.count)}
-          <time>${e(time(r.created_at))}</time></button>`).join('')
-        : '<p>Hali tekshiruv yo‘q.</p>';
-    } catch (error) {
-      box.innerHTML = '<p>Ro‘yxat yuklanmadi.</p>';
-    } finally {
-      historyLoading = false;
-    }
+    if (!box) return;
+    box.innerHTML = rows.length ? rows.map(r => `<button type="button" data-history-stage="${e(r.stage)}">
+        <b>${e(STAGE_TITLE[r.stage] || r.stage)}</b> · ${e(r.target)} · ${e(STATE_TITLE[r.state] || r.state || '—')}${r.count == null ? '' : ' · ' + e(r.count)}
+        <time>${e(time(r.created_at))}</time></button>`).join('')
+      : '<p>Hali tekshiruv yo‘q.</p>';
   }
+  async function loadHistory(event) {
+    if (event?.detail === 'readiness' || Date.now() - historyAt < HISTORY_TTL) return;
+    try { renderHistory((await api('/api/dashboard')).recent || []); }
+    catch (error) { if ($('history')) $('history').innerHTML = '<p>Ro‘yxat yuklanmadi.</p>'; }
+  }
+  document.addEventListener('dashboard-data', event => renderHistory(event.detail.recent || []));
   $('history')?.addEventListener('click', event => {
     const button = event.target.closest('[data-history-stage]');
     if (button && STAGE_TITLE[button.dataset.historyStage]) view(button.dataset.historyStage);
   });
   document.addEventListener('view-shown', loadHistory);
-  loadHistory();
 })();

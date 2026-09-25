@@ -1,4 +1,6 @@
 from __future__ import annotations
+import copy
+import threading
 import json
 import os
 import re
@@ -17,16 +19,59 @@ PROFILE_ID=re.compile(r'^[a-z][a-z0-9_-]{1,39}$')
 REPORT_ID=re.compile(r'^\d{8}T\d{6}-[0-9a-f]{8}$')
 
 
+_MEMO={}
+_MEMO_LOCK=threading.Lock()
+
+
+def folder_signature(*folders):
+    """What a listing of these folders depends on: names, sizes and mtimes.
+
+    One stat per file -- far cheaper than reading and parsing every JSON profile,
+    which the dashboard did 3436 times per request. A write through write_json()
+    renames a temp file into place, so it always changes the signature.
+    """
+    signature=[]
+    for folder in folders:
+        try:
+            with os.scandir(folder) as entries:
+                signature.append((str(folder),tuple(sorted((e.name,e.stat().st_mtime_ns,e.stat().st_size)
+                                                         for e in entries if e.is_file()))))
+        except OSError:
+            signature.append((str(folder),None))
+    return tuple(signature)
+
+
+def memo(key,signature,compute):
+    """compute() once per signature; callers get their own copy to mutate."""
+    with _MEMO_LOCK:
+        hit=_MEMO.get(key)
+    if hit is not None and hit[0]==signature:
+        return copy.deepcopy(hit[1])
+    value=compute()
+    with _MEMO_LOCK:
+        _MEMO[key]=(signature,value)
+    return copy.deepcopy(value)
+
+
 def profile_for(profile_id):
     if not isinstance(profile_id,str) or not PROFILE_ID.fullmatch(profile_id):
         raise ValueError('Noma’lum repository profili.')
     path=ROOT/'profiles'/f'{profile_id}.json' if profile_id in ALLOWED_PROFILES else LOCAL_PROFILES/f'{profile_id}.json'
+    try:
+        stat=path.stat()
+    except OSError:
+        raise ValueError('Loyiha ro‘yxatdan o‘tkazilmagan.') from None
     if not path.is_file():
         raise ValueError('Loyiha ro‘yxatdan o‘tkazilmagan.')
-    return json.loads(path.read_text(encoding='utf-8'))
+    return memo(('profile',str(path)),(stat.st_mtime_ns,stat.st_size),
+                lambda:json.loads(path.read_text(encoding='utf-8')))
 
 
 def list_profiles():
+    return memo(('list_profiles',str(LOCAL_PROFILES)),folder_signature(ROOT/'profiles',LOCAL_PROFILES),_list_profiles)
+
+
+def _list_profiles():
     ids=sorted(ALLOWED_PROFILES)
     if LOCAL_PROFILES.exists():
         ids += [p.stem for p in sorted(LOCAL_PROFILES.glob('*.json')) if PROFILE_ID.fullmatch(p.stem) and p.stem not in ALLOWED_PROFILES]

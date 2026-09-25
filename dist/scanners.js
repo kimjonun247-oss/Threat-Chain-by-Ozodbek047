@@ -102,5 +102,5 @@
       $('pilot-result').innerHTML=`<h3>${pilot.state==='controlled_test_confirmed'?'Nazorat tajribasida tasdiqlandi':'Dalil mavjud emas yoki tekshirish kerak'}</h3>${pilot.finished_at?'<p>'+e(time(pilot.finished_at))+'</p>':''}<ul>${Object.entries(pilot.checks).map(([name,passed])=>`<li>${passed?'✓':'✕'} ${e(names[name]||name)}</li>`).join('')}</ul><p>${e(pilot.scope)}</p>`;
     }catch(error){showError(error);}
   }
-  initCode();
+  whenShown(['code'], initCode);
 })();

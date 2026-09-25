@@ -103,6 +103,11 @@
     } catch (error) { status.className = 'rule-status bad'; status.textContent = error.message; }
   });
 
-  document.addEventListener('view-shown',event=>{if(event.detail==='portfolio')loadOverview().then(loadTrend).catch(showError);});
-  loadOverview().then(loadTrend).then(buildStagePicker).catch(showError);
+  // The first visit also builds the stage picker; later visits only refresh.
+  let built=false;
+  document.addEventListener('view-shown',event=>{
+    if(event.detail!=='portfolio')return;
+    const first=!built;built=true;
+    loadOverview().then(loadTrend).then(()=>first&&buildStagePicker()).catch(showError);
+  });
 })();

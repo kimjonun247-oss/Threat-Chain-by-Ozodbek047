@@ -52,5 +52,5 @@
     $('dep-compare').addEventListener('click',async()=>{if(!report)return;try{const result=await api('/api/dependencies/compare',{before:$('dep-before').value,after:report.id});$('dep-delta').textContent=`Yangi ${result.added.length} · Joriy hisobotda yo‘q ${result.absent.length} · Saqlangan ${result.unchanged.length}. ${result.note}`;}catch(error){showError(error);}});
     try{const targets=await api('/api/scanners/targets');$('dep-target').innerHTML=targets.map(t=>`<option value="${e(t.id)}" ${t.available?'':'disabled'}>${e(t.name)}</option>`).join('');const rows=await loadHistory();if(rows.length){if(['queued','running'].includes(rows[0].state))follow(rows[0].id).catch(showError);else{reviewData=await api('/api/dependencies/reports/'+rows[0].id+'/reviews');render(await api('/api/dependencies/reports/'+rows[0].id));}}}catch(error){showError(error);}
   }
-  init();
+  whenShown(['dependencies'], init);
 })();

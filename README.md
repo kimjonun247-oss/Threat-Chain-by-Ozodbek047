@@ -4,12 +4,37 @@
 
 Kod, kutubxonalar, container image, ruxsatli sayt/API va joylashtirish dalillarini bir joyda tekshirish. Pentester topilmani baholaydi, tuzatishni rejalashtiradi va qayta skan bilan solishtiradi. Bu bir kompyuter, bir foydalanuvchi uchun pilot; barcha CVE va barcha hujumlarni aniqlash kafolati emas.
 
-**Yakuniy holat (2026-09-25, 0.7.0 + tuzatishlar):** 701 test o'tadi, `verify_platform.py` 9/9
+**Yakuniy holat (2026-09-25, 0.7.0 + tuzatishlar):** 714 test o'tadi, `verify_platform.py` 9/9
 qadamdan o'tadi (Linux; macOS'da 8/8), 7 ta skaner bosqichi, 11 ta zanjir qoidasi (RP-001…011) + 3 ta cross-skaner
 zanjiri (SX-001…003). Python bog'liqliklari: **0 ta**.
 
 Ochiq qolgani ikkita, ikkalasi ham kod nuqsoni emas: Windows natijasining o'zi (faqat Windows
 mashinasi bera oladi) va Colima diski bo'yicha operator qarori. Tafsilot: [MUAMMOLAR.md](MUAMMOLAR.md).
+
+## Web panel tezligi (2026-09-25 optimallashtirish)
+
+O'lchov: Chromium, bir xil ma'lumotlar, bosh sahifani ochish.
+
+| Ko'rsatkich | Oldin | Keyin |
+|---|---|---|
+| Birinchi ochilishdagi so'rovlar | 51 | 22 |
+| Shundan API chaqiruvlari | 38 | 6 |
+| Uzatilgan hajm (kesh bo'sh) | 515 KB | 90 KB |
+| Qayta ochishda hajm | 515 KB | ~20 KB (statik fayllar keshdan) |
+| `/api/dashboard` (server vaqti) | 150–200 ms (parallel yukda 0,6–1,4 s) | ~19 ms |
+| `/api/portfolio` | 57 ms | ~8 ms |
+
+Nima qilindi:
+- **Lazy bo'limlar:** har bo'lim ma'lumotini faqat birinchi ochilganda yuklaydi (`whenShown()`); bir vaqtda
+  ketayotgan bir xil GET so'rovlari bitta javobni bo'lishadi; chap panel dashboard javobini qayta ishlatadi.
+- **Statik fayllar:** `index.html` har bir faylga kontent xeshi bilan murojaat qiladi (`/app.js?v=<xesh>`),
+  ular `immutable` keshlanadi; sahifa va versiyasiz URL `ETag` bilan tekshiriladi (o'zgarmasa 304).
+  Qurish (build) bosqichi yo'q — almashtirish server ichida bajariladi. CSP o'zgarmadi.
+- **HTTP:** gzip (faqat mijoz so'rasa va hajm kichrayganda), HTTP/1.1 keep-alive; tanasi o'qilmagan
+  rad etilgan POST ulanishni yopadi. API javoblari avvalgidek `no-store`.
+- **Server hisobi:** profil ro'yxatlari fayl imzosi (nom, hajm, mtime) bilan keshlanadi — yozuv
+  `write_json()` orqali bo'lgani uchun o'zgarish darhol ko'rinadi; portfel nishonlar ro'yxatini bir marta
+  quradi; holat ko'rinishi qoida paketi SHA-256 tekshiruvini qayta ishlatadi (skan har doim to'liq tekshiradi).
 
 ## Vositalar aniqligi — alohida sinov (2026-09-25)
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import gzip
 import hashlib
 import json
 import mimetypes
@@ -45,8 +46,49 @@ CODE_FINGERPRINT = code_fingerprint()
 STARTED_AT = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
+# Static interface files: read once per change, hashed, and compressed once.
+# index.html references every asset as /name?v=<hash>, so an asset URL names one
+# exact content and can be cached "immutable"; editing a file changes its hash
+# and therefore its URL. No build step is involved -- the rewrite happens here.
+ASSET_NAMES = ('index.html', 'app.js', 'shell.js', 'dashboard.js', 'findings.js', 'project.js', 'scanners.js',
+               'dependencies.js', 'pilot-dashboard.js', 'web-pilot.js', 'iac.js', 'portfolio.js',
+               'style.css', 'dependencies.css', 'favicon.svg')
+ASSET_TYPES = {".js": "text/javascript", ".css": "text/css", ".html": "text/html", ".svg": "image/svg+xml"}
+_ASSETS = {}
+_ASSETS_LOCK = threading.Lock()
+COMPRESSIBLE = ('text/', 'application/json', 'image/svg+xml', 'text/markdown')
+MIN_COMPRESS = 1024
+
+
+def asset(name):
+    """(body, etag, gzip_body) for one file of dist/, rebuilt only when it changes."""
+    path = ROOT / "dist" / name
+    stat = path.stat()
+    key = (stat.st_mtime_ns, stat.st_size)
+    if name == 'index.html':
+        # The page embeds the other files' hashes, so it depends on all of them.
+        key = key + tuple(asset(other)[1] for other in ASSET_NAMES if other != 'index.html')
+    with _ASSETS_LOCK:
+        hit = _ASSETS.get(name)
+    if hit and hit[0] == key:
+        return hit[1]
+    body = path.read_bytes()
+    if name == 'index.html':
+        text = body.decode('utf-8')
+        for other in ASSET_NAMES[1:]:
+            text = text.replace(f'"/{other}"', f'"/{other}?v={asset(other)[1]}"')
+        body = text.encode('utf-8')
+    value = (body, hashlib.sha256(body).hexdigest()[:16], gzip.compress(body, 6))
+    with _ASSETS_LOCK:
+        _ASSETS[name] = (key, value)
+    return value
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "ZanjirLocal/0.7"
+    # Keep-alive: the page and its API calls reuse one connection instead of a
+    # new TCP handshake per request (HTTP/1.0 closed every connection).
+    protocol_version = "HTTP/1.1"
 
     def log_message(self, *_):
         pass
@@ -66,6 +108,9 @@ class Handler(BaseHTTPRequestHandler):
         The traceback still goes to the server log.
         """
         self._responded = False
+        # A POST whose body was never read (rejected before reading) must not
+        # leave those bytes on a kept-alive connection to be parsed as a request.
+        self._body_read = self.command != 'POST'
         try:
             handler()
         except Exception as error:  # noqa: BLE001 -- the last line of defence
@@ -78,13 +123,37 @@ class Handler(BaseHTTPRequestHandler):
                 except OSError:
                     pass
 
-    def send(self, status, data, mime="application/json; charset=utf-8", attachment=None):
+    def accepts_gzip(self):
+        return any(part.split(';')[0].strip() == 'gzip'
+                   for part in (self.headers.get('Accept-Encoding') or '').split(','))
+
+    def send(self, status, data, mime="application/json; charset=utf-8", attachment=None,
+             cache="no-store", etag=None, gzipped=None):
         self._responded = True
         body = json.dumps(data, ensure_ascii=False).encode("utf-8") if isinstance(data, (dict, list)) else data
+        encoded = None
+        if self.accepts_gzip() and mime.startswith(COMPRESSIBLE):
+            if gzipped is not None:
+                encoded = gzipped
+            elif len(body) >= MIN_COMPRESS:
+                encoded = gzip.compress(body, 6)
+        if encoded is not None and len(encoded) < len(body):
+            body = encoded
+        else:
+            encoded = None
         self.send_response(status)
         self.send_header("Content-Type", mime)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        if mime.startswith(COMPRESSIBLE):
+            self.send_header("Vary", "Accept-Encoding")
+        if encoded is not None:
+            self.send_header("Content-Encoding", "gzip")
+        if etag:
+            self.send_header("ETag", f'"{etag}"')
+        if not getattr(self, '_body_read', True):
+            self.send_header("Connection", "close")
+            self.close_connection = True
+        self.send_header("Cache-Control", cache)
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
@@ -311,20 +380,27 @@ class Handler(BaseHTTPRequestHandler):
                 fmt=parts[5]
                 return self.send(200, sarif(report) if fmt=='sarif' else report, attachment=f'threatchain-repository-{report["id"]}.{ "sarif" if fmt=="sarif" else "json"}')
             return self.send(200,report)
-        assets = {"/": "index.html", "/index.html": "index.html", "/app.js": "app.js", "/scanners.js":"scanners.js", "/dependencies.js":"dependencies.js", "/style.css": "style.css", "/favicon.svg": "favicon.svg"}
-        assets['/dependencies.css']='dependencies.css'
-        assets['/pilot-dashboard.js']='pilot-dashboard.js'
-        assets['/web-pilot.js']='web-pilot.js'
-        for extra in ('shell.js', 'dashboard.js', 'findings.js', 'project.js', 'iac.js'):
-            assets['/' + extra] = extra
-        assets['/portfolio.js']='portfolio.js'
-        if path not in assets:
+        name = 'index.html' if path in ('/', '/index.html') else path[1:]
+        if name not in ASSET_NAMES:
             return self.send(404, {"error": "Sahifa topilmadi."})
-        file = ROOT / "dist" / assets[path]
-        if not file.is_file():
+        try:
+            body, etag, gzipped = asset(name)
+        except OSError:
             return self.send(503, {"error": "Interfeys fayli hali tayyor emas."})
-        mime = {".js": "text/javascript", ".css": "text/css", ".html": "text/html", ".svg": "image/svg+xml"}[file.suffix]
-        return self.send(200, file.read_bytes(), mime + "; charset=utf-8")
+        # A versioned URL names one exact content: cache it for a year. The page
+        # itself and unversioned URLs revalidate (ETag -> 304 when unchanged).
+        versioned = parse_qs(urlsplit(self.path).query).get('v') == [etag]
+        cache = "public, max-age=31536000, immutable" if versioned and name != 'index.html' else "no-cache"
+        if self.headers.get('If-None-Match') == f'"{etag}"':
+            self._responded = True
+            self.send_response(304)
+            self.send_header("ETag", f'"{etag}"')
+            self.send_header("Cache-Control", cache)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        mime = ASSET_TYPES[Path(name).suffix] + "; charset=utf-8"
+        return self.send(200, body, mime, cache=cache, etag=etag, gzipped=gzipped)
 
     def _post(self):
         if not self.local_request():
@@ -343,6 +419,7 @@ class Handler(BaseHTTPRequestHandler):
             if length < 1 or length > ceiling:
                 return self.send(413, {"error": "So‘rov hajmi noto‘g‘ri."})
             payload = json.loads(self.rfile.read(length))
+            self._body_read = True
             if not isinstance(payload, dict):
                 raise ValueError("JSON obyekt kerak")
         except (ValueError, json.JSONDecodeError):
