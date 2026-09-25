@@ -12,14 +12,19 @@ http:
     matchers:
       - type: status
         status: [200, 206]
+      # A secret-bearing key with a value. v1 also demanded a second, well-known
+      # non-secret key (APP_ENV, DB_HOST, ...) and so missed a .env that held
+      # only secrets -- exactly the worst case.
       - type: regex
         part: body
         regex:
-          - '(?m)^(DB_PASSWORD|DATABASE_URL|APP_KEY|SECRET_KEY|AWS_SECRET_ACCESS_KEY|API_KEY)\s*=\s*\S+'
+          - '(?m)^(export\s+)?[A-Z0-9_]*(PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|APIKEY|PRIVATE_KEY|ACCESS_KEY|APP_KEY|DATABASE_URL|DSN)[A-Z0-9_]*\s*=\s*\S+'
+      # ...inside something shaped like a dotenv file: two consecutive KEY=value
+      # lines, which a prose page or an error page does not produce.
       - type: regex
         part: body
         regex:
-          - '(?m)^(APP_ENV|APP_NAME|DB_HOST|DB_DATABASE|DB_USERNAME|DEBUG|PORT|NODE_ENV)\s*='
+          - '(?m)^(export\s+)?[A-Z][A-Z0-9_]*\s*=[^\n]*\n(export\s+)?[A-Z][A-Z0-9_]*\s*='
       - type: word
         part: body
         words: ['<html', '<body']

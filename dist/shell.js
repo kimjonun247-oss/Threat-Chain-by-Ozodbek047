@@ -278,4 +278,36 @@
     typingTimer = setTimeout(runSearch, 250);
   });
   $('commandbar').addEventListener('submit', event => { event.preventDefault(); runSearch(); });
+
+  /* ---- sidebar: recent scans ------------------------------------------ */
+  /* The sidebar always said "no scans yet": nothing ever filled it. It now
+     lists the same rows as the dashboard feed (server: dashboard.recent_scans)
+     and opens the stage a row belongs to. Refreshed whenever a view is shown,
+     so a scan finished in one section appears without a page reload. */
+  const STAGE_TITLE = {code: 'Kod', dependencies: 'CVE', iac: 'IaC', images: 'Image', web: 'Sayt', repository: 'Repository'};
+  const STATE_TITLE = {completed: 'tugadi', partial: 'qisman', failed: 'yiqildi', running: 'ishlamoqda', queued: 'navbatda',
+                       cancelled: 'bekor qilindi', no_supported_packages: 'manifest yo‘q'};
+  let historyLoading = false;
+  async function loadHistory() {
+    const box = $('history');
+    if (!box || historyLoading) return;
+    historyLoading = true;
+    try {
+      const rows = (await api('/api/dashboard')).recent || [];
+      box.innerHTML = rows.length ? rows.map(r => `<button type="button" data-history-stage="${e(r.stage)}">
+          <b>${e(STAGE_TITLE[r.stage] || r.stage)}</b> · ${e(r.target)} · ${e(STATE_TITLE[r.state] || r.state || '—')}${r.count == null ? '' : ' · ' + e(r.count)}
+          <time>${e(time(r.created_at))}</time></button>`).join('')
+        : '<p>Hali tekshiruv yo‘q.</p>';
+    } catch (error) {
+      box.innerHTML = '<p>Ro‘yxat yuklanmadi.</p>';
+    } finally {
+      historyLoading = false;
+    }
+  }
+  $('history')?.addEventListener('click', event => {
+    const button = event.target.closest('[data-history-stage]');
+    if (button && STAGE_TITLE[button.dataset.historyStage]) view(button.dataset.historyStage);
+  });
+  document.addEventListener('view-shown', loadHistory);
+  loadHistory();
 })();

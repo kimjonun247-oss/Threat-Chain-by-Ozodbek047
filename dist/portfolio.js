@@ -11,6 +11,7 @@
     partial:        {cls: 'part',  label: 'Qisman',         hint: 'Qamrov bo‘shlig‘i bor; hisobotni oching.'},
     failed:         {cls: 'part',  label: 'Tugallanmagan',  hint: 'Tekshiruv tugamadi; natija yo‘qligi toza degani emas.'},
     cancelled:      {cls: 'part',  label: 'Bekor qilingan', hint: 'Tekshiruv bekor qilindi.'},
+    no_supported_packages: {cls: 'gap', label: 'Manifest yo‘q', hint: 'Tekshiruv tugadi, lekin o‘qiladigan lock/manifest fayli topilmadi. Bu “zaiflik yo‘q” degani emas.'},
   };
   const cell = s => {
     const meta = CELL[s.state] || {cls: 'part', label: s.state || '—', hint: ''};

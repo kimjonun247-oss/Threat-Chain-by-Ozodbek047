@@ -258,7 +258,9 @@ def unknown_targets(meta):
     missing = []
     for stage, ids in meta['stages'].items():
         missing += [i for i in ids if i not in registry[stage]]
-    return sorted(missing)
+    # One id can be named by several stages (crapi-full is both the code and the
+    # dependency target); listing it twice read as two missing targets.
+    return sorted(set(missing))
 
 
 def stage_state(rows, targets):
@@ -278,7 +280,9 @@ def stage_state(rows, targets):
     # "Has a scan record" is not "has a result": a target whose latest scan failed
     # or was cancelled would otherwise be counted towards full coverage and the
     # row would read 9/9 while one image was never actually analysed.
-    incomplete = sorted(t for t, r in newest.items() if r.get('state') != 'completed')
+    # 'no_supported_packages' finished: the dependency stage read the project and
+    # found no lockfile. It stays visible as its own state, not as "unfinished".
+    incomplete = sorted(t for t, r in newest.items() if r.get('state') not in {'completed', 'no_supported_packages'})
     return {'targets': targets, 'scanned': True,
             'state': 'partial' if states & {'partial', 'failed', 'cancelled'} else latest.get('state'),
             'count': sum(counts) if counts else None,

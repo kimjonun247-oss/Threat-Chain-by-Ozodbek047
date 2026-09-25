@@ -12,14 +12,13 @@ http:
     matchers:
       - type: status
         status: [200, 206]
+      # v1 demanded a mysqldump/pg_dump banner as well, so a hand-made or
+      # SQLite/phpMyAdmin export was missed. A statement that defines or fills a
+      # table, at the start of a line, in a non-HTML body is the dump itself.
       - type: regex
         part: body
         regex:
-          - '(?mi)^-- (MySQL dump|PostgreSQL database dump)'
-      - type: regex
-        part: body
-        regex:
-          - '(?mi)^(CREATE TABLE|DROP TABLE|INSERT INTO|SET )'
+          - '(?mi)^\s*(CREATE TABLE|INSERT INTO|DROP TABLE|COPY [a-z_."]+ \()'
       - type: word
         part: body
         words: ['<html', '<body']

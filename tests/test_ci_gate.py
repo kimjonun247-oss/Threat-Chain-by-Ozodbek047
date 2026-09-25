@@ -1,6 +1,6 @@
 import unittest
 
-from zanjir.ci_gate import evaluate, gate_relevant
+from zanjir.ci_gate import evaluate, gate_relevant, incomplete_stages
 
 
 class CiGateTests(unittest.TestCase):
@@ -91,6 +91,23 @@ class CiGateTests(unittest.TestCase):
             {'tool': 'semgrep', 'rule_id': 'c', 'path': 'c.py', 'severity': None},
         ]}}], 'chain_findings': []}
         self.assertTrue(evaluate(report)['passed'])
+
+
+class IncompleteStageTests(unittest.TestCase):
+    def test_partial_or_failed_selected_stage_is_incomplete(self):
+        # A dependency stage left partial by an unreachable OSV must not read as
+        # "no known vulnerabilities" -- the CLI turns this list into exit code 2.
+        report = {'stages': [{'kind': 'code', 'target': 'app', 'state': 'completed'},
+                             {'kind': 'dependencies', 'target': 'app', 'state': 'partial'},
+                             {'kind': 'images', 'target': 'img', 'state': 'failed'},
+                             {'kind': 'web', 'target': '', 'state': 'not_selected'}]}
+        self.assertEqual([(r['kind'], r['state']) for r in incomplete_stages(report)],
+                         [('dependencies', 'partial'), ('images', 'failed')])
+
+    def test_no_lockfile_is_a_finished_stage(self):
+        report = {'stages': [{'kind': 'dependencies', 'target': 'app', 'state': 'no_supported_packages'},
+                             {'kind': 'code', 'target': 'app', 'state': 'completed'}]}
+        self.assertEqual(incomplete_stages(report), [])
 
 
 if __name__ == '__main__':

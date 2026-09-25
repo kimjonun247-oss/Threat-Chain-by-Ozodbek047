@@ -1,4 +1,5 @@
 import argparse
+import sys
 import json
 from zanjir import pipeline
 
@@ -11,7 +12,11 @@ def main():
     p.add_argument('--image-target', default='')
     p.add_argument('--online', action='store_true')
     a = p.parse_args()
-    r = pipeline.start(vars(a), background=False)
+    try:
+        r = pipeline.start(vars(a), background=False)
+    except (ValueError, OSError) as error:
+        print('Tekshiruv boshlanmadi: ' + str(error), file=sys.stderr)
+        raise SystemExit(2)
     print(json.dumps({'id': r['id'], 'state': r['state'], 'stages': [{k: s.get(k) for k in ('kind', 'state', 'count', 'report_id')} for s in r['stages']]}, ensure_ascii=False, indent=2))
     raise SystemExit(0 if r['state'] == 'completed' else 2)
 

@@ -10,20 +10,15 @@ import hashlib
 import json
 import os
 import re
-import ssl
 import threading
 import time
 import urllib.error
 import urllib.request
 
 from .engine import ROOT
-from . import repo_store
+from . import nettrust, repo_store
 
-try:
-    import certifi
-    _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
-except ImportError:
-    _SSL_CONTEXT = ssl.create_default_context()
+_SSL_CONTEXT = nettrust.ssl_context()
 
 CACHE = ROOT / 'advisory-cache'
 NVD = 'https://services.nvd.nist.gov/rest/json/cves/2.0'
@@ -83,7 +78,7 @@ def _get(url, headers=None):
     if not (url.startswith(NVD + '?cveId=') or url.startswith(EPSS + '?cve=')):
         raise FeedError('feed_url_not_allowed')
     request = urllib.request.Request(url, headers={'Accept': 'application/json', 'User-Agent': 'Zanjir/0.6', **(headers or {})})
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect(), urllib.request.HTTPSHandler(context=_SSL_CONTEXT))
+    opener = urllib.request.build_opener(nettrust.proxy_handler(), NoRedirect(), urllib.request.HTTPSHandler(context=_SSL_CONTEXT))
     for attempt in range(2):
         try:
             with opener.open(request, timeout=20) as response:

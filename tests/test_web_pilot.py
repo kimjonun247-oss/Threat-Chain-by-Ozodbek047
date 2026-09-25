@@ -24,6 +24,17 @@ class WebBoundaryTests(unittest.TestCase):
     def profile(self, url, private=True):
         return {'id': 'test-web', 'url': url, 'owner': 'Test operator', 'authorized_at': w.now(), 'allow_private': private}
 
+    def test_refused_target_keeps_the_reason_in_the_report(self):
+        # A link-local metadata address is refused on purpose; the report used to
+        # say only "did not finish", indistinguishable from a crash.
+        with tempfile.TemporaryDirectory() as temp, \
+             patch.object(w, 'target_for', return_value=self.profile('http://169.254.169.254', private=False)), \
+             patch.object(w, 'RUNS', Path(temp)):
+            report = w.start('test-web', background=False)
+        self.assertEqual(report['state'], 'failed')
+        self.assertIn('ruxsat doirasiga mos emas', report['message'])
+        self.assertEqual(report['requests'] if 'requests' in report else 0, 0)
+
     def test_url_rejects_ambiguous_or_credentialed_scope(self):
         invalid = ['file:///etc/passwd', 'http://user:pass@example.com', 'http://example.com/?token=secret',
                    'http://example.com/#token', 'http://example.com/%2e%2e', 'http://example.com/../admin',

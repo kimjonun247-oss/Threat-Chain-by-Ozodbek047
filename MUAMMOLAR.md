@@ -239,6 +239,36 @@ koddagi nomlarni qo'yishi mumkin). `chain-demo` ga zaif Apex klassi qo'shildi: A
 
 ---
 
+## E. 2026-09-25 toza nusxa sinovi — topilgan va tuzatilgan
+
+Toza nusxada vositalar o'rnatildi, server ishga tushirildi, barcha bosqichlar ataylab zaif
+Flask ilovasi, eskirgan `alpine:3.10` image va ochiq `.env`/`backup.sql`/`.git/config`
+beradigan lokal sayt ustida yuritildi, interfeys Playwright bilan (1400px va 390px) aylanib chiqildi.
+
+| # | Muammo | Sabab | Tuzatish |
+|---|---|---|---|
+| E1 | CI gate `partial` skanni **o'tkazib yubordi** (exit 0) | Faqat `failed` exit 2 berardi; OSV ishlamasa CVE bosqichi `partial` bo'ladi va gate topilmasi yo'q deb o'tardi | `ci_gate.incomplete_stages()`; tugamagan bosqich → exit 2, eski xulq `--allow-partial` |
+| E2 | Lock fayli yo'q loyihada umumiy skan doim `partial`, `--baseline last-green` hech qachon topilmasdi | `no_supported_packages` tugamagan deb sanalardi | `pipeline.FINISHED_STAGE_STATES`; portfelda "Manifest yo'q" deb alohida ko'rinadi |
+| E3 | Rasmiy paketsiz kod skaneri SQLi, pickle, `yaml.load`, Flask debug'ni ko'rmasdi; birorta lokal qoida gate'ga ta'sir qilmasdi | 7 ta qoidaning hammasi `WARNING`, taint yo'q | 12 ta yangi qoida (5 taint `ERROR`); sinov ilovasida 1 → 9 topilma, loyiha kodida 0 noto'g'ri signal |
+| E4 | Ochiq `.env` (faqat sirlar) va sarlavhasiz SQL dump topilmadi | Shablon ikkita mustaqil shartni birga talab qilardi | Shablonlar v2; `validate_web.py` nazorati (soft-404 bilan) o'tadi |
+| E5 | `/api/rules/validate` internetsiz ~100 s qotardi, test 15 s da yiqilardi | `semgrep --validate` semgrep.dev'dan lint to'plami yuklaydi | Bo'sh papka skani orqali o'sha parser, internetsiz ~2 s |
+| E6 | TLS tekshiruvchi proxy bor tarmoqda hech narsa o'rnatilmasdi | `certifi` doim `SSL_CERT_FILE` dan ustun edi; proxy doim chetlab o'tilardi | `zanjir/nettrust.py`: operator CA'si birinchi; `THREATCHAIN_USE_PROXY=1` ixtiyoriy |
+| E7 | Toza nusxada 3 ta test yiqilardi | Mahalliy ro'yxat (`validation-osv-control`), semgrep.dev, buzilgan `cryptography` | Nishon qidiruvi stub qilindi; E5; `cryptography` ishlamasa test o'tkaziladi, `pilot_tls` o'qiladigan xato beradi |
+| E8 | Web skan rad etilgan nishonda umumiy "tugamadi" yozardi | `ValueError` matni yo'qotilardi | Sabab hisobotga yoziladi (test bilan) |
+| E9 | `check_dependencies.py`, `scan_code.py`, `check_all.py` toza nusxada tushunarsiz xato/traceback | Standart `crapi-full` manbasi omborda yo'q | Mavjud nishonlar taklif qilinadi, traceback o'rniga exit 2 |
+| E10 | `yarn.lock`, `pnpm-lock.yaml` o'qilmasdi | "Qo'llanmaydi" ro'yxatida edi | Ikkala format (yarn v1/Berry, pnpm v5/v6/v9) o'qiladi; git/fayl/workspace — nomli bo'shliq |
+| E11 | Portfelda bosqich ustunlari ekrandan chiqib ketardi; `crapi-full` ikki marta | `th{white-space:nowrap}`; takrorlanish | Satr sarlavhasi o'raladi; ro'yxat takrorsiz |
+| E12 | "So'nggi tekshiruvlar" doim bo'sh | `#history` ni hech bir skript to'ldirmasdi | `/api/dashboard` dagi `recent` bilan to'ldiriladi, bosilganda bosqich ochiladi |
+| E13 | 390px da loyiha kartasi gorizontal chiqib ketardi | Jadval qobiqsiz | `table-wrap` |
+| E14 | EOL OS'li image'da bitta topilma "toza" ko'rinardi | EOSL faqat yopiq bo'limda edi | Image sahifasida aniq ogohlantirish |
+
+**Ataylab qoldirildi:** `pom.xml`/`build.gradle` va `==` siz Python qatorlari (versiyani taxmin
+qilish kerak bo'ladi); masofaviy git'ni ichki manzilga ro'yxatga olish (lokal bir foydalanuvchili
+vosita, ichki GitLab ham qonuniy nishon); proxy standart holatda chetlab o'tiladi (ambient
+proxy ma'lumotlari operator so'ramaguncha uzatilmaydi).
+
+---
+
 ## Qolgan holat — 2026-09-25, 0.7.0
 
 Ro'yxatdagi **barcha kod bandlari yopildi** (A1–A28, B1–B7, C1–C6, D1–D3). Qolgani ikkitasi,

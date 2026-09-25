@@ -191,7 +191,7 @@ class RuleSetLabelTests(unittest.TestCase):
         self.assertIn('2 til', label)
 
     def test_label_reports_only_the_local_rules_when_the_pack_is_absent(self):
-        self.assertEqual(s.rule_set_label('semgrep', None), 'ThreatChain 7 lokal qoida')
+        self.assertEqual(s.rule_set_label('semgrep', None), f'ThreatChain {s.local_rule_count()} lokal qoida')
 
 
 class ErrorFileTests(unittest.TestCase):

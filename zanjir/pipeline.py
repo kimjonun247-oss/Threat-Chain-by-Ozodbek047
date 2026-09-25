@@ -206,6 +206,9 @@ def image_links(repository, images_by_target):
         return {}
 
 
+FINISHED_STAGE_STATES = {'completed', 'no_supported_packages'}
+
+
 def execute(rid, event):
     report = read(rid)
     path = RUNS / rid / 'report.json'
@@ -259,7 +262,10 @@ def execute(rid, event):
             if stage['kind'] not in PASSIVE_STAGES:
                 run(stage)
         selected = [s for s in report['stages'] if s['target']]
-        report['state'] = ('cancelled' if event.is_set() else 'completed' if all(s['state'] == 'completed' for s in selected)
+        # A dependency stage that found no lockfile finished its work; the gap is
+        # on its own row. Counting it as unfinished made every assessment of such
+        # a project "partial", so `--baseline last-green` could never find one.
+        report['state'] = ('cancelled' if event.is_set() else 'completed' if all(s['state'] in FINISHED_STAGE_STATES for s in selected)
                            else 'failed' if all(s['state'] == 'failed' for s in selected) else 'partial')
         chain = correlate_stages(report)
         chain_findings = chain['findings']

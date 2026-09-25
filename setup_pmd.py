@@ -14,7 +14,6 @@ import hashlib
 import io
 import json
 import shutil
-import ssl
 import subprocess
 import sys
 import urllib.request
@@ -23,11 +22,9 @@ import zipfile
 from zanjir.engine import ROOT
 from zanjir.repo_store import write_json
 
-try:
-    import certifi
-    _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
-except ImportError:
-    _SSL_CONTEXT = ssl.create_default_context()
+from zanjir import nettrust
+
+_SSL_CONTEXT = nettrust.ssl_context()
 
 VERSION = '7.27.0'
 ARCHIVE = f'pmd-dist-{VERSION}-bin.zip'

@@ -32,6 +32,7 @@ Two rules keep the baseline mode from passing a build it did not really check:
     nothing would let a first run through with anything in it.
 """
 from . import baseline as baseline_mod
+from .pipeline import FINISHED_STAGE_STATES
 
 SEVERE = {'CRITICAL', 'HIGH'}
 # What --fail-on accepts. 'any' is what the gate has always done.
@@ -76,6 +77,23 @@ def gate_relevant(report):
     for f in report.get('chain_findings') or []:
         hits.append(hit('chain', f, f.get('rule_id'), f.get('service_id'), f.get('title')))
     return hits
+
+
+def incomplete_stages(report):
+    """Selected stages that did not finish -- a failed, partial or cancelled run.
+
+    'no_supported_packages' (see pipeline.FINISHED_STAGE_STATES) is a finished
+    dependency stage that found no lockfile: a coverage gap the report states
+    plainly, not a scan that broke half way.
+
+    A partial dependency stage is one where OSV could not be reached for some
+    packages; counting its findings and passing would turn "the advisory database
+    was down" into "no known vulnerabilities". The gate therefore treats such a
+    run like a scan that did not finish (exit 2), unless the operator opts in.
+    """
+    return [{'kind': s['kind'], 'target': s['target'], 'state': s.get('state')}
+            for s in report.get('stages', [])
+            if s.get('target') and s.get('state') not in FINISHED_STAGE_STATES]
 
 
 def evaluate(report, allow=0, baseline=None, fail_on='any', respect_triage=False):

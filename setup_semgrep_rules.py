@@ -1,6 +1,6 @@
 """Rasmiy Semgrep qoida bazasini lokal o'rnatish (SAST chuqurligi va til qamrovi).
 
-Loyihaning o'z 7 ta lokal qoidasi (scanner-rules/semgrep.yml) o'z joyida qoladi;
+Loyihaning o'z lokal qoidalari (scanner-rules/semgrep.yml) o'z joyida qoladi;
 bu skript ularning ustiga semgrep/semgrep-rules omboridan PINLANGAN commit'dagi
 rasmiy `security` toifasidagi qoidalarni qo'shadi.
 
@@ -25,7 +25,6 @@ import hashlib
 import io
 import json
 import shutil
-import ssl
 import sys
 import tarfile
 import urllib.request
@@ -33,11 +32,9 @@ from pathlib import Path
 
 from vendor import yaml
 
-try:
-    import certifi
-    _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
-except ImportError:
-    _SSL_CONTEXT = ssl.create_default_context()
+from zanjir import nettrust
+
+_SSL_CONTEXT = nettrust.ssl_context()
 
 ROOT = Path(__file__).resolve().parent
 TARGET = ROOT / 'scanner-rules/semgrep-registry'

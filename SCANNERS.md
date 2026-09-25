@@ -78,7 +78,12 @@ Paket ro'yxati yo'q (eski) hisobot uchun bo'sh SBOM emas, `409` va sabab qaytadi
 
 ## Qamrov
 
-Semgrep CE uchun Zanjir yozgan 7 ta lokal qoida ishlatiladi: Python shell/dinamik kod/TLS, JavaScript yoki TypeScript dinamik kod va child_process.exec, Go TLS tekshiruvi, Java Runtime.exec. Bu to‘liq Semgrep Registry qoidalar to‘plami, taint tahlili yoki barcha zaifliklar qamrovi emas. Ko‘rsatilgan amaldan foydalanishning o‘zi zaiflik isboti emas.
+Semgrep CE uchun ThreatChain yozgan 19 ta lokal qoida ishlatiladi (rasmiy paket o'rnatilmagan bo'lsa ham ishlaydi):
+
+- **Taint (ERROR, CI gate'ni to'xtatadi):** HTTP so'rovidan (Flask/Django `request`, Express `req.query/body/params`) kelgan qiymat buyruq bajarishga (CWE-78), SQL matniga (CWE-89) yoki pickle/marshal deserializatsiyasiga (CWE-502) yetib borsa; shuningdek `yaml.load` xavfsiz Loader'siz (CWE-502).
+- **Naqsh (WARNING):** shell/dinamik kod/TLS o'chirilishi (Python, JS/TS, Go, Java), SQL matnini satr birlashtirish yoki formatlash bilan qurish (Python, Java, Go), `pickle.load(s)`, Flask `debug=True` (CWE-489), MD5/SHA1 (CWE-328, `usedforsecurity=False` bundan mustasno).
+
+ERROR faqat manba va xavfli amal bitta oqimda ko'ringanda beriladi. Bu to'liq Semgrep Registry to'plami yoki barcha zaifliklar qamrovi emas; to'liqroq qamrov uchun `setup_semgrep_rules.py`. Ko'rsatilgan amaldan foydalanishning o'zi zaiflik isboti emas.
 
 Gitleaks ichki qoidalari `dir` rejimida joriy fayllarga qo‘llanadi. Git tarixi tekshirilmaydi. `.git`, `.tools`, virtual muhitlar, `node_modules`, `vendor`, natijalar va pilot papkalari; binar fayllar va 1 MB dan katta fayllar chiqarib tashlanadi. Nusxa chegarasi: 10000 fayl va 50 MB. Cheklovga yetish xato holatini beradi. O‘tkazilgan fayl/papka sonlari hisobotda saqlanadi. `snapshot-manifest.json` aynan nusxalangan fayllarning yo‘llari va xeshlarini saqlaydi; bu butun repositoryning bitta atomik vaqt holati degani emas.
 

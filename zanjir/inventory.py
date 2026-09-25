@@ -5,6 +5,9 @@ import os
 from pathlib import Path
 import re
 import stat
+import urllib.parse
+
+from vendor import yaml
 
 EXCLUDED={'.git','.tools','.venv','venv','node_modules','vendor','__pycache__','scanner-runs','dependency-runs','image-runs','web-runs','assessment-runs','validation-runs','advisory-cache','repository-runs','runs','pilot','profiles'}
 MAX_MANIFEST=16*1024*1024
@@ -19,17 +22,16 @@ except ModuleNotFoundError:           # Python 3.10 has no tomllib
 # has to be resolved by running a build tool stays out: this module never runs
 # repository code, so it would have to guess, and a guessed version produces
 # advisory matches that look like evidence but are not.
-SUPPORTED={'package-lock.json','npm-shrinkwrap.json','go.mod',
+SUPPORTED={'package-lock.json','npm-shrinkwrap.json','yarn.lock','pnpm-lock.yaml','go.mod',
            'Pipfile.lock','composer.lock','Gemfile.lock','gradle.lockfile'}
 TOML_SUPPORTED={'poetry.lock','uv.lock','Cargo.lock'}
-UNSUPPORTED={'yarn.lock','pnpm-lock.yaml','packages.lock.json','pom.xml',
+UNSUPPORTED={'packages.lock.json','pom.xml',
              'build.gradle','build.gradle.kts'}
 # An unsupported manifest is a dead end unless the operator is told how to turn
 # it into one of the formats above.
 UNSUPPORTED_HINTS={
     'build.gradle':'gradle_lockfile_missing','build.gradle.kts':'gradle_lockfile_missing',
     'pom.xml':'maven_lockfile_missing',
-    'yarn.lock':'yarn_lock_unsupported','pnpm-lock.yaml':'pnpm_lock_unsupported',
     'packages.lock.json':'nuget_lock_unsupported',
 }
 
@@ -88,6 +90,106 @@ def parse_npm(text,path):
             for name,entry in entries.items():
                 location=prefix+'/'+name;add(entry,location,name)
                 if isinstance(entry,dict) and entry.get('dependencies'):stack.append((entry['dependencies'],location+'/dependencies',depth+1))
+    return rows,gaps
+
+
+YARN_ENTRY=re.compile(r'^(?P<key>[^\s#][^\n]*):\s*$')
+YARN_FIELD=re.compile(r'^  (?P<field>version|resolution|resolved):?\s+"?(?P<value>[^"\n]*)"?\s*$')
+
+
+def yarn_descriptor_name(descriptor):
+    """Package name from a yarn v1 descriptor like `lodash@^4`, `@scope/pkg@~1`
+    or an alias `alias@npm:real@^2` (whose installed package is `real`)."""
+    descriptor=descriptor.strip().strip('"')
+    if '@npm:' in descriptor:
+        descriptor=descriptor.split('@npm:',1)[1]
+    at=descriptor.find('@',1)
+    return descriptor[:at] if at>0 else descriptor
+
+
+def parse_yarn_lock(text,path):
+    """yarn.lock, classic (v1) and Berry (v2+), read line by line.
+
+    Both formats give every entry an exact `version`. Yarn records no dev flag,
+    so scope stays 'unknown'. What is not a registry package -- a git or file
+    source, a workspace, a link/portal -- is a named gap, never a guess.
+    """
+    rows=[];gaps=[];berry='__metadata:' in text
+    entries=[];current=None
+    for number,line in enumerate(text.splitlines(),1):
+        if not line.strip() or line.lstrip().startswith('#'):continue
+        head=YARN_ENTRY.match(line)
+        if head and not line.startswith(' '):
+            current={'key':head.group('key'),'line':number,'fields':{}};entries.append(current);continue
+        field=YARN_FIELD.match(line)
+        if field and current is not None:
+            current['fields'].setdefault(field.group('field'),field.group('value').strip())
+    if not entries:raise ValueError('yarn.lock yozuvlari topilmadi.')
+    for entry in entries:
+        key=entry['key'];fields=entry['fields'];locator='line:'+str(entry['line'])
+        if key=='__metadata':continue
+        version=fields.get('version')
+        if berry:
+            resolution=fields.get('resolution','')
+            match=re.fullmatch(r'(?P<name>(?:@[^/@]+/)?[^@]+)@npm:(?P<version>[^#]+)',resolution)
+            patched=re.fullmatch(r'(?P<name>(?:@[^/@]+/)?[^@]+)@patch:.*?@npm%3A(?P<version>[^#]+)#.*',resolution)
+            if match or patched:
+                found=match or patched
+                name,version=found.group('name'),urllib.parse.unquote(found.group('version'))
+            else:
+                gaps.append({'path':path,'reason':'yarn_non_registry_source','locator':locator});continue
+        else:
+            resolved=fields.get('resolved','')
+            # A registry tarball always has the /-/<name>-<version>.tgz shape; a
+            # git, codeload or file source does not, and its "version" is only
+            # what that checkout's package.json claims.
+            if resolved and not re.fullmatch(r'https?://\S+/-/[^/\s]+\.tgz(?:#\S*)?',resolved):
+                gaps.append({'path':path,'reason':'yarn_non_registry_source','locator':locator});continue
+            name=yarn_descriptor_name(key.split(', ')[0])
+        try:rows.append(package('npm',name,version,path,locator,'unknown','lockfile_version'))
+        except ValueError:gaps.append({'path':path,'reason':'yarn_version_unresolved','locator':locator})
+    return rows,gaps
+
+
+def pnpm_key(key,major):
+    """(name, version) from a pnpm `packages` key of lockfile v5, v6 or v9."""
+    text=re.sub(r'\(.*\)$','',key.lstrip('/'))
+    if major<6:
+        name,_,version=text.rpartition('/')
+        return name,version.split('_',1)[0]
+    at=text.find('@',1)
+    if at<0:raise ValueError('pnpm kaliti noto‘g‘ri.')
+    return text[:at],text[at+1:]
+
+
+def parse_pnpm_lock(text,path):
+    """pnpm-lock.yaml v5.x, v6.x and v9.x. Only registry packages are read; a
+    tarball, git or directory resolution is a named gap."""
+    try:
+        doc=yaml.safe_load(text)
+    except yaml.YAMLError as error:
+        raise ValueError('pnpm-lock.yaml o‘qilmadi: '+str(getattr(error,'problem',error))[:120]) from None
+    if not isinstance(doc,dict):raise ValueError('pnpm-lock.yaml formati noto‘g‘ri.')
+    try:major=int(float(str(doc.get('lockfileVersion','')).strip("'\"")))
+    except ValueError:raise ValueError('pnpm lockfileVersion o‘qilmadi.') from None
+    if major<5 or major>9:raise ValueError('pnpm lockfile versiyasi qo‘llanmaydi.')
+    packages=doc.get('packages') or {}
+    if not isinstance(packages,dict):raise ValueError('pnpm packages ro‘yxati noto‘g‘ri.')
+    rows=[];gaps=[]
+    for key,entry in packages.items():
+        entry=entry if isinstance(entry,dict) else {}
+        resolution=entry.get('resolution') or {}
+        if isinstance(resolution,dict) and ({'tarball','repo','directory','commit'}&set(resolution)) \
+                and 'integrity' not in resolution:
+            gaps.append({'path':path,'reason':'pnpm_non_registry_source','locator':str(key)});continue
+        try:
+            name,version=pnpm_key(str(key),major)
+            name=entry.get('name') or name
+            version=str(entry.get('version') or version)
+            scope={True:'development',False:'runtime_or_optional'}.get(entry.get('dev'),'unknown')
+            rows.append(package('npm',name,version,path,str(key),scope,'lockfile_version'))
+        except ValueError:
+            gaps.append({'path':path,'reason':'pnpm_version_unresolved','locator':str(key)})
     return rows,gaps
 
 
@@ -275,6 +377,8 @@ def parser_for(name,is_python):
     if name=='gradle.lockfile':return parse_gradle_lockfile
     if name in ('poetry.lock','uv.lock'):
         return lambda text,path:parse_toml_packages(text,path,'PyPI')
+    if name=='yarn.lock':return parse_yarn_lock
+    if name=='pnpm-lock.yaml':return parse_pnpm_lock
     if name=='Cargo.lock':
         return lambda text,path:parse_toml_packages(text,path,'crates.io')
     return parse_npm
@@ -326,7 +430,7 @@ def collect(root):
     return {'schema_version':1,'packages':rows,'manifests':manifests,'gaps':gaps,
             'sha256':digest(manifests),'unique_packages':len({(p['ecosystem'],p['name'],p['version']) for p in rows}),
             'occurrences':len(rows),'excluded_directories':excluded,
-            'scope':('npm lock v1–v3, Python == pins va Pipfile/poetry/uv lock, Go require, '
+            'scope':('npm lock v1–v3, yarn.lock (v1 va Berry), pnpm-lock.yaml (v5–v9), Python == pins va Pipfile/poetry/uv lock, Go require, '
                      'Gradle lockfile (Maven), Gemfile.lock (RubyGems), composer.lock (Packagist), '
                      'Cargo.lock (crates.io). Faqat aniq versiya yozilgan formatlar o‘qiladi — versiyani '
                      'hal qilish uchun build vositasini ishga tushirish kerak bo‘lgan fayllar (pom.xml, '

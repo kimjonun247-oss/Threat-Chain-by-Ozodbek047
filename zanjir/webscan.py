@@ -731,6 +731,12 @@ def execute(profile, rid, event):
             report['message'] = 'Tanlangan saytga ulanish rad etildi. Lokal crAPI uchun Docker Desktop va PILOT-START.cmd orqali xizmatlarni ishga tushiring.'
         elif isinstance(error, ssl.SSLCertVerificationError):
             report['message'] = 'Nishon TLS sertifikati tasdiqlanmadi. Sertifikat zanjiri va domenini tuzating; tekshiruv o‘chirilmaydi.'
+        elif type(error) is ValueError and str(error):
+            # This module's own refusals (scope, DNS, template profile) are
+            # ValueErrors with an operator-facing sentence. Replacing it with the
+            # generic text above hid, for example, that a metadata address was
+            # refused on purpose -- the operator could not tell a block from a bug.
+            report['message'] = 'Tekshiruv to‘xtatildi: ' + str(error)[:300]
     finally:
         if collector:
             report['requests'] = collector.requests

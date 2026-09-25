@@ -1,6 +1,6 @@
 """Tests for operator-authored Semgrep rules added from the web interface.
 
-Semgrep's own --validate is stubbed in most tests: it is a real subprocess taking
+Semgrep's own rule parser is stubbed in most tests: it is a real subprocess taking
 seconds, and what is under test here is this module's own gatekeeping. One test
 leaves it in place to prove it is actually reached.
 """

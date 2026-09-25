@@ -21,7 +21,6 @@ import io
 import os
 import json
 import platform
-import ssl
 import subprocess
 import sys
 import tarfile
@@ -31,11 +30,9 @@ import zipfile
 from zanjir.engine import ROOT
 from zanjir.repo_store import write_json
 
-try:
-    import certifi
-    _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
-except ImportError:
-    _SSL_CONTEXT = ssl.create_default_context()
+from zanjir import nettrust
+
+_SSL_CONTEXT = nettrust.ssl_context()
 
 GITLEAKS_VERSION = '8.30.1'
 SEMGREP_VERSION = '1.177.0'

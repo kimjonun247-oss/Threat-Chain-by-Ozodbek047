@@ -200,7 +200,17 @@ def target_root(target):
         profile=next((p for p in code_targets.profiles() if p['id']==target),None) or repo_store.profile_for(target)
         path=Path(profile['root'])
         if path.resolve()!=Path(profile['registered_root']).resolve():raise ValueError('Loyiha ro‘yxatidagi manba yo‘li o‘zgargan.')
-    if not path.is_dir():raise ValueError('Loyihaning to‘liq manba papkasi mavjud emas.')
+    if not path.is_dir():
+        # 'crapi-full' is the CLI default, and on a fresh clone its source is not
+        # there (work/ is never committed). Name what can be scanned instead of
+        # leaving the operator with a bare "folder missing".
+        hint=''
+        if target=='crapi-full':
+            ready=[row['id'] for row in targets() if row.get('available') and row['id']!='crapi-full']
+            hint=(' crAPI manbasi work/repositories/crapi-stable da yo‘q (yoki ZANJIR_CRAPI_ROOT o‘rnatilmagan).'
+                  +(' Mavjud nishonlar: '+', '.join(ready)+' — --target bilan tanlang.' if ready else
+                    ' O‘z loyihangizni --register <id> --repo <papka> bilan ro‘yxatga oling.'))
+        raise ValueError('Loyihaning to‘liq manba papkasi mavjud emas.'+hint)
     return path.resolve()
 
 
@@ -344,10 +354,19 @@ def path_in_snapshot(value,source):
     return raw
 
 
+def local_rule_count():
+    """How many rules scanner-rules/semgrep.yml holds -- counted, never hard-coded."""
+    try:
+        text=(RULES/'semgrep.yml').read_text(encoding='utf-8')
+    except OSError:
+        return 0
+    return len(re.findall(r'(?m)^  - id: ',text))
+
+
 def rule_set_label(tool,manifest,own=0):
     if tool=='pmd':return 'PMD category/apex/security.xml (10 ta Apex xavfsizlik qoidasi)'
     if tool!='semgrep':return 'Gitleaks ichki qoidalari'
-    parts=['ThreatChain 7 lokal qoida']
+    parts=[f'ThreatChain {local_rule_count()} lokal qoida']
     if manifest:parts.append(f'{manifest["rules"]} rasmiy semgrep-rules qoidasi ({len(manifest["languages"])} til)')
     if own:parts.append(f'{own} ta o‘zingiz yozgan qoida')
     return ' + '.join(parts)

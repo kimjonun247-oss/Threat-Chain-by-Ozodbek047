@@ -170,7 +170,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.92em;backgroun
 .rule-source{background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-sm);padding:14px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.55;margin:10px 0;white-space:pre}
 
 /* Portfel matritsasi: har bir katak uch xil holatni ajratadi — tugagan, qisman, tekshirilmagan */
-.pf-table th[scope=row]{text-align:left;vertical-align:top;min-width:180px;background:var(--surface)}
+.pf-table th[scope=row]{text-align:left;vertical-align:top;min-width:180px;max-width:300px;white-space:normal;overflow-wrap:anywhere;background:var(--surface)}
 .pf-table th[scope=row] small{display:block;font-weight:400;color:var(--muted);font-size:11.5px;margin-top:3px}
 .pf-tag{color:var(--teal)!important;font-weight:600!important}
 .gap-note{color:var(--amber)!important;font-weight:600!important}

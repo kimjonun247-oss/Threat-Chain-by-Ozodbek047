@@ -40,3 +40,5 @@ work/
 .openai/
 .venv/
 venv/
+# ci_gate.py ning standart SARIF chiqishi (joriy papkaga yoziladi)
+threatchain.sarif

@@ -38,3 +38,154 @@ rules:
     severity: WARNING
     message: Tashqi buyruq bajarilishi; kiruvchi qiymat manbasini tekshiring.
     pattern: Runtime.getRuntime().exec(...)
+  # --- 0.7.1: kiruvchi qiymatdan xavfli amalgacha kuzatiladigan (taint) qoidalar.
+  # ERROR faqat manba (HTTP so'rovi) va xavfli amal bitta oqimda ko'ringanda
+  # beriladi: CI gate aynan ERROR ni sanaydi, shuning uchun taxmin bu yerga kirmaydi.
+  - id: zanjir.python.command-injection
+    languages: [python]
+    severity: ERROR
+    message: HTTP so'rovidagi qiymat shell buyrug'iga yetib boradi (buyruq injeksiyasi).
+    mode: taint
+    pattern-sources:
+      - pattern-either:
+          - pattern: flask.request.$ATTR
+          - pattern: request.$ATTR
+          - pattern: $REQ.GET
+          - pattern: $REQ.POST
+    pattern-sinks:
+      - pattern-either:
+          - pattern: subprocess.$FUNC($CMD, ..., shell=True, ...)
+          - pattern: os.system($CMD)
+          - pattern: os.popen($CMD, ...)
+  - id: zanjir.python.sql-injection
+    languages: [python]
+    severity: ERROR
+    message: HTTP so'rovidagi qiymat SQL matniga qo'shilib bajariladi (SQL injeksiyasi). Parametrli so'rov ishlating.
+    mode: taint
+    pattern-sources:
+      - pattern-either:
+          - pattern: flask.request.$ATTR
+          - pattern: request.$ATTR
+          - pattern: $REQ.GET
+          - pattern: $REQ.POST
+    pattern-sinks:
+      - patterns:
+          - pattern-inside: $DB.$EXEC($QUERY, ...)
+          - metavariable-regex:
+              metavariable: $EXEC
+              regex: ^(execute|executemany|executescript|raw|extra)$
+          - focus-metavariable: $QUERY
+  - id: zanjir.python.sql-string-building
+    languages: [python]
+    severity: WARNING
+    message: SQL matni satr birlashtirish yoki formatlash bilan qurilgan; parametrli so'rov ishlating.
+    pattern-either:
+      - pattern: $DB.execute("..." + $X, ...)
+      - pattern: $DB.execute("..." + $X + $Y, ...)
+      - pattern: $DB.execute("..." % $X, ...)
+      - pattern: $DB.execute("...".format(...), ...)
+      - pattern: $DB.execute(f"...", ...)
+  - id: zanjir.python.insecure-deserialization
+    languages: [python]
+    severity: ERROR
+    message: HTTP so'rovidagi ma'lumot pickle/marshal bilan ochiladi -- bu ixtiyoriy kod bajarilishiga olib keladi.
+    mode: taint
+    pattern-sources:
+      - pattern-either:
+          - pattern: flask.request.$ATTR
+          - pattern: request.$ATTR
+          - pattern: $REQ.body
+    pattern-sinks:
+      - pattern-either:
+          - pattern: pickle.loads(...)
+          - pattern: pickle.load(...)
+          - pattern: cPickle.loads(...)
+          - pattern: marshal.loads(...)
+          - pattern: dill.loads(...)
+  - id: zanjir.python.pickle-usage
+    languages: [python]
+    severity: WARNING
+    message: pickle ishonchsiz ma'lumotni ochsa ixtiyoriy kod bajariladi; manbani tekshiring.
+    pattern-either:
+      - pattern: pickle.loads(...)
+      - pattern: pickle.load(...)
+  - id: zanjir.python.yaml-unsafe-load
+    languages: [python]
+    severity: ERROR
+    message: yaml.load xavfsiz Loader'siz chaqirilgan -- YAML orqali ixtiyoriy Python obyekti yaratiladi. yaml.safe_load ishlating.
+    pattern-either:
+      - pattern: yaml.unsafe_load(...)
+      - pattern: yaml.load($DATA)
+      - pattern: yaml.load(..., Loader=yaml.Loader, ...)
+      - pattern: yaml.load(..., Loader=yaml.UnsafeLoader, ...)
+      - pattern: yaml.load(..., Loader=yaml.FullLoader, ...)
+  - id: zanjir.python.flask-debug
+    languages: [python]
+    severity: WARNING
+    message: Flask debug rejimi yoqilgan -- Werkzeug konsoli orqali kod bajarish mumkin bo'ladi.
+    pattern: $APP.run(..., debug=True, ...)
+  - id: zanjir.python.weak-hash
+    languages: [python]
+    severity: WARNING
+    message: MD5/SHA1 xavfsizlik uchun yaroqsiz (parol, imzo, token). Parol uchun bcrypt/argon2, qolganiga SHA-256 ishlating.
+    patterns:
+      - pattern-either:
+          - pattern: hashlib.md5(...)
+          - pattern: hashlib.sha1(...)
+      - pattern-not: hashlib.$F(..., usedforsecurity=False, ...)
+  - id: zanjir.javascript.command-injection
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: HTTP so'rovidagi qiymat shell buyrug'iga yetib boradi (buyruq injeksiyasi).
+    mode: taint
+    pattern-sources:
+      - pattern-either:
+          - pattern: $REQ.query
+          - pattern: $REQ.body
+          - pattern: $REQ.params
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: child_process.exec($CMD, ...)
+              - pattern: child_process.execSync($CMD, ...)
+              - pattern: exec($CMD, ...)
+              - pattern: execSync($CMD, ...)
+          - focus-metavariable: $CMD
+  - id: zanjir.javascript.sql-injection
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: HTTP so'rovidagi qiymat SQL matniga qo'shilib bajariladi (SQL injeksiyasi). Parametrli so'rov ishlating.
+    mode: taint
+    pattern-sources:
+      - pattern-either:
+          - pattern: $REQ.query
+          - pattern: $REQ.body
+          - pattern: $REQ.params
+    pattern-sinks:
+      - patterns:
+          - pattern-inside: $DB.$Q($SQL, ...)
+          - metavariable-regex:
+              metavariable: $Q
+              regex: ^(query|execute|raw)$
+          - focus-metavariable: $SQL
+  - id: zanjir.java.sql-string-building
+    languages: [java]
+    severity: WARNING
+    message: SQL matni satr birlashtirish bilan qurilgan; PreparedStatement parametrlarini ishlating.
+    pattern-either:
+      - pattern: $S.executeQuery("..." + $X)
+      - pattern: $S.executeQuery("..." + $X + $Y)
+      - pattern: $S.executeUpdate("..." + $X)
+      - pattern: $S.executeUpdate("..." + $X + $Y)
+      - pattern: $S.execute("..." + $X)
+      - pattern: $S.execute("..." + $X + $Y)
+      - pattern: $C.prepareStatement("..." + $X)
+      - pattern: $C.prepareStatement("..." + $X + $Y)
+  - id: zanjir.go.sql-string-building
+    languages: [go]
+    severity: WARNING
+    message: SQL matni fmt.Sprintf bilan qurilgan; ? / $1 parametrlarini ishlating.
+    pattern-either:
+      - pattern: $DB.Query(fmt.Sprintf(...), ...)
+      - pattern: $DB.QueryRow(fmt.Sprintf(...), ...)
+      - pattern: $DB.Exec(fmt.Sprintf(...), ...)

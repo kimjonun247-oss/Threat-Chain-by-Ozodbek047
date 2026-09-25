@@ -28,7 +28,7 @@
       <td>${info.last_scan ? e(time(info.last_scan)) : '—'}</td>
       <td><span class="cell-sub">${e((info.targets || []).join(', ') || 'Nishon bog‘lanmagan')}</span></td>
     </tr>`).join('');
-    return `<table class="stage-matrix"><thead><tr><th>Qatlam</th><th>Holat</th><th>Kuzatuv</th><th>Oxirgi skan</th><th>Nishonlar</th></tr></thead><tbody>${rows}</tbody></table>`;
+    return `<div class="table-wrap"><table class="stage-matrix"><thead><tr><th>Qatlam</th><th>Holat</th><th>Kuzatuv</th><th>Oxirgi skan</th><th>Nishonlar</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 
   function sparkline(points) {
