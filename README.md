@@ -4,7 +4,7 @@
 
 Kod, kutubxonalar, container image, ruxsatli sayt/API va joylashtirish dalillarini bir joyda tekshirish. Pentester topilmani baholaydi, tuzatishni rejalashtiradi va qayta skan bilan solishtiradi. Bu bir kompyuter, bir foydalanuvchi uchun pilot; barcha CVE va barcha hujumlarni aniqlash kafolati emas.
 
-**Yakuniy holat (2026-09-25, 0.7.0 + tuzatishlar):** 702 test o'tadi, `verify_platform.py` 9/9
+**Yakuniy holat (2026-09-25, 0.7.0 + tuzatishlar):** 701 test o'tadi, `verify_platform.py` 9/9
 qadamdan o'tadi (Linux; macOS'da 8/8), 7 ta skaner bosqichi, 11 ta zanjir qoidasi (RP-001…011) + 3 ta cross-skaner
 zanjiri (SX-001…003). Python bog'liqliklari: **0 ta**.
 
