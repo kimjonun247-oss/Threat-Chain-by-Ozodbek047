@@ -78,6 +78,7 @@
         <button class="chip" data-tab="remote" aria-pressed="false">Masofaviy repozitoriy</button>
         <button class="chip" data-tab="image" aria-pressed="false">Docker image</button>
         <button class="chip" data-tab="web" aria-pressed="false">Sayt / API</button>
+        <button class="chip" data-tab="remove" aria-pressed="false">Ro‘yxatdan chiqarish</button>
       </div>
       <form id="reg-project" data-panel="project">
         <label>Loyiha ID<input name="id" required maxlength="40" placeholder="masalan: ichki-api"></label>
@@ -102,6 +103,7 @@
         <label>Image manzili<input name="reference" required placeholder="registry.example.com/jamoa/app:1.0 yoki nom@sha256:…"></label>
         <label>Registry autentifikatsiyasi<select name="auth"><option value="none">Kerak emas (ochiq registry)</option><option value="environment">Muhit o‘zgaruvchisidan</option><option value="docker-config">Mavjud <code>docker login</code> seansidan</option></select></label>
         <label>Nomi<input name="name" maxlength="120"></label>
+        <label><input name="replace" type="checkbox"> Mavjud bo‘lsa yangilash (masalan, eski tegni yangisiga almashtirish)</label>
         <p class="hint-text">Yopiq registry uchun parol muhit o‘zgaruvchisida: <code>THREATCHAIN_REGISTRY_&lt;HOST&gt;_USERNAME</code> / <code>…_PASSWORD</code>.</p>
         <div class="modal-actions"><button type="button" class="secondary" data-close>Yopish</button><button class="primary" data-submit>Ro‘yxatga olish</button></div>
         <p class="modal-feedback"></p>
@@ -112,8 +114,16 @@
         <label>Ruxsat bergan mas’ul<input name="owner" required maxlength="120" placeholder="Ism va lavozim"></label>
         <label>So‘rovlar orasidagi kechikish (soniya)<input name="rate_delay" type="number" min="0.5" max="30" step="0.5" placeholder="0.5"></label>
         <label><input name="authenticated" type="checkbox"> Nishon autentifikatsiya talab qiladi</label>
+        <label><input name="replace" type="checkbox"> Mavjud bo‘lsa yangilash (ruxsat qaytadan qayd etiladi)</label>
         <p class="hint-text">Faqat ruxsat berilgan nishon. Token muhit o‘zgaruvchisida: <code>THREATCHAIN_WEB_AUTH_&lt;ID&gt;</code>.</p>
         <div class="modal-actions"><button type="button" class="secondary" data-close>Yopish</button><button class="primary" data-submit>Ro‘yxatga olish</button></div>
+        <p class="modal-feedback"></p>
+      </form>
+      <form id="reg-remove" data-panel="remove" hidden>
+        <label>Turi<select name="kind"><option value="image">Docker image</option><option value="web">Sayt / API</option><option value="code">Manba / masofaviy repozitoriy</option><option value="repository">Repository (Compose) profili</option></select></label>
+        <label>ID<input name="id" required maxlength="40" placeholder="ro‘yxatdagi ID"></label>
+        <p class="hint-text">Faqat ro‘yxat yozuvi o‘chiriladi. Oldingi hisobotlar dalil sifatida tarixda qoladi, loyiha fayllariga tegilmaydi.</p>
+        <div class="modal-actions"><button type="button" class="secondary" data-close>Yopish</button><button class="primary" data-submit>Ro‘yxatdan chiqarish</button></div>
         <p class="modal-feedback"></p>
       </form>`, box => {
       box.querySelectorAll('[data-tab]').forEach(tab => tab.addEventListener('click', () => {
@@ -172,7 +182,7 @@
         const form = new FormData(event.target);
         submit(box, '/api/registry/image', {
           id: form.get('id').trim(), reference: form.get('reference').trim(),
-          name: form.get('name').trim(), auth: form.get('auth')
+          name: form.get('name').trim(), auth: form.get('auth'), replace: form.get('replace') === 'on'
         }, r => `Image ro‘yxatga olindi: ${r.id}` + (r.pinned ? '' : ' (teg — digest har skanda yoziladi)'));
       });
       box.querySelector('#reg-web').addEventListener('submit', event => {
@@ -181,10 +191,17 @@
         const delay = parseFloat(form.get('rate_delay'));
         submit(box, '/api/registry/web', {
           id: form.get('id').trim(), url: form.get('url').trim(), owner: form.get('owner').trim(),
-          authenticated: form.get('authenticated') === 'on',
+          authenticated: form.get('authenticated') === 'on', replace: form.get('replace') === 'on',
           ...(Number.isFinite(delay) ? {rate_delay: delay} : {})
         }, r => `Nishon ro‘yxatga olindi: ${r.id} · ${r.url}`
              + (r.auth_variable ? ` — ${r.auth_variable} o‘zgaruvchisini o‘rnating` : ''));
+      });
+      box.querySelector('#reg-remove').addEventListener('submit', event => {
+        event.preventDefault();
+        const form = new FormData(event.target);
+        const id = form.get('id').trim();
+        if (!confirm(`“${id}” ro‘yxatdan chiqarilsinmi? Hisobotlar tarixda qoladi.`)) return;
+        submit(box, '/api/registry/remove', {kind: form.get('kind'), id}, r => `Ro‘yxatdan chiqarildi: ${r.id}. ${r.note}`);
       });
     }),
 

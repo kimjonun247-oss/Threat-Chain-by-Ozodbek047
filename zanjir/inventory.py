@@ -165,18 +165,24 @@ def pnpm_key(key,major):
 def parse_pnpm_lock(text,path):
     """pnpm-lock.yaml v5.x, v6.x and v9.x. Only registry packages are read; a
     tarball, git or directory resolution is a named gap."""
+    # pnpm 9/10 may write several YAML documents into one file (the first holds
+    # config dependencies, the second the project itself). Reading only one
+    # document failed the whole file: vite's lockfile gave 0 of 1414 packages.
     try:
-        doc=yaml.safe_load(text)
+        docs=[doc for doc in yaml.safe_load_all(text) if doc is not None]
     except yaml.YAMLError as error:
         raise ValueError('pnpm-lock.yaml o‘qilmadi: '+str(getattr(error,'problem',error))[:120]) from None
-    if not isinstance(doc,dict):raise ValueError('pnpm-lock.yaml formati noto‘g‘ri.')
-    try:major=int(float(str(doc.get('lockfileVersion','')).strip("'\"")))
-    except ValueError:raise ValueError('pnpm lockfileVersion o‘qilmadi.') from None
-    if major<5 or major>9:raise ValueError('pnpm lockfile versiyasi qo‘llanmaydi.')
-    packages=doc.get('packages') or {}
-    if not isinstance(packages,dict):raise ValueError('pnpm packages ro‘yxati noto‘g‘ri.')
+    if not docs or not all(isinstance(doc,dict) for doc in docs):raise ValueError('pnpm-lock.yaml formati noto‘g‘ri.')
+    entries=[]
+    for doc in docs:
+        try:major=int(float(str(doc.get('lockfileVersion','')).strip("'\"")))
+        except ValueError:raise ValueError('pnpm lockfileVersion o‘qilmadi.') from None
+        if major<5 or major>9:raise ValueError('pnpm lockfile versiyasi qo‘llanmaydi.')
+        packages=doc.get('packages') or {}
+        if not isinstance(packages,dict):raise ValueError('pnpm packages ro‘yxati noto‘g‘ri.')
+        entries+=[(key,entry,major) for key,entry in packages.items()]
     rows=[];gaps=[]
-    for key,entry in packages.items():
+    for key,entry,major in entries:
         entry=entry if isinstance(entry,dict) else {}
         resolution=entry.get('resolution') or {}
         if isinstance(resolution,dict) and ({'tarball','repo','directory','commit'}&set(resolution)) \
@@ -296,6 +302,20 @@ def parse_pipfile_lock(text,path):
     return rows,gaps
 
 
+def registry_source(ecosystem,source):
+    """True when a poetry/uv/Cargo lock entry comes from a package registry."""
+    if ecosystem=='crates.io':
+        return isinstance(source,str) and source.startswith(('registry+','sparse+'))
+    if source is None:
+        return True                       # poetry: no source table means PyPI
+    if isinstance(source,dict):
+        kind=source.get('type')
+        if kind is not None:              # poetry: legacy/explicit = another index
+            return kind in {'legacy','explicit','pypi'}
+        return 'registry' in source       # uv: {registry=...} vs editable/virtual/git/path/url
+    return False
+
+
 def parse_toml_packages(text,path,ecosystem,scope='locked'):
     """poetry.lock, uv.lock and Cargo.lock all use `[[package]]` with name+version."""
     if tomllib is None:
@@ -309,6 +329,12 @@ def parse_toml_packages(text,path,ecosystem,scope='locked'):
         locator='package['+str(index)+']'
         if not isinstance(name,str) or not isinstance(version,str):
             gaps.append({'path':path,'reason':'lock_entry_not_versioned','locator':locator});continue
+        if not registry_source(ecosystem,entry.get('source')):
+            # The project's own workspace members, path and git dependencies are
+            # not the registry release of that name and version; matching them
+            # against crates.io/PyPI advisories would attach someone else's CVEs.
+            # ripgrep's lock has 11 such crates out of 63.
+            gaps.append({'path':path,'reason':'lock_entry_local_or_git','locator':locator});continue
         try:rows.append(package(ecosystem,name,version,path,locator,scope,'lockfile_version'))
         except ValueError:gaps.append({'path':path,'reason':'lock_entry_unresolved','locator':locator})
     return rows,gaps

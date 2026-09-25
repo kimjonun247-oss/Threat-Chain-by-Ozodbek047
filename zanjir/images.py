@@ -162,7 +162,7 @@ def registry_credentials(host, mode):
                  'saqlanmaydi va hisobotda faqat o‘zgaruvchi nomi ko‘rinadi.')}
 
 
-def register(target, reference, name=None, auth='none'):
+def register(target, reference, name=None, auth='none', replace=False):
     if not repo_store.PROFILE_ID.fullmatch(target) or target.startswith('pilot-'):
         raise ValueError('Image ID 2–40 belgili bo‘lsin; pilot- nomlari band.')
     parsed = parse_reference(reference)          # raises with the exact reason
@@ -177,9 +177,24 @@ def register(target, reference, name=None, auth='none'):
     if not parsed['pinned']:
         row['pin_note'] = ('Teg bilan ro‘yxatga olindi. Teg boshqa mazmunga ko‘chishi mumkin, shuning uchun '
                            'har bir skan aynan qaysi digest tekshirilganini hisobotda yozadi.')
-    with (PROFILES / (target + '.json')).open('x', encoding='utf-8') as file:
-        json.dump(row, file, ensure_ascii=False, indent=2)
+    path = PROFILES / (target + '.json')
+    if path.exists() and not replace:
+        # Used to escape as FileExistsError and close the connection unanswered.
+        raise ValueError('Bu image ID allaqachon ro‘yxatda. Manzilini yangilash uchun “Mavjud bo‘lsa yangilash”ni '
+                         'belgilang (API: "replace": true).')
+    if replace and path.exists():
+        row['replaced_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    repo_store.write_json(path, row)
     return row
+
+
+def remove(target):
+    """Drop a registration. Its reports stay in the history as evidence."""
+    path = PROFILES / (str(target) + '.json')
+    if not repo_store.PROFILE_ID.fullmatch(str(target)) or str(target).startswith('pilot-') or not path.is_file():
+        raise ValueError('Bunday ro‘yxatdagi image yo‘q (pilot- nishonlari o‘chirilmaydi).')
+    path.unlink()
+    return {'id': target, 'removed': True, 'note': 'Oldingi hisobotlar tarixda saqlanib qoldi.'}
 
 
 def read(rid):

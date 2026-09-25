@@ -189,3 +189,138 @@ rules:
       - pattern: $DB.Query(fmt.Sprintf(...), ...)
       - pattern: $DB.QueryRow(fmt.Sprintf(...), ...)
       - pattern: $DB.Exec(fmt.Sprintf(...), ...)
+  # --- 2026-09-25 benchmark: tillar bo'yicha taint qoidalari (Java, Go, PHP) va
+  # rasmiy paketda ham topilmagan holatlar (lxml XXE, PHP mysqli SQLi, prototype pollution).
+  - id: zanjir.java.command-injection
+    languages: [java]
+    severity: ERROR
+    message: HTTP so'rov parametri tashqi buyruqqa yetib boradi (buyruq injeksiyasi).
+    mode: taint
+    pattern-sources:
+      - pattern: (javax.servlet.http.HttpServletRequest $R).getParameter(...)
+      - pattern: (HttpServletRequest $R).getParameter(...)
+    pattern-sinks:
+      - pattern: Runtime.getRuntime().exec(...)
+      - pattern: new ProcessBuilder(...)
+  - id: zanjir.java.sql-injection
+    languages: [java]
+    severity: ERROR
+    message: HTTP so'rov parametri SQL matniga qo'shilib bajariladi (SQL injeksiyasi). PreparedStatement parametrlarini ishlating.
+    mode: taint
+    pattern-sources:
+      - pattern: (HttpServletRequest $R).getParameter(...)
+    pattern-sinks:
+      - patterns:
+          - pattern-inside: $S.$EXEC($Q, ...)
+          - metavariable-regex:
+              metavariable: $EXEC
+              regex: ^(executeQuery|executeUpdate|execute|prepareStatement|addBatch)$
+          - focus-metavariable: $Q
+  - id: zanjir.java.insecure-deserialization
+    languages: [java]
+    severity: ERROR
+    message: HTTP so'rov tanasi ObjectInputStream bilan ochiladi -- ixtiyoriy kod bajarilishiga olib keladi.
+    mode: taint
+    pattern-sources:
+      - pattern: (HttpServletRequest $R).getInputStream()
+    pattern-sinks:
+      - pattern: new ObjectInputStream(...)
+  - id: zanjir.go.sql-injection
+    languages: [go]
+    severity: ERROR
+    message: HTTP so'rov qiymati SQL matniga qo'shilib bajariladi (SQL injeksiyasi). ? / $1 parametrlarini ishlating.
+    mode: taint
+    pattern-sources:
+      - pattern: $R.URL.Query().Get(...)
+      - pattern: $R.FormValue(...)
+    pattern-sinks:
+      - patterns:
+          - pattern-inside: $DB.$Q($SQL, ...)
+          - metavariable-regex:
+              metavariable: $Q
+              regex: ^(Query|QueryRow|Exec|QueryContext|ExecContext)$
+          - focus-metavariable: $SQL
+  - id: zanjir.go.command-injection
+    languages: [go]
+    severity: ERROR
+    message: HTTP so'rov qiymati tashqi buyruqqa yetib boradi (buyruq injeksiyasi).
+    mode: taint
+    pattern-sources:
+      - pattern: $R.URL.Query().Get(...)
+      - pattern: $R.FormValue(...)
+    pattern-sinks:
+      - pattern: exec.Command(...)
+      - pattern: exec.CommandContext(...)
+  - id: zanjir.php.sql-injection
+    languages: [php]
+    severity: ERROR
+    message: Foydalanuvchi qiymati ($_GET/$_POST/$_REQUEST) SQL matniga qo'shilib bajariladi. Tayyorlangan so'rov (prepare/bind) ishlating.
+    mode: taint
+    pattern-sources:
+      - pattern: $_GET
+      - pattern: $_POST
+      - pattern: $_REQUEST
+      - pattern: $_COOKIE
+    pattern-sanitizers:
+      - pattern: intval(...)
+      - pattern: (int) $X
+      - pattern: mysqli_real_escape_string(...)
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: mysqli_query($C, $Q, ...)
+              - pattern: mysql_query($Q, ...)
+              - pattern: pg_query($C, $Q)
+              - pattern: $DB->query($Q, ...)
+              - pattern: $DB->exec($Q)
+          - focus-metavariable: $Q
+  - id: zanjir.php.xss
+    languages: [php]
+    severity: ERROR
+    message: Foydalanuvchi qiymati HTML'ga ekranlanmasdan chiqariladi (XSS). htmlspecialchars() ishlating.
+    mode: taint
+    pattern-sources:
+      - pattern: $_GET
+      - pattern: $_POST
+      - pattern: $_REQUEST
+    pattern-sanitizers:
+      - pattern: htmlspecialchars(...)
+      - pattern: htmlentities(...)
+      - pattern: intval(...)
+    pattern-sinks:
+      - pattern: echo ...;
+      - pattern: print(...)
+  - id: zanjir.python.xxe
+    languages: [python]
+    severity: ERROR
+    message: XML parser tashqi entity'larni ochadi (XXE) -- fayl o'qish yoki SSRF. resolve_entities=False yoki defusedxml ishlating.
+    pattern-either:
+      - pattern: etree.XMLParser(..., resolve_entities=True, ...)
+      - pattern: lxml.etree.XMLParser(..., resolve_entities=True, ...)
+      - pattern: xml.sax.make_parser().setFeature(xml.sax.handler.feature_external_ges, True)
+  - id: zanjir.javascript.prototype-pollution
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Obyekt kalitlari tekshiruvsiz nusxalanadi -- __proto__ orqali prototype pollution. Kalitni tekshiring yoki Object.create(null) ishlating.
+    patterns:
+      - pattern: |
+          for (const $K in $SRC) { ... $T[$K] = $SRC[$K]; ... }
+      - pattern-not: |
+          for (const $K in $SRC) { ... if (<... $K ...>) { ... } ... }
+  - id: zanjir.python.template-injection
+    languages: [python]
+    severity: ERROR
+    message: HTTP so'rovidagi qiymat shablon matnining o'ziga qo'shiladi (SSTI) -- server tomonida kod bajarilishi mumkin. Qiymatni shablonga o'zgaruvchi sifatida bering.
+    mode: taint
+    pattern-sources:
+      - pattern-either:
+          - pattern: flask.request.$ATTR
+          - pattern: request.$ATTR
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: render_template_string($T, ...)
+              - pattern: flask.render_template_string($T, ...)
+              - pattern: jinja2.Template($T, ...)
+              - pattern: Template($T, ...)
+          - focus-metavariable: $T

@@ -37,6 +37,7 @@
   }
 
   function render(report){
+    syncTarget('code-target',report.target);
     const tools=Object.entries(report.tools||{}).map(([name,item])=>{
       const pack=item.rule_pack?`<p class="muted">Qoida bazasi: ${e(item.rule_pack.source)} @ ${e(String(item.rule_pack.commit).slice(0,12))} · ${e(item.rule_pack.languages.length)} til</p>`:'';
       // A gap keeps the stage at `partial`, but it is spelled out with the files

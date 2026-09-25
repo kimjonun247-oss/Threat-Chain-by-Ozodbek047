@@ -175,8 +175,12 @@ def targets():
     for pid,profile in sorted(bundled_code_samples().items()):
         result.append({'id':pid,'name':profile['name'],
                        'available':(ROOT/repo_store.profile_for(pid)['root']).is_dir()})
+    code_ids={p['id'] for p in code_targets.profiles()}
     for profile in repo_store.list_profiles():
-        if profile['mode']=='registered_local':result.append({'id':profile['id'],'name':profile['name'],'available':True})
+        # A Compose profile may share its id with a code registration; the code
+        # registration (listed below) is then the source of truth for the root.
+        if profile['mode']=='registered_local' and profile['id'] not in code_ids:
+            result.append({'id':profile['id'],'name':profile['name'],'available':True})
     existing={row['id'] for row in result}
     # A remote repository has no local directory to test, so "available" means
     # "registered": whether the clone will succeed is only knowable at scan time,
@@ -195,6 +199,10 @@ def target_root(target):
         # registered_root to compare against; containment is the check instead.
         path=(ROOT/repo_store.profile_for(target)['root']).resolve()
         if not path.is_relative_to(ROOT):raise ValueError('Namuna loyiha chegarasidan tashqarida.')
+    elif remote_profile(target) is not None:
+        # Only source_for() may resolve a remote repository (it clones and cleans
+        # up). Reaching here used to raise KeyError('root') and crash callers.
+        raise ValueError('Bu masofaviy git loyihasi; lokal papkasi yo‘q — skan vaqtida vaqtinchalik klonlanadi.')
     else:
         if target not in {item['id'] for item in targets()}:raise ValueError('Noma’lum loyiha.')
         profile=next((p for p in code_targets.profiles() if p['id']==target),None) or repo_store.profile_for(target)
@@ -319,7 +327,7 @@ def snapshot(source,destination):
     if not entries:raise ValueError('Tekshiriladigan matn fayli topilmadi.')
     digest=hashlib.sha256(json.dumps(entries,sort_keys=True).encode()).hexdigest()
     return {'files':len(entries),'bytes':total,'snapshot_sha256':digest,'skipped':skipped,'manifest':entries,
-            'scope':'Joriy matn fayllari; Git tarixi, vendor/node_modules, binar va 1 MB dan katta fayllar kiritilmagan.'}
+            'scope':'Joriy matn fayllari (vendor/node_modules, binar va 1 MB dan katta fayllar kiritilmagan). Git tarixidagi sirlar Gitleaks bilan alohida tekshiriladi (.git bo‘lsa).'}
 
 
 def tool_commands(work,registry=False,local=None,apex=False):
@@ -340,6 +348,59 @@ def tool_commands(work,registry=False,local=None,apex=False):
         **({'pmd':[str(pmd_exe()),'check','--dir','source','--rulesets','category/apex/security.xml',
                    '--format','json','--no-progress','--no-cache','--no-fail-on-violation']}
            if apex and pmd_exe().is_file() else {})}
+
+
+HISTORY_COMMITS=2000
+
+
+def history_secrets(source,current,env,work):
+    """Secrets that are gone from the working tree but still in git history.
+
+    The snapshot deliberately leaves .git out, so a token committed and then
+    deleted in the next commit was never reported -- yet anyone with a clone can
+    still read it. Gitleaks' own `git` mode reads the history (`git log -p`; no
+    repository code or hook runs). Only what the working-tree scan did not
+    already report is added. Returns (summary, findings).
+    """
+    if not (Path(source)/'.git').exists():
+        return {'state':'not_applicable','note':'Manbada .git yo‘q (yoki sayoz klon) — git tarixi tekshirilmadi.'},[]
+    if not gitleaks_exe().is_file():
+        return {'state':'failed','note':'Gitleaks o‘rnatilmagan.'},[]
+    command=[str(gitleaks_exe()),'git',str(source),'--config',str(RULES/'gitleaks.toml'),'--log-opts',f'--all --max-count={HISTORY_COMMITS}',
+             '--report-format','json','--report-path','-','--redact=100','--no-banner','--no-color','--ignore-gitleaks-allow',
+             '--max-target-megabytes','1','--timeout','180']
+    history_env={**env,'GIT_CONFIG_COUNT':'1','GIT_CONFIG_KEY_0':'safe.directory','GIT_CONFIG_VALUE_0':str(source),
+                 'GIT_TERMINAL_PROMPT':'0'}
+    try:
+        process=subprocess.run(command,cwd=work,env=history_env,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=240)
+        if process.returncode not in (0,1):raise ValueError('gitleaks git kodi '+str(process.returncode))
+        rows=json.loads(process.stdout or '[]')
+        if not isinstance(rows,list):raise ValueError('gitleaks git natijasi noto‘g‘ri')
+    except (OSError,ValueError,subprocess.TimeoutExpired) as error:
+        return {'state':'failed','note':'Git tarixini o‘qib bo‘lmadi ('+type(error).__name__+').'},[]
+    present={(f['path'],f['rule_id']) for f in current if f.get('tool')=='gitleaks'}
+    found=[];seen=set()
+    for row in rows:
+        try:
+            path=str(row['File']).replace('\\','/');rule=str(row['RuleID']);line=int(row['StartLine']);commit=str(row['Commit'])
+        except (KeyError,TypeError,ValueError):continue
+        if not path or path.startswith('/') or '..' in Path(path).parts or not re.fullmatch(r'[A-Za-z0-9_.-]{1,220}',rule) \
+                or not re.fullmatch(r'[0-9a-f]{7,64}',commit):continue
+        if (path,rule) in present:continue
+        identity=findings_mod.fingerprint('gitleaks',{'rule_id':rule,'path':path,'column':int(row.get('StartColumn') or 0),
+                                                      'entropy':row.get('Entropy')})
+        if identity in seen:continue
+        seen.add(identity)
+        tags=taxonomy.tag_static('gitleaks',rule)
+        found.append({'tool':'gitleaks','rule_id':rule,'path':path,'line':max(1,line),'fingerprint':identity,
+                      'message':(f'Git tarixida qolgan sir (commit {commit[:12]}). Hozirgi fayllarda yo‘q, lekin repozitoriy '
+                                 'nusxasi bor har kim uni o‘qiy oladi. Sirni bekor qiling (rotate) va tarixni tozalang.'),
+                      'severity':None,'state':'unverified_static','secret_value':'hidden',
+                      'history':{'commit':commit[:12],'date':str(row.get('Date') or '')[:25]},
+                      'cwe_ids':tags['cwe_ids'],'owasp_top10_2025':tags['owasp_top10_2025'],'verified':False,
+                      'verification_note':'Git tarixidagi statik moslik; sir hali amalda ekanini tekshiring.'})
+    return {'state':'completed','commits_limit':HISTORY_COMMITS,'count':len(found),
+            'note':'Faqat hozirgi fayllarda ko‘rinmaydigan tarixiy sirlar qo‘shildi.'},found
 
 
 def path_in_snapshot(value,source):
@@ -457,6 +518,41 @@ def registry_messages(manifest):
     return messages
 
 
+def local_messages():
+    """This project's own rules keep their own wording too (scanner-rules/semgrep.yml).
+
+    Every local finding used to carry one generic sentence ("Koddagi xavfli amal
+    yoki TLS sozlamasi...") in the report and in SARIF, so a SQL injection and a
+    weak hash read the same. Same reasoning as registry_messages(): the text comes
+    from the fixed rule file, never from Semgrep's interpolated output.
+    """
+    try:
+        parsed=yaml.safe_load((RULES/'semgrep.yml').read_text(encoding='utf-8'))
+    except (OSError,UnicodeDecodeError,yaml.YAMLError):
+        return {}
+    return {str(rule['id']):clean_message(rule['message']) for rule in (parsed or {}).get('rules') or []
+            if isinstance(rule,dict) and rule.get('id') and rule.get('message')}
+
+
+RULE_META_KEYS=('confidence','impact','likelihood','subcategory')
+
+
+def rule_meta(meta):
+    """The rule author's own confidence/impact/likelihood/subcategory, when given.
+
+    The CI gate uses them: a registry rule marked WARNING but with MEDIUM/HIGH
+    confidence for an injection class is a real finding, while `audit` rules with
+    LOW confidence are leads for a human. Values are plain words from the rule
+    file, so nothing from the scanned project passes through here.
+    """
+    result={}
+    for key in RULE_META_KEYS:
+        value=meta.get(key)
+        if isinstance(value,list):value=value[0] if value else None
+        if isinstance(value,str) and re.fullmatch(r'[A-Za-z_-]{1,20}',value):result[key]=value.lower()
+    return result
+
+
 def pmd_rows(data):
     """Flatten PMD's files[].violations[] into one row per violation."""
     if not isinstance(data,dict) or not isinstance(data.get('files'),list):
@@ -499,7 +595,7 @@ def normalize(tool,data,source,messages=None):
     if not isinstance(rows,list):raise ValueError('Skaner JSON natijasi noto‘g‘ri.')
     result=[]
     for row in rows:
-        severity=None
+        severity=None;meta_fields={}
         if tool=='semgrep':
             rule=str(row['check_id']);path=path_in_snapshot(row['path'],source);line=int(row['start']['line'])
             extra=row.get('extra') if isinstance(row.get('extra'),dict) else {}
@@ -512,6 +608,7 @@ def normalize(tool,data,source,messages=None):
             message=(messages or {}).get(rule) or 'Koddagi xavfli amal yoki TLS sozlamasi. Ma’lumot oqimi va amaliy ta’sirini tekshiring.'
             level=str(extra.get('severity') or '').upper()
             severity=level if level in ('ERROR','WARNING','INFO') else None
+            meta_fields=rule_meta(meta)
         elif tool=='pmd':
             rule=str(row['rule']);path=path_in_snapshot(row['filename'],source);line=int(row['beginline'])
             message=PMD_MESSAGES.get(rule) or 'Apex xavfsizlik qoidasi mos keldi. Ma’lumot oqimini tekshiring.'
@@ -534,7 +631,8 @@ def normalize(tool,data,source,messages=None):
         result.append({'tool':tool,'rule_id':rule,'path':path,'line':line,'fingerprint':identity,'message':message,'severity':severity,
                        'state':'unverified_static','secret_value':'hidden' if tool=='gitleaks' else None,
                        'cwe_ids':tags['cwe_ids'],'owasp_top10_2025':tags['owasp_top10_2025'],
-                       'verified':False,'verification_note':'Statik kod naqshi mosligi; ma’lumot oqimi, ishga tushirish sharti va amaliy ta’siri tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart.'})
+                       'verified':False,'verification_note':'Statik kod naqshi mosligi; ma’lumot oqimi, ishga tushirish sharti va amaliy ta’siri tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart.',
+                       **({'rule_meta':meta_fields} if meta_fields else {})})
     return result
 
 
@@ -599,7 +697,7 @@ def execute(target,rid):
             write(folder/'snapshot-manifest.json',coverage.pop('manifest'))
             report['coverage']=coverage
             manifest=registry_manifest()
-            messages=registry_messages(manifest)
+            messages={**local_messages(),**registry_messages(manifest)}
             local=custom_rules.active()
             if local:messages={**messages,**custom_rules.messages()}
             for tool,command in tool_commands(work,registry=bool(manifest),local=local,apex=has_apex(work/'source')).items():
@@ -643,6 +741,13 @@ def execute(target,rid):
                 write(folder/'report.json',report)
             states=[item['state'] for item in report['tools'].values()]
             report['state']='completed' if all(s=='completed' for s in states) else 'failed' if all(s=='failed' for s in states) else 'partial'
+            # Kept out of report['tools'] on purpose: a project without .git is
+            # not a partial scan, and the tool states above decide the stage.
+            report['history_scan'],extra=history_secrets(source,report['findings'],env,work)
+            if extra:
+                report['findings']+=extra
+                report['count']=len(report['findings']);report['verification_summary']=verification_mod.summarize(report['findings'])
+            write(folder/'report.json',report)
     except (OSError,ValueError) as error:
         report.update(state='failed',message=str(error))
     finally:

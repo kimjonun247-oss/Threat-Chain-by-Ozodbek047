@@ -10,6 +10,13 @@ async function api(path, body) {
   if (!response.ok) throw new Error(data.error || 'So‘rov bajarilmadi.');
   return data;
 }
+// A report opened from the history list belongs to one target; the view's
+// target picker used to keep showing whatever was selected before, so the page
+// read "Zanjir demo" above the bench-sast report.
+function syncTarget(selectId, value) {
+  const select = $(selectId);
+  if (select && typeof value === 'string' && [...select.options].some(option => option.value === value)) select.value = value;
+}
 function showError(error) { $('error').textContent = error.message; $('error').hidden = false; }
 function busy(value, message = '') {
   state.busy = value;

@@ -4,12 +4,27 @@
 
 Kod, kutubxonalar, container image, ruxsatli sayt/API va joylashtirish dalillarini bir joyda tekshirish. Pentester topilmani baholaydi, tuzatishni rejalashtiradi va qayta skan bilan solishtiradi. Bu bir kompyuter, bir foydalanuvchi uchun pilot; barcha CVE va barcha hujumlarni aniqlash kafolati emas.
 
-**Yakuniy holat (2026-09-25, 0.7.0 + tuzatishlar):** 672 test o'tadi, `verify_platform.py` 9/9
+**Yakuniy holat (2026-09-25, 0.7.0 + tuzatishlar):** 702 test o'tadi, `verify_platform.py` 9/9
 qadamdan o'tadi (Linux; macOS'da 8/8), 7 ta skaner bosqichi, 11 ta zanjir qoidasi (RP-001…011) + 3 ta cross-skaner
 zanjiri (SX-001…003). Python bog'liqliklari: **0 ta**.
 
 Ochiq qolgani ikkita, ikkalasi ham kod nuqsoni emas: Windows natijasining o'zi (faqat Windows
 mashinasi bera oladi) va Colima diski bo'yicha operator qarori. Tafsilot: [MUAMMOLAR.md](MUAMMOLAR.md).
+
+## Vositalar aniqligi — alohida sinov (2026-09-25)
+
+| Vosita | Sinov | Natija |
+|---|---|---|
+| Semgrep (29 lokal + 1343 rasmiy qoida) | 30 ta ma'lum zaiflik, 5 til + xavfsiz fayllar | 30/30 topildi; CI gate 24 tasida to'xtaydi; xavfsiz fayllarda gate signali 0 |
+| Gitleaks | 10 ta soxta sir (tarixdagi va DB URL bilan) + 3 soxta holat | 10/10, ortiqcha signal 0, qiymat hisobotga tushmaydi |
+| PMD (Apex) | 4 zaiflik + xavfsiz klass | 3/4 (upstream chegara), ortiqcha signal 0 |
+| Trivy image | `python:3.9.0-alpine` | To'g'ridan-to'g'ri Trivy bilan 85/85; SBOM'da 85/85 zaiflik |
+| Trivy IaC | Dockerfile + K8s + Terraform | 41/41 |
+| Compose/Nginx | RP-001…011 har biri + xavfsiz Compose | 11/11 qoida; xavfsizda 0 |
+| Nuclei + HTTP | zaif va tuzatilgan sayt | barcha ochiq fayllar, CORS, cookie, stack trace, papka ro'yxati; tuzatilganda faqat HTTP |
+| Lockfile o'qish | npm, yarn v1/Berry, pnpm v9, Poetry, Pipenv, Composer, Go, Cargo — haqiqiy loyihalar | mustaqil hisob bilan 100% mos |
+
+Tafsilot va tuzatilgan 19 ta muammo: [MUAMMOLAR.md](MUAMMOLAR.md) (F bo'limi).
 
 ## 0.7 dan keyingi tuzatishlar (2026-09-25 to'liq sinovi)
 
@@ -160,7 +175,7 @@ bergan sayt ustida sinab topilgan nuqsonlar. Tafsilot: [MUAMMOLAR.md](MUAMMOLAR.
   - **CI gate'ga `code` bosqichi qo'shildi:** har bir Gitleaks mosligi (manbadagi ochiq sir merge qilinmaydi) va Semgrep `ERROR` darajasidagi topilmalar gate'ni to'xtatadi; `WARNING`/`INFO` qasddan kiritilmagan — haqiqiy loyihada ular yuzlab bo'ladi va doim to'xtaydigan gate'ni hech kim o'qimaydi. crAPI'da: 135 → **163** gate-relevant topilma (18 Semgrep `ERROR` + 10 Gitleaks), ular orasida omborga kiritilgan **private key'lar**, root bilan ishlaydigan **Dockerfile'lar** va Postman to'plamidagi **JWT token'lar**.
   - **Yaxlitlik cheklovi ochiq aytiladi:** commit SHA qattiq pinlanadi va har bir fayl uchun SHA-256 hamda mustaqil qayta tekshirish uchun `raw.githubusercontent` havolasi manifestda saqlanadi, lekin arxiv baytlari oldindan ma'lum xesh bilan solishtirilmaydi va reliz imzosi tekshirilmaydi — bu loyihadagi Trivy/Nuclei o'rnatuvchilari bilan bir xil daraja, undan yuqori kafolat da'vo qilinmaydi. Apex qoidalari qasddan chiqarib tashlangan: OSS Semgrep Apex'ni umuman parse qila olmaydi, ular faqat o'zgarmas xato shovqini berardi.
   - **Tahlil xatolari endi turi bo'yicha taqsimlanadi** (`error_kinds`) — yalang'och son o'rniga "qaysi turdagi qamrov bo'shlig'i" ko'rinadi. crAPI'da 36 ta `Other syntax error` — bular Helm shablon fayllari (`deploy/helm/templates/...`), ular sof YAML emas; bu haqiqiy qamrov bo'shlig'i, shuning uchun bosqich halol ravishda `partial` holatida qoladi.
-- **O'z qoidalaringiz:** loyihangizga xos naqshni qo'shsangiz, keyingi har bir kod tekshiruvida u 19 ta lokal va ~1343 ta rasmiy qoida bilan birga ishlaydi. Saqlash joyi `scanner-rules/local/`, mantiq `zanjir/custom_rules.py`, API `GET /api/rules` va `POST /api/rules/{validate,save,delete}`. **Web sahifadagi qoida muharriri 0.7 da olib tashlandi** (kundalik ishda ishlatilmasdi va sahifani og'irlashtirardi) — qoidalar endi faylga yozib yoki shu API orqali qo'shiladi; tekshirish mantig'i va cheklovlari o'zgarmadi.
+- **O'z qoidalaringiz:** loyihangizga xos naqshni qo'shsangiz, keyingi har bir kod tekshiruvida u 29 ta lokal va ~1343 ta rasmiy qoida bilan birga ishlaydi. Saqlash joyi `scanner-rules/local/`, mantiq `zanjir/custom_rules.py`, API `GET /api/rules` va `POST /api/rules/{validate,save,delete}`. **Web sahifadagi qoida muharriri 0.7 da olib tashlandi** (kundalik ishda ishlatilmasdi va sahifani og'irlashtirardi) — qoidalar endi faylga yozib yoki shu API orqali qo'shiladi; tekshirish mantig'i va cheklovlari o'zgarmadi.
   - **Faqat deklarativ Semgrep YAML qabul qilinadi — bu chegara qasddan qo'yilgan.** Python mantiqidagi zanjir qoidalari (RP-00X, SX-00X) **hech qachon** web orqali qo'shilmaydi: ular dastur kodi, va ularni HTTP orqali qabul qilish xavfsizlik vositasining o'ziga ixtiyoriy kod bajarish yo'lini ochardi. **Nuclei shablonlari ham qabul qilinmaydi:** shablon real tarmoq so'rovi yuboradi, ya'ni oddiy matn maydoni interfeysga ixtiyoriy hostga trafik yo'naltirish imkonini berardi — bu "Sayt va API" bo'limidagi yozma ruxsat modelini talab qiladi, matn maydonini emas.
   - **Ishonch chegarasi ochiq aytiladi:** server faqat localhost'ga bog'langan va cross-site so'rovlarni rad etadi, shuning uchun bu endpoint'ga yeta oladigan kishi allaqachon skanerlash uchun loyiha papkasini ro'yxatdan o'tkaza oladi. Quyidagi tekshiruvlar masofaviy hujumchidan himoya emas — ular noto'g'ri qoidaning skan natijasini jimgina buzishining oldini oladi.
   - **Har bir qoida ikki marta tekshiriladi:** (1) strukturaviy — `id` noyobligi va xavfsiz belgilar, `message`, `languages` (faqat OSS engine parse qila oladigan tillar), `severity`, kamida bitta naqsh kaliti, YAML alias/anchor va chuqurlik/hajm chegaralari; manba faylini o'zgartiradigan (`fix`, `fix-regex`) va engine sozlamasiga tegadigan (`options`, `join`, `r2c-internal-*`) kalitlar rad etiladi, noma'lum kalit jimgina e'tiborsiz qoldirilmaydi; (2) **Semgrep'ning o'z qoida parseri** (bo'sh papka skani, internetsiz) — naqsh haqiqatan parse bo'lishini faqat u biladi.
@@ -220,7 +235,7 @@ NVD so‘rov cheklovi sekin (5/30s, kalitsiz). Tezroq CWE boyitish uchun ixtiyor
 
 | Vosita | Qamrov | Chegara |
 |---|---|---|
-| Semgrep | 19 ta mahalliy qoida (taint: buyruq/SQL injeksiyasi, deserializatsiya) + rasmiy `semgrep-rules` security paketi (~1343 qoida, 22 til; `setup_semgrep_rules.py`, ixtiyoriy) + `scanner-rules/local/` dagi o‘z qoidalaringiz | Universal SAST emas; paket o‘rnatilmasa faqat 19 ta lokal qoida ishlaydi; Apex qamralmaydi; web orqali faqat deklarativ Semgrep YAML qabul qilinadi (Python zanjir qoidalari va Nuclei shablonlari emas) |
+| Semgrep | 29 ta mahalliy qoida (taint: buyruq/SQL injeksiyasi, deserializatsiya, SSTI, XSS, XXE; Python/JS/Java/Go/PHP) + rasmiy `semgrep-rules` security paketi (~1343 qoida, 22 til; `setup_semgrep_rules.py`, ixtiyoriy) + `scanner-rules/local/` dagi o‘z qoidalaringiz | Universal SAST emas; paket o‘rnatilmasa faqat 29 ta lokal qoida ishlaydi; Apex qamralmaydi; web orqali faqat deklarativ Semgrep YAML qabul qilinadi (Python zanjir qoidalari va Nuclei shablonlari emas) |
 | Gitleaks | Joriy matn fayllaridagi sirlar | Git tarixi yo‘q; API hisobotida sir qiymati yashiriladi |
 | OSV + CISA KEV | npm lock v1–v3, Python `==`, Go `require`; ustuvorlik | Java/Gradle va boshqa lock formatlari qamrov bo‘shlig‘i; tranzitiv/runtime to‘liqligi kafolatlanmaydi |
 | Trivy 0.74.0 | Public Docker Hub image; digest; linux/amd64; 1 GB gacha | Private registry va faol hujum sinovi yo‘q; image bajarilmaydi |

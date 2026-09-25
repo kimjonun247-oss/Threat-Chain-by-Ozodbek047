@@ -44,9 +44,13 @@ def list_profiles():
 
 def register_project(profile_id, root, compose, env_file=None, bindings=None, name=None, owner=''):
     """Explicit local CLI onboarding, never available as an arbitrary-path browser API."""
-    from . import code_targets
-    if not isinstance(profile_id,str) or not PROFILE_ID.fullmatch(profile_id) or profile_id in ALLOWED_PROFILES|{'crapi-full'} or profile_id in {row['id'] for row in code_targets.profiles()}:
-        raise ValueError('Loyiha ID: 2–40 ta kichik lotin harfi, raqam, _ yoki -. crapi nomi band.')
+    # A code target with the same id is allowed: one project, several stages,
+    # grouped by id in the portfolio. It used to be refused with a message about
+    # the crapi name that had nothing to do with the real reason.
+    if not isinstance(profile_id,str) or not PROFILE_ID.fullmatch(profile_id):
+        raise ValueError('Loyiha ID: 2–40 ta kichik lotin harfi, raqam, _ yoki - (harf bilan boshlansin).')
+    if profile_id in ALLOWED_PROFILES|{'crapi-full'}:
+        raise ValueError(f'“{profile_id}” ID namuna loyiha uchun band; boshqa ID tanlang.')
     path=LOCAL_PROFILES/f'{profile_id}.json'
     if path.exists():
         raise ValueError('Bu loyiha ID allaqachon mavjud; boshqa ID tanlang.')
@@ -201,3 +205,14 @@ def compare_reports(before,after):
             'absent':sorted(left.keys()-right.keys()),'unchanged':sorted(left.keys()&right.keys()),
             'caution':'Yo‘qolgan topilma faqat joriy statik qamrovda ko‘rinmaydi; avtomatik ravishda tuzatilgan deb hisoblanmaydi.',
             'coverage_changed':before.get('unknowns')!=after.get('unknowns') or {f['path'] for f in before['files']}!={f['path'] for f in after['files']}}
+
+
+def remove_project(profile_id):
+    """Drop a registered Compose profile. Bundled samples stay; reports stay."""
+    if not isinstance(profile_id,str) or not PROFILE_ID.fullmatch(profile_id) or profile_id in ALLOWED_PROFILES:
+        raise ValueError('Bu repository profilini o‘chirib bo‘lmaydi.')
+    path=LOCAL_PROFILES/f'{profile_id}.json'
+    if not path.is_file():
+        raise ValueError('Bunday ro‘yxatdagi repository profili yo‘q.')
+    path.unlink()
+    return {'id':profile_id,'removed':True,'note':'Manba papkasiga tegilmadi; oldingi hisobotlar tarixda qoldi.'}

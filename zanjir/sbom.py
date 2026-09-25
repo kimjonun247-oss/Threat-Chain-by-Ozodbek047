@@ -51,6 +51,55 @@ def component(package, index):
     return row
 
 
+SEVERITIES = {'CRITICAL': 'critical', 'HIGH': 'high', 'MEDIUM': 'medium', 'LOW': 'low', 'NEGLIGIBLE': 'info'}
+
+
+def vulnerabilities(report, prefix=''):
+    """The image report's own advisory matches as CycloneDX `vulnerabilities`.
+
+    The SBOM used to list components only, so the 85 CVEs known for
+    python:3.9.0-alpine were missing from the one export a downstream tool would
+    read. Each entry points at the exact component (`affects.ref`); a match whose
+    package is not in the inventory is kept with no `affects` rather than being
+    attached to a guessed component.
+    """
+    refs = {}
+    for index, package in enumerate(report.get('packages') or []):
+        refs.setdefault((package.get('target'), package.get('name'), package.get('version')),
+                        prefix + _ref(package, index))
+        refs.setdefault((None, package.get('name'), package.get('version')), prefix + _ref(package, index))
+    rows = []
+    for finding in report.get('findings') or []:
+        advisory = str(finding.get('advisory_id') or '')
+        if not advisory:
+            continue
+        key = (finding.get('target'), finding.get('package'), finding.get('version'))
+        ref = refs.get(key) or refs.get((None, finding.get('package'), finding.get('version')))
+        row = {'bom-ref': prefix + 'vuln:' + advisory + ':' + str(finding.get('package')) + '@' + str(finding.get('version')),
+               'id': advisory,
+               'ratings': [{'severity': SEVERITIES.get(str(finding.get('severity') or '').upper(), 'unknown'),
+                            'method': 'other', 'source': {'name': str(finding.get('source') or 'trivy')}}],
+               'description': str(finding.get('title') or '')[:1000]}
+        if finding.get('source'):
+            row['source'] = {'name': str(finding['source'])}
+        cwes = [int(c.split('-')[1]) for c in finding.get('cwe_ids') or [] if str(c).startswith('CWE-') and c[4:].isdigit()]
+        if cwes:
+            row['cwes'] = cwes
+        if finding.get('fixed_version'):
+            row['recommendation'] = f"{finding.get('package')} paketini {finding['fixed_version']} yoki undan yangi versiyaga yangilang."
+        if ref:
+            row['affects'] = [{'ref': ref}]
+        properties = []
+        if finding.get('known_exploited') is not None:
+            properties.append({'name': 'threatchain:cisa_kev', 'value': str(bool(finding['known_exploited'])).lower()})
+        if finding.get('epss') is not None:
+            properties.append({'name': 'threatchain:epss', 'value': str(finding['epss'])})
+        if properties:
+            row['properties'] = properties
+        rows.append(row)
+    return rows
+
+
 def build(report, serial=None):
     """One image report -> one CycloneDX document."""
     packages = report.get('packages')
@@ -78,6 +127,7 @@ def build(report, serial=None):
                            {'name': 'threatchain:coverage_note', 'value': NOTE}],
         },
         'components': [component(package, index) for index, package in enumerate(packages)],
+        'vulnerabilities': vulnerabilities(report),
     }
     return document
 
@@ -92,7 +142,7 @@ def merge(reports, name='threatchain-project'):
     usable = [r for r in reports if isinstance(r, dict) and r.get('packages') is not None]
     if not usable:
         raise ValueError('Paket ro‘yxati bor birorta image hisoboti yo‘q; avval image’larni qayta skanerlang.')
-    components, references = [], []
+    components, references, vulns = [], [], []
     for report in usable:
         reference = report.get('reference') or str(report.get('target') or '')
         references.append({'type': 'container', 'bom-ref': reference,
@@ -103,6 +153,7 @@ def merge(reports, name='threatchain-project'):
             row.setdefault('properties', []).append(
                 {'name': 'threatchain:image_target', 'value': str(report.get('target') or '')})
             components.append(row)
+        vulns += vulnerabilities(report, prefix=f"{report.get('target')}|")
     return {
         '$schema': SCHEMA, 'bomFormat': FORMAT, 'specVersion': SPEC_VERSION,
         'serialNumber': 'urn:uuid:' + str(uuid.uuid5(uuid.NAMESPACE_URL, 'threatchain:project:' + name)),
@@ -115,5 +166,6 @@ def merge(reports, name='threatchain-project'):
                                      'value': str(len(reports) - len(usable))},
                                     {'name': 'threatchain:coverage_note', 'value': NOTE}]},
         'components': components,
+        'vulnerabilities': vulns,
         'dependencies': [{'ref': name, 'dependsOn': [r['bom-ref'] for r in references]}],
     }

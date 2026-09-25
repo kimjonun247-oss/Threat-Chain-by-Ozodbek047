@@ -15,6 +15,7 @@
   }
 
   function render(row) {
+    syncTarget('iac-target', row.target);
     report = row;
     $('iac-result').className = '';
     const counts = row.severity_counts || {};

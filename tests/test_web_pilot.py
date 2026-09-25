@@ -50,8 +50,11 @@ class WebBoundaryTests(unittest.TestCase):
             row = w.register('test-web', 'https://example.com/api/', 'Owner')
             self.assertEqual(row['url'], 'https://example.com/api')
             self.assertFalse(row['allow_private'])
-            with self.assertRaises(FileExistsError):
+            # Still never overwritten silently -- but now a readable 400, not a
+            # FileExistsError that closed the connection unanswered.
+            with self.assertRaises(ValueError):
                 w.register('test-web', 'https://other.example', 'Owner')
+            self.assertEqual(w.target_for('test-web')['url'], 'https://example.com/api')
             with self.assertRaises(ValueError):
                 w.register('pilot-other', 'https://example.com', 'Owner')
 
@@ -447,6 +450,55 @@ class ActiveDastTests(unittest.TestCase):
             self.assertEqual([f['rule_id'] for f in findings], ['error-disclosure'])
             self.assertNotIn('hunter2', json.dumps(findings))
             self.assertEqual(findings[0]['owasp_top10_2025'][0]['code'], 'A10')
+
+    def serve(self, status, body, headers=()):
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_): pass
+            def do_GET(self):
+                self.send_response_only(status)
+                for name, value in headers:
+                    self.send_header(name, value)
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+        return Handler
+
+    def test_server_header_without_a_version_is_not_a_fingerprint(self):
+        # `Server: web` named no version, yet it was reported as "version disclosed".
+        with listener(self.serve(200, b'', [('Server', 'web')])) as url:
+            collector = w.Collector(self.profile(url), {'/'}, threading.Event())
+            collector.fetch('/')
+            self.assertEqual(w.fingerprint_findings(collector, ['/']), [])
+        with listener(self.serve(200, b'', [('Server', 'nginx/1.14.0')])) as url:
+            collector = w.Collector(self.profile(url), {'/'}, threading.Event())
+            collector.fetch('/')
+            self.assertEqual(len(w.fingerprint_findings(collector, ['/'])), 1)
+
+    def test_a_traceback_is_reported_even_with_status_200(self):
+        body = b'<pre>Traceback (most recent call last):\n  File "/app/views.py", line 3\nZeroDivisionError</pre>'
+        with listener(self.serve(200, body)) as url:
+            collector = w.Collector(self.profile(url), {'/'}, threading.Event())
+            collector.fetch('/')
+            self.assertEqual([f['rule_id'] for f in w.error_disclosure_findings(collector, ['/'])], ['error-disclosure'])
+
+    def test_a_page_mentioning_stack_traces_is_not_an_error_page(self):
+        with listener(self.serve(200, b'<p>Our docs explain how to read a stack trace: ...</p>')) as url:
+            collector = w.Collector(self.profile(url), {'/'}, threading.Event())
+            collector.fetch('/')
+            self.assertEqual(w.error_disclosure_findings(collector, ['/']), [])
+
+    def test_directory_listing_on_a_crawled_folder(self):
+        body = b'<html><head><title>Index of /files</title></head><body><a href="a.txt">a.txt</a></body></html>'
+        with listener(self.serve(200, body, [('Content-Type', 'text/html')])) as url:
+            collector = w.Collector(self.profile(url), {'/files/'}, threading.Event())
+            collector.fetch('/files/')
+            found = w.directory_listing_findings(collector, ['/files/'])
+            self.assertEqual([f['rule_id'] for f in found], ['http-dir-listing'])
+            self.assertEqual(found[0]['cwe_ids'], ['CWE-548'])
+
+    def test_crawler_keeps_the_trailing_slash_of_a_directory_link(self):
+        links = w.extract_links('/', 'text/html', b'<a href="/files/">f</a><a href="about">a</a><a href="/x/?q=1">q</a>')
+        self.assertEqual(links, ['/files/', '/about', '/x/'])
 
     def test_clean_response_produces_no_new_findings(self):
         class Handler(BaseHTTPRequestHandler):

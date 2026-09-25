@@ -118,7 +118,9 @@ class ComposerLockTests(ParserBase):
 
 class TomlLockTests(ParserBase):
     POETRY = '[[package]]\nname = "django"\nversion = "4.2.1"\n\n[[package]]\nname = "urllib3"\nversion = "1.26.5"\n'
-    CARGO = '[[package]]\nname = "serde"\nversion = "1.0.152"\n'
+    CARGO = ('[[package]]\nname = "serde"\nversion = "1.0.152"\n'
+             'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+             '[[package]]\nname = "my-workspace-crate"\nversion = "0.1.0"\n')
 
     def setUp(self):
         if inventory.tomllib is None:
@@ -136,6 +138,13 @@ class TomlLockTests(ParserBase):
     def test_cargo_lock_maps_to_crates_io(self):
         rows, _ = self.collect('Cargo.lock', self.CARGO)
         self.assertEqual(rows[0]['ecosystem'], 'crates.io')
+
+    def test_a_workspace_crate_is_a_gap_not_a_crates_io_release(self):
+        # ripgrep's lock lists 11 of its own crates with no source; matching them
+        # against crates.io advisories would attach someone else's CVEs.
+        rows, gaps = self.collect('Cargo.lock', self.CARGO)
+        self.assertNotIn('my-workspace-crate', {r['name'] for r in rows})
+        self.assertEqual([g['reason'] for g in gaps], ['lock_entry_local_or_git'])
 
     def test_an_entry_missing_its_version_is_a_gap(self):
         _, gaps = self.collect('poetry.lock', '[[package]]\nname = "x"\n')
@@ -245,6 +254,14 @@ class PnpmLockTests(ParserBase):
         rows, gaps = self.collect('pnpm-lock.yaml', self.V6)
         self.assertNotIn('repo', {r['name'] for r in rows})
         self.assertEqual([g['reason'] for g in gaps], ['pnpm_non_registry_source'])
+
+    def test_a_multi_document_lock_is_read_whole(self):
+        # pnpm 9/10 can write two YAML documents into one file; vite's lock gave
+        # 0 of 1414 packages before this.
+        text = self.V9 + '---\nlockfileVersion: \'9.0\'\npackages:\n  react@18.3.1:\n    resolution: {integrity: sha512-x}\n'
+        rows, gaps = self.collect('pnpm-lock.yaml', text)
+        self.assertEqual({r['name'] for r in rows}, {'lodash', '@babel/core', 'react'})
+        self.assertEqual(gaps, [])
 
     def test_broken_yaml_is_an_invalid_manifest_not_a_crash(self):
         _, gaps = self.collect('pnpm-lock.yaml', 'lockfileVersion: 9.0\npackages: [\n')

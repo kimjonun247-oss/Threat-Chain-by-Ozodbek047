@@ -11,6 +11,11 @@
   let webTargets = [];
 
   function render(kind, r) {
+    if (kind === 'web') syncTarget('web-target', r.target);
+    else if (r.selection) {
+      syncTarget('assessment-target', r.selection.target); syncTarget('assessment-repository', r.selection.repository_target);
+      syncTarget('assessment-web', r.selection.web_target); syncTarget('assessment-image', r.selection.image_target);
+    }
     const target = $(kind+'-result'); target.className = '';
     const start = `<div class="scanner-summary"><strong>${e(labels[r.state]||r.state)}</strong><span>${e(time(r.created_at))}</span><span>${link(prefixes[kind],r.id,kind==='assessment')}</span></div><p id="${kind}-baseline" class="muted"></p>`;
     if(kind === 'assessment') {

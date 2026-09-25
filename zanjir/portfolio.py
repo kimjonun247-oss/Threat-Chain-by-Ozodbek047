@@ -224,7 +224,10 @@ def derived(taken):
 
     This is exactly what `app.py --register-project` produces, so a project
     added that way appears here without any further configuration. An id known
-    to only one stage is not a portfolio project -- there is nothing to group.
+    to only one stage (an image or a web target registered on its own) is a
+    project too, marked `single_stage`: leaving it out made a scanned image such
+    as alpine or a web target simply absent from the portfolio, which reads as
+    "nothing to see" rather than "only one layer is checked".
     """
     registry = registered_targets()
     groups = {}
@@ -232,11 +235,12 @@ def derived(taken):
         if identifier in taken:
             continue
         stages = {stage: [identifier] for stage, ids in registry.items() if identifier in ids}
-        if len(stages) < 2:
+        if not stages:
             continue
         name = next((p['name'] for p in repo_store.list_profiles() if p['id'] == identifier),
                     next((t['name'] for t in scanners.targets() if t['id'] == identifier), identifier))
-        groups[identifier] = {'name': name, 'owner': '', 'bundled': False, 'derived': True, 'stages': stages}
+        groups[identifier] = {'name': name, 'owner': '', 'bundled': False, 'derived': True, 'stages': stages,
+                              'single_stage': len(stages) == 1}
     return groups
 
 
@@ -304,6 +308,7 @@ def overview():
         scanned = [s for s in stages.values() if s['scanned']]
         result.append({'id': identifier, 'name': meta['name'], 'owner': meta.get('owner', ''),
                        'bundled': meta.get('bundled', False), 'derived': meta.get('derived', False),
+                       'single_stage': meta.get('single_stage', False),
                        'stages': stages, 'unknown_targets': unknown_targets(meta),
                        'gaps': [stage for stage in STAGES if stages[stage]['state'] in ('never_scanned', 'not_registered')],
                        'last_scan': max((s['last_scan'] for s in scanned), default=None)})

@@ -79,6 +79,7 @@ def main():
     print(json.dumps({'pipeline_state': report['state'],
                       'gate': {k: v for k, v in result.items() if k != 'hits'},
                       'incomplete_stages': unfinished,
+                      'coverage_gaps': gate.coverage_gaps(report),
                       'allow_partial': args.allow_partial,
                       'sarif': args.sarif_out}, ensure_ascii=False, indent=2))
     for hit in result['hits']:
@@ -87,7 +88,7 @@ def main():
     if report['state'] == 'failed':
         raise SystemExit(2)
     if unfinished and not args.allow_partial:
-        names = ', '.join(f"{row['kind']}/{row['target']} ({row['state']})" for row in unfinished)
+        names = ', '.join(f"{row['kind']}/{row['target']} ({row['reason']})" for row in unfinished)
         print('Skan to‘liq tugamadi: ' + names + '. Tekshirilmagan narsa "toza" deb o‘tkazilmaydi; '
               'ataylab ruxsat berish uchun --allow-partial.', file=sys.stderr)
         raise SystemExit(2)
@@ -95,4 +96,15 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as error:  # noqa: BLE001
+        # An unexpected crash is "the scan did not run" (2), never "the gate
+        # stopped the build" (1): Python's own exit code for a traceback is 1,
+        # which CI would read as a real finding.
+        import traceback
+        traceback.print_exc()
+        print(json.dumps({'error': f'Kutilmagan xato: {type(error).__name__}: {error}'}, ensure_ascii=False))
+        raise SystemExit(2)

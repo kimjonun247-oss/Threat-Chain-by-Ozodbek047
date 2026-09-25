@@ -153,7 +153,7 @@ def canonical_url(value):
     return f'{parts.scheme}://{authority}{path}'
 
 
-def register(target, url, owner, allow_private=False, authenticated=False, rate_delay_seconds=None):
+def register(target, url, owner, allow_private=False, authenticated=False, rate_delay_seconds=None, replace=False):
     if not isinstance(target, str) or not repo_store.PROFILE_ID.fullmatch(target) or target.startswith('pilot-'):
         raise ValueError('2–40 belgili loyiha ID kerak; pilot- nomlari band.')
     if not isinstance(owner, str) or not 1 <= len(owner.strip()) <= 120 or type(allow_private) is not bool:
@@ -169,10 +169,21 @@ def register(target, url, owner, allow_private=False, authenticated=False, rate_
         # the value itself never is.
         row['auth_variable'] = auth_variable(target)
     # A CLI confirmation records scope; this is not independent proof of ownership.
-    PROFILES.mkdir(parents=True, exist_ok=True)
-    with (PROFILES / (target + '.json')).open('x', encoding='utf-8') as file:
-        json.dump(row, file, ensure_ascii=False, indent=2)
+    path = PROFILES / (target + '.json')
+    if path.exists() and not replace:
+        raise ValueError('Bu nishon ID allaqachon ro‘yxatda. Yangilash uchun “Mavjud bo‘lsa yangilash”ni belgilang '
+                         '(API: "replace": true); ruxsat qaytadan qayd etiladi.')
+    repo_store.write_json(path, row)
     return row
+
+
+def remove(target):
+    """Drop a registration; past reports stay in the history."""
+    path = PROFILES / (str(target) + '.json')
+    if not repo_store.PROFILE_ID.fullmatch(str(target)) or str(target).startswith('pilot-') or not path.is_file():
+        raise ValueError('Bunday ro‘yxatdagi web nishon yo‘q (pilot- nishonlari o‘chirilmaydi).')
+    path.unlink()
+    return {'id': target, 'removed': True, 'note': 'Oldingi hisobotlar tarixda saqlanib qoldi.'}
 
 
 def targets():
@@ -443,10 +454,15 @@ def extract_links(base_path, content_type, body):
         if raw.startswith(('http://', 'https://', '//', 'mailto:', 'tel:', 'javascript:', 'data:')):
             continue
         path = urlsplit(urljoin(base_path, raw)).path or '/'
-        path = path.rstrip('/') or '/'
-        if not re.fullmatch(r'(?:/[A-Za-z0-9._~-]+)*', path) or any(part in {'.', '..'} for part in path.split('/')):
+        core = path.rstrip('/') or '/'
+        if not re.fullmatch(r'(?:/[A-Za-z0-9._~-]+)*', core) or any(part in {'.', '..'} for part in core.split('/')):
             continue
-        links.append(path)
+        # The trailing slash is part of the address: `/files/` and `/files` are
+        # different resources, and on most servers only the first is the
+        # directory. Stripping it turned every directory link into a 404, so a
+        # directory listing linked from the site was never seen. The query string
+        # is still dropped on purpose -- a GET with parameters may change state.
+        links.append(core + '/' if path.endswith('/') and core != '/' else core)
     return links
 
 
@@ -523,6 +539,7 @@ def cookie_findings(collector, pages):
 
 
 FINGERPRINT_HEADERS = ('server', 'x-powered-by', 'x-aspnet-version', 'x-generator')
+VERSION_TOKEN = re.compile(r'\d+(?:\.\d+)+|/\d+')
 
 
 def fingerprint_findings(collector, pages):
@@ -535,6 +552,10 @@ def fingerprint_findings(collector, pages):
         _, headers, _ = cached
         for name in FINGERPRINT_HEADERS:
             value = headers.get(name, '').strip()
+            # `Server: web` or `Server: nginx` names no version; only the headers
+            # that exist to name technology count without a version number.
+            if name == 'server' and not VERSION_TOKEN.search(value):
+                continue
             if value and (name, value) not in seen:
                 seen.add((name, value))
                 result.append(finding('server-fingerprint', 'Server/texnologiya versiyasi sarlavhada oshkor qilingan', 'LOW', path,
@@ -546,6 +567,33 @@ ERROR_PATTERN = re.compile(rb'(?i)(traceback \(most recent|fatal error:|exceptio
                             rb'stack trace:|django\.core\.exceptions|unhandled exception|internal server error.{0,40}(line|file) )')
 
 
+# A stack trace is unmistakable even when the framework answers 200 (debug
+# pages, APIs that wrap errors in a success status). Only these specific shapes
+# count below 500, so documentation that merely mentions "stack trace" does not.
+STRONG_ERROR_PATTERN = re.compile(rb'(traceback \(most recent call last\):\s*\n\s*file "|'
+                                  rb'exception in thread "[^"\n]*" [a-z.]+(exception|error)|'
+                                  rb'\n\s+at [a-z][a-z0-9_.$]+\([a-z0-9_]+\.java:\d+\)|'
+                                  rb'(fatal error|parse error|warning)</b>:.{0,200} on line <b>\d+)', re.IGNORECASE)
+DIRECTORY_LISTING = re.compile(rb'<title>\s*(index of /|directory listing for /)|<h1>\s*(index of /|directory listing for /)',
+                               re.IGNORECASE)
+
+
+def directory_listing_findings(collector, pages):
+    """A crawled page that is an auto-generated directory index (CWE-548).
+
+    Nuclei's dir-listing template probes only the site root; a listing under a
+    linked folder (`/files/`, `/uploads/`) was invisible.
+    """
+    result = []
+    for path in pages:
+        cached = collector.cache.get((path, ()))
+        if cached and 200 <= cached[0] < 300 and DIRECTORY_LISTING.search(cached[2][:4096]):
+            result.append(finding('http-dir-listing', 'Papka tarkibi ochiq ro‘yxat sifatida ko‘rsatiladi', 'MEDIUM', path,
+                                  'Javob avtomatik papka indeksiga mos keladi (fayl nomlari hisobotga kiritilmaydi).',
+                                  'Veb-serverda papka indeksini o‘chiring (nginx: autoindex off; Apache: Options -Indexes).'))
+    return result
+
+
 def error_disclosure_findings(collector, pages):
     result = []
     for path in pages:
@@ -553,7 +601,7 @@ def error_disclosure_findings(collector, pages):
         if not cached:
             continue
         status, _, body = cached
-        if status >= 500 and ERROR_PATTERN.search(body):
+        if (status >= 500 and ERROR_PATTERN.search(body)) or STRONG_ERROR_PATTERN.search(body):
             result.append(finding('error-disclosure', 'Server xatosi ichki texnik tafsilotlarni oshkor qilishi mumkin', 'MEDIUM', path,
                           f'HTTP {status} javobida stek-iz/texnik xato belgilariga o‘xshash matn topildi (qiymat hisobotga kiritilmaydi).',
                           'Ishlab chiqarish muhitida umumiy xato sahifasini qaytaring; texnik tafsilotlarni faqat serverning o‘z logiga yozing.'))
@@ -716,6 +764,7 @@ def execute(profile, rid, event):
         report['findings'] += cookie_findings(collector, pages)
         report['findings'] += fingerprint_findings(collector, pages)
         report['findings'] += error_disclosure_findings(collector, pages)
+        report['findings'] += directory_listing_findings(collector, pages)
         missing_status, _, missing_body = collector.fetch(missing)
         report.update(count=len(report['findings']), progress='Nuclei tanlangan GET qoidalarini bajarmoqda.')
         repo_store.write_json(folder / 'report.json', report)

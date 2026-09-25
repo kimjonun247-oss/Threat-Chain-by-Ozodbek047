@@ -269,6 +269,41 @@ proxy ma'lumotlari operator so'ramaguncha uzatilmaydi).
 
 ---
 
+## F. 2026-09-25 har bir vositani alohida sinash — topilgan va tuzatilgan
+
+Har bir skaner belgilangan to'plamda sinaldi: 30 ta ma'lum zaiflik (5 til) + xavfsiz fayllar,
+10 ta haqiqiy formatdagi soxta sir, Apex, `python:3.9.0-alpine` (to'g'ridan-to'g'ri Trivy bilan
+solishtirildi), Dockerfile/K8s/Terraform, har bir RP qoidasini ishga tushiradigan Compose, zaif va
+tuzatilgan sayt, 9 ta mashhur loyihaning haqiqiy lockfile'i, masofaviy DVWA. Alpine `3.10` → `3.24`.
+
+| # | Muammo | Tuzatish |
+|---|---|---|
+| F1 | Masofaviy git nishoni bilan umumiy tekshiruv, CVE bosqichi va CI gate `KeyError('root')` bilan yiqilardi; gate exit 1 ("to'xtatdi") qaytarardi | `check_target`/`source_for` hamma joyda; kutilmagan xato gate'da exit 2; server har qanday xatoda 500 JSON qaytaradi (ulanishni jim uzmaydi) |
+| F2 | Image/web ID'ni qayta ro'yxatga olish ulanishni javobsiz uzardi; nishonni yangilash/o'chirish yo'q edi | 400 va aniq xabar; `replace: true` bilan yangilash; `POST /api/registry/remove` va oynada "Ro'yxatdan chiqarish" (hisobotlar saqlanadi) |
+| F3 | Real loyihalarda gate doim exit 2: Semgrep o'qiy olmagan Dockerfile yoki saytdagi 500 sahifa "tugamagan" sanalardi | `classify_stage()`: qamrov bo'shlig'i (ko'rsatiladi, to'xtatmaydi) va tugamagan skan (exit 2) ajratildi |
+| F4 | Ko'p hujjatli `pnpm-lock.yaml` o'qilmasdi (vite: 0/1414) | Barcha hujjatlar o'qiladi: 1304 paket + 110 lokal `file:` bo'shliq |
+| F5 | 27 ta topilgan zaiflikdan faqat 16 tasi gate'ni to'xtatardi | Yuqori ta'sirli CWE + qoida muallifining MEDIUM/HIGH ishonchi; PMD xavfsizlik qoidalari; natija 24/30, xavfsiz fayllarda 0 |
+| F6 | Crawler `/files/` → `/files` (404), papka ro'yxati topilmasdi | Oxirgi `/` saqlanadi; yangi `http-dir-listing` tekshiruvi (CWE-548) |
+| F7 | `Server: web` "versiya oshkor" deb belgilanardi | `Server` sarlavhasi faqat versiya raqami bo'lsa |
+| F8 | SARIF'da 5 ta bir xil nomli run, kategoriyasiz; lokal qoida xabari umumiy matn edi | Har run'da `automationDetails.id` va skaner nomi; lokal qoidalar o'z xabari bilan |
+| F9 | OSV ishlamasa CVE sahifasi "0 zaiflik" ko'rsatardi | "Tugallanmadi · N ta paket tekshirilmadi" va qizil ogohlantirish |
+| F10 | Cargo workspace crate'lari crates.io paketi deb sanalardi (ripgrep 11/63) | Registry manbasi bo'lmagan poetry/uv/Cargo yozuvlari — nomli bo'shliq |
+| F11 | Gitleaks DB URL paroli va git tarixidagi sirni topmasdi | `connection-string-password` qoidasi (shablonlar istisno); `gitleaks git` bilan tarix, faqat yangi sirlar qo'shiladi (commit bilan) |
+| F12 | SBOM'da zaifliklar yo'q edi | CycloneDX `vulnerabilities` (85/85, har biri komponentga bog'langan) |
+| F13 | Qoida paketi faqat codeload orqali (bloklansa aniqlik 27/30 → 11/30) | Pinlangan commit git orqali zaxira yo'l bilan olinadi |
+| F14 | Hisobot ochilganda tanlovda boshqa loyiha qolardi | `syncTarget()` barcha bo'limlarda |
+| F15 | Bitta ma'lumotlar bazasi uchun 6 ta RP-005 | Bitta topilma, yetib boradigan barcha xizmatlar ro'yxati bilan |
+| F16 | 200 javobdagi stack trace topilmasdi | Aniq shakllar (Python traceback, Java stek, PHP fatal) har qanday statusda |
+| F17 | Semgrep va paket topmagan holatlar (PHP mysqli SQLi, lxml XXE, Java/Go servlet injeksiyalari, SSTI, prototype pollution) | 11 ta yangi lokal qoida (jami 29); benchmark 30/30, DVWA'da 12 ta PHP topilmasi — hammasi haqiqiy, `impossible.php` toza |
+| F18 | Faqat image/web nishoni bor loyiha portfelda yo'q edi | "Yakka nishon" loyihasi sifatida ko'rinadi |
+| F19 | Kod va Compose bir xil ID'ni ishlata olmasdi; xabar "crapi nomi band" edi | Bir xil ID ruxsat; xabar haqiqiy sababni aytadi |
+
+**Upstream chegaralar (vosita o'zida yo'q, qayd etildi):** PMD'ning ApexOpenRedirect/ApexCRUDViolation
+sinov misolida ishlamadi; fayllararo XSS (DVWA `$html` keyinroq boshqa faylda chiqariladi) Semgrep OSS
+taint tahlili doirasidan tashqarida; sayoz (depth 1) masofaviy klonda git tarixi faqat oxirgi commit.
+
+---
+
 ## Qolgan holat — 2026-09-25, 0.7.0
 
 Ro'yxatdagi **barcha kod bandlari yopildi** (A1–A28, B1–B7, C1–C6, D1–D3). Qolgani ikkitasi,

@@ -39,7 +39,11 @@ def execute(rid):
     try:
         report=read(rid)
         report['state']='running';progress('Kutubxona ro‘yxati yig‘ilmoqda')
-        collected=inventory.collect(scanners.target_root(report['target']))
+        # A remote repository is cloned for this scan only and removed after the
+        # inventory is read; the manifests are copied into inventory.json first.
+        with scanners.source_for(report['target']) as (root,provenance):
+            collected=inventory.collect(root)
+        report['source']=provenance
         repo_store.write_json(folder/'inventory.json',collected)
         report.update(inventory_sha256=collected['sha256'],coverage={k:v for k,v in collected.items() if k!='packages'})
         if not collected['packages']:
@@ -75,7 +79,7 @@ def execute(rid):
 
 
 def start(target,background=True):
-    scanners.target_root(target)
+    scanners.check_target(target)
     if not LOCK.acquire(blocking=False):raise ValueError('Boshqa kutubxona tekshiruvi davom etmoqda.')
     rid=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S')+'-'+uuid.uuid4().hex[:8]
     CANCEL[rid]=threading.Event()

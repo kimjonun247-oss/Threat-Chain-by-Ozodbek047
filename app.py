@@ -51,7 +51,35 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass
 
+    def do_GET(self):
+        self._guard(self._get)
+
+    def do_POST(self):
+        self._guard(self._post)
+
+    def _guard(self, handler):
+        """Answer every request, even when a handler raises something unexpected.
+
+        An uncaught exception used to close the connection with no response at
+        all (re-registering an existing image id, a remote target in the
+        assessment form): the browser just hung and the operator saw nothing.
+        The traceback still goes to the server log.
+        """
+        self._responded = False
+        try:
+            handler()
+        except Exception as error:  # noqa: BLE001 -- the last line of defence
+            import traceback
+            traceback.print_exc()
+            if not self._responded:
+                try:
+                    self.send(500, {'error': f'Server ichki xatosi ({type(error).__name__}). '
+                                             'Tafsilot server logida; so‘rovni tekshirib qayta urinib ko‘ring.'})
+                except OSError:
+                    pass
+
     def send(self, status, data, mime="application/json; charset=utf-8", attachment=None):
+        self._responded = True
         body = json.dumps(data, ensure_ascii=False).encode("utf-8") if isinstance(data, (dict, list)) else data
         self.send_response(status)
         self.send_header("Content-Type", mime)
@@ -80,7 +108,7 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return True
 
-    def do_GET(self):
+    def _get(self):
         if not self.local_request():
             return
         path = urlsplit(self.path).path
@@ -298,7 +326,7 @@ class Handler(BaseHTTPRequestHandler):
         mime = {".js": "text/javascript", ".css": "text/css", ".html": "text/html", ".svg": "image/svg+xml"}[file.suffix]
         return self.send(200, file.read_bytes(), mime + "; charset=utf-8")
 
-    def do_POST(self):
+    def _post(self):
         if not self.local_request():
             return
         if self.headers.get_content_type() != "application/json":
@@ -338,14 +366,24 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(400, {'error': str(error)})
         if path.startswith('/api/registry/'):
             try:
-                if path == '/api/registry/image' and {'id', 'reference'} <= set(payload) <= {'id', 'reference', 'name', 'auth'}:
+                if path == '/api/registry/image' and {'id', 'reference'} <= set(payload) <= {'id', 'reference', 'name', 'auth', 'replace'}:
                     return self.send(200, images.register(payload['id'], payload['reference'],
                                                           payload.get('name') or None,
-                                                          auth=payload.get('auth') or 'none'))
-                if path == '/api/registry/web' and {'id', 'url', 'owner'} <= set(payload) <= {'id', 'url', 'owner', 'authenticated', 'rate_delay'}:
+                                                          auth=payload.get('auth') or 'none',
+                                                          replace=payload.get('replace') is True))
+                if path == '/api/registry/web' and {'id', 'url', 'owner'} <= set(payload) <= {'id', 'url', 'owner', 'authenticated', 'rate_delay', 'replace'}:
                     return self.send(200, webscan.register(payload['id'], payload['url'], payload['owner'],
                                                            authenticated=bool(payload.get('authenticated')),
-                                                           rate_delay_seconds=payload.get('rate_delay')))
+                                                           rate_delay_seconds=payload.get('rate_delay'),
+                                                           replace=payload.get('replace') is True))
+                if path == '/api/registry/remove' and set(payload) == {'kind', 'id'}:
+                    # Removes the registration only. Reports stay (they are evidence)
+                    # and no file of the project itself is ever touched.
+                    removers = {'image': images.remove, 'web': webscan.remove,
+                                'code': code_targets.remove, 'repository': repo_store.remove_project}
+                    if payload['kind'] not in removers:
+                        raise ValueError('kind: image, web, code yoki repository.')
+                    return self.send(200, removers[payload['kind']](payload['id']))
                 if path == '/api/registry/remote' and {'id', 'url'} <= set(payload) <= {'id', 'url', 'ref', 'name'}:
                     # A git URL is a validated value, not a filesystem path: the
                     # boundary that keeps /api/registry/project behind a flag

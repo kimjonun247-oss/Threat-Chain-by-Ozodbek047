@@ -21,6 +21,9 @@ birga ochiq aytiladi):
 Ishlatish:  python3 setup_semgrep_rules.py [--force]
 """
 import argparse
+import os
+import subprocess
+import tempfile
 import hashlib
 import io
 import json
@@ -65,12 +68,41 @@ def wanted(rel):
 
 
 def download():
+    """The pinned archive: codeload first, then the same commit over git.
+
+    codeload.github.com is blocked on some networks where git to github.com
+    works; without the pack the code scan found 11 of 30 benchmark
+    vulnerabilities instead of 27. Fetching the pinned commit by id is as exact
+    as the archive: git verifies the content against the commit hash.
+    """
     request = urllib.request.Request(ARCHIVE_URL, headers={'User-Agent': 'threatchain-setup'})
-    with urllib.request.urlopen(request, context=_SSL_CONTEXT, timeout=300) as response:
-        raw = response.read(MAX_ARCHIVE + 1)
+    try:
+        with urllib.request.urlopen(request, context=_SSL_CONTEXT, timeout=300) as response:
+            raw = response.read(MAX_ARCHIVE + 1)
+    except OSError as error:
+        print(f'Arxiv yuklanmadi ({error}); pinlangan commit git orqali olinmoqda.', file=sys.stderr)
+        raw = download_with_git()
     if len(raw) > MAX_ARCHIVE:
         raise ValueError('Arxiv kutilganidan katta; o‘rnatish to‘xtatildi.')
     return raw
+
+
+def download_with_git():
+    git = shutil.which('git')
+    if not git:
+        raise ValueError('Arxiv yuklanmadi va git topilmadi; qoida paketini olishning boshqa yo‘li yo‘q.')
+    with tempfile.TemporaryDirectory(prefix='semgrep-rules-') as temp:
+        env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}
+        def run(*args):
+            done = subprocess.run([git, '-C', temp, *args], capture_output=True, env=env, timeout=600)
+            if done.returncode != 0:
+                raise ValueError('git: ' + done.stderr.decode('utf-8', 'replace').strip()[-300:])
+            return done.stdout
+        run('init', '-q')
+        run('-c', 'core.hooksPath=' + temp, 'fetch', '-q', '--depth', '1', f'https://github.com/{REPO}', COMMIT)
+        if run('rev-parse', 'FETCH_HEAD').decode().strip() != COMMIT:
+            raise ValueError('git boshqa commit qaytardi; o‘rnatish to‘xtatildi.')
+        return run('archive', '--format=tar.gz', f'--prefix=semgrep-rules-{COMMIT}/', 'FETCH_HEAD')
 
 
 def extract(raw):

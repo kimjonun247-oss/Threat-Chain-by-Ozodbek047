@@ -1,6 +1,6 @@
 import unittest
 
-from zanjir.ci_gate import evaluate, gate_relevant, incomplete_stages
+from zanjir.ci_gate import classify_stage, coverage_gaps, evaluate, gate_relevant, incomplete_stages
 
 
 class CiGateTests(unittest.TestCase):
@@ -108,6 +108,40 @@ class IncompleteStageTests(unittest.TestCase):
         report = {'stages': [{'kind': 'dependencies', 'target': 'app', 'state': 'no_supported_packages'},
                              {'kind': 'code', 'target': 'app', 'state': 'completed'}]}
         self.assertEqual(incomplete_stages(report), [])
+
+
+class GapVersusIncompleteTests(unittest.TestCase):
+    """A partial stage is either a coverage gap (shown, not blocking) or a check
+    that did not happen (exit 2). Treating both as incomplete made the gate exit
+    2 on DVWA (Semgrep cannot parse a Dockerfile) and on any site with a 500 page."""
+
+    def stage(self, kind, child):
+        return {'kind': kind, 'target': 't', 'state': 'partial', 'report': child}
+
+    def test_code_with_unparsed_files_is_a_gap_but_a_failed_tool_is_not(self):
+        gap = self.stage('code', {'tools': {'semgrep': {'state': 'partial'}, 'gitleaks': {'state': 'completed'}}})
+        broken = self.stage('code', {'tools': {'semgrep': {'state': 'failed'}, 'gitleaks': {'state': 'completed'}}})
+        self.assertEqual(classify_stage(gap)[0], 'gap')
+        self.assertEqual(classify_stage(broken)[0], 'incomplete')
+
+    def test_unreachable_osv_is_incomplete_and_an_unsupported_manifest_is_a_gap(self):
+        down = self.stage('dependencies', {'query_errors': [{'reason': 'osv_query_incomplete'}],
+                                           'feeds': {'kev': {'state': 'available'}}})
+        gap = self.stage('dependencies', {'query_errors': [], 'feeds': {'kev': {'state': 'available'}}})
+        self.assertEqual(classify_stage(down)[0], 'incomplete')
+        self.assertEqual(classify_stage(gap)[0], 'gap')
+
+    def test_web_error_page_is_a_gap_but_unrequested_paths_are_not(self):
+        gap = self.stage('web', {'tool': {'name': 'nuclei'}, 'errors': [], 'coverage': {'unvisited_paths': []}})
+        missing = self.stage('web', {'tool': {'name': 'nuclei'}, 'errors': [],
+                                     'coverage': {'unvisited_paths': ['/.env']}})
+        self.assertEqual(classify_stage(gap)[0], 'gap')
+        self.assertEqual(classify_stage(missing)[0], 'incomplete')
+
+    def test_gaps_are_listed_separately(self):
+        report = {'stages': [self.stage('code', {'tools': {'semgrep': {'state': 'partial'}}})]}
+        self.assertEqual(incomplete_stages(report), [])
+        self.assertEqual(len(coverage_gaps(report)), 1)
 
 
 if __name__ == '__main__':

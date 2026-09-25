@@ -5,11 +5,13 @@ an overall security percentage (see README), and a CI gate stays just as
 honest -- it fails on concrete, named conditions, not an opaque number.
 
 "Gate-relevant" findings are:
-  - code: every Gitleaks match (a literal secret in tracked source is never
-    acceptable to merge, whatever else the scan found) and Semgrep findings the
-    rule's own author marked ERROR. Semgrep WARNING/INFO are deliberately left
-    out -- on a real repository they number in the hundreds and a gate that
-    always fails is a gate nobody reads.
+  - code: every Gitleaks match, including secrets found only in git history (a
+    literal secret is never acceptable to merge, whatever else the scan found);
+    Semgrep/PMD findings marked ERROR; and WARNING findings of a high-impact
+    weakness class (injection, deserialization, XXE, SSRF, traversal, XSS) whose
+    rule author rates their confidence MEDIUM/HIGH -- see code_gate_reason().
+    Audit rules and LOW confidence stay out: on a real repository they number in
+    the hundreds and a gate that always fails is a gate nobody reads.
   - repository (Compose/Nginx) findings at level == 'error' (e.g. RP-004, RP-007, RP-008 --
     the chain rules whose direct consequence is auth bypass or host-level compromise)
   - dependencies / images / iac findings with severity CRITICAL or HIGH
@@ -49,6 +51,50 @@ def hit(stage, finding, rule_id, subject, detail):
             'severity_scale': triage.severity_of(finding)}
 
 
+# Weakness classes where one confirmed instance is remote code execution, data
+# theft or a full auth bypass: injection of every kind, deserialization, XXE,
+# SSRF, path traversal/inclusion, XSS.
+HIGH_IMPACT_CWES = {22, 23, 73, 77, 78, 79, 89, 90, 91, 94, 95, 96, 98, 502, 611, 643, 917, 918, 1336}
+
+
+def cwe_numbers(finding):
+    numbers = set()
+    for value in finding.get('cwe_ids') or []:
+        try:
+            numbers.add(int(str(value).upper().replace('CWE-', '')))
+        except ValueError:
+            continue
+    return numbers
+
+
+def code_gate_reason(finding):
+    """Why a code finding stops the build, or '' when it does not.
+
+    Semgrep's severity alone missed most of what matters: in the 30-case
+    benchmark 27 vulnerabilities were found but only 16 were ERROR -- Java
+    deserialization, Go SQL injection, Python XSS/SSTI and PMD's SOQL injection
+    were all WARNING. A high-impact CWE now counts when the rule author rates
+    their own confidence MEDIUM or HIGH (registry rules carry that metadata);
+    `audit` rules and LOW confidence stay leads for a human, so the gate does
+    not turn red on every `subprocess` call. PMD's security rules have no
+    confidence field and are specific enough to count on their CWE alone.
+    """
+    tool = finding.get('tool')
+    if tool == 'gitleaks':
+        return 'Gitleaks'
+    severity = str(finding.get('severity', '')).upper()
+    if severity == 'ERROR':
+        return f'{"PMD" if tool == "pmd" else "Semgrep"} ERROR'
+    if severity == 'INFO' or not (cwe_numbers(finding) & HIGH_IMPACT_CWES):
+        return ''
+    if tool == 'pmd':
+        return 'PMD xavfsizlik qoidasi · yuqori ta’sirli CWE'
+    meta = finding.get('rule_meta') or {}
+    if meta.get('subcategory') == 'audit' or meta.get('confidence') not in ('medium', 'high'):
+        return ''
+    return f'Semgrep · yuqori ta’sirli CWE · ishonch {meta["confidence"].upper()}'
+
+
 def gate_relevant(report):
     hits = []
     for stage in report.get('stages', []):
@@ -58,9 +104,9 @@ def gate_relevant(report):
         kind = stage['kind']
         for f in child.get('findings') or []:
             if kind == 'code':
-                if f.get('tool') == 'gitleaks' or str(f.get('severity', '')).upper() == 'ERROR':
-                    hits.append(hit(kind, f, f.get('rule_id'), f.get('path'),
-                                    'Gitleaks' if f.get('tool') == 'gitleaks' else 'Semgrep ERROR'))
+                why = code_gate_reason(f)
+                if why:
+                    hits.append(hit(kind, f, f.get('rule_id'), f.get('path'), why))
             elif kind == 'repository' and f.get('level') == 'error':
                 hits.append(hit(kind, f, f.get('rule_id'), f.get('service_id'), f.get('title')))
             elif kind in ('dependencies', 'images') and str(f.get('severity', '')).upper() in SEVERE:
@@ -79,21 +125,67 @@ def gate_relevant(report):
     return hits
 
 
-def incomplete_stages(report):
-    """Selected stages that did not finish -- a failed, partial or cancelled run.
+def classify_stage(stage):
+    """('finished' | 'gap' | 'incomplete', reason) for one selected stage.
 
-    'no_supported_packages' (see pipeline.FINISHED_STAGE_STATES) is a finished
-    dependency stage that found no lockfile: a coverage gap the report states
-    plainly, not a scan that broke half way.
+    A scanner reports `partial` for two different things, and the gate must not
+    treat them alike:
 
-    A partial dependency stage is one where OSV could not be reached for some
-    packages; counting its findings and passing would turn "the advisory database
-    was down" into "no known vulnerabilities". The gate therefore treats such a
-    run like a scan that did not finish (exit 2), unless the operator opts in.
+    - a coverage gap: the scan ran to the end but some input could not be read
+      (a Dockerfile Semgrep has no parser for, an unsupported manifest, a page
+      that answered 500). Real repositories almost always have one; failing the
+      build on it made the gate exit 2 on DVWA and on any site with an error page.
+    - an incomplete scan: the check itself did not happen (a tool failed, OSV was
+      unreachable, the web target could not be fully requested, the image had no
+      coverage or a stale database). Passing then would turn "not checked" into
+      "clean", so the gate stops with exit 2.
     """
-    return [{'kind': s['kind'], 'target': s['target'], 'state': s.get('state')}
-            for s in report.get('stages', [])
-            if s.get('target') and s.get('state') not in FINISHED_STAGE_STATES]
+    state = stage.get('state')
+    child = stage.get('report') or {}
+    if state in FINISHED_STAGE_STATES:
+        return 'finished', ''
+    if state != 'partial' or not child:
+        return 'incomplete', f'holat: {state}'
+    kind = stage.get('kind')
+    if kind == 'code':
+        failed = sorted(name for name, tool in (child.get('tools') or {}).items() if tool.get('state') == 'failed')
+        if failed:
+            return 'incomplete', 'skaner ishlamadi: ' + ', '.join(failed)
+        return 'gap', 'ayrim fayllarni skaner o‘qiy olmadi (qamrov bo‘shlig‘i)'
+    if kind == 'dependencies':
+        kev = ((child.get('feeds') or {}).get('kev') or {}).get('state')
+        if child.get('query_errors'):
+            return 'incomplete', f"{len(child['query_errors'])} ta paket OSV’da tekshirilmadi"
+        if kev not in (None, 'available'):
+            return 'incomplete', 'CISA KEV ro‘yxati olinmadi'
+        return 'gap', 'qo‘llanmaydigan manifest yoki lockfile yo‘q (qamrov bo‘shlig‘i)'
+    if kind == 'web':
+        coverage = child.get('coverage') or {}
+        if child.get('errors') or coverage.get('unvisited_paths') or coverage.get('truncated_responses') \
+                or not child.get('tool'):
+            return 'incomplete', 'nishonning bir qismi so‘ralmadi yoki Nuclei ishlamadi'
+        return 'gap', 'odatdan tashqari javoblar (5xx, 401/403, yo‘naltirish) — qamrov bo‘shlig‘i'
+    return 'incomplete', f'{kind} bosqichi to‘liq tugamadi'
+
+
+def incomplete_stages(report):
+    """Selected stages whose check did not actually happen -- see classify_stage.
+
+    A partial dependency stage because OSV could not be reached is here; a stage
+    that ran to the end with an unreadable file is a gap (coverage_gaps), shown
+    but not blocking.
+    """
+    rows = []
+    for s in report.get('stages', []):
+        if s.get('target') and classify_stage(s)[0] == 'incomplete':
+            rows.append({'kind': s['kind'], 'target': s['target'], 'state': s.get('state'),
+                         'reason': classify_stage(s)[1]})
+    return rows
+
+
+def coverage_gaps(report):
+    return [{'kind': s['kind'], 'target': s['target'], 'reason': classify_stage(s)[1]}
+            for s in report.get('stages', []) if s.get('target') and classify_stage(s)[0] == 'gap']
 
 
 def evaluate(report, allow=0, baseline=None, fail_on='any', respect_triage=False):

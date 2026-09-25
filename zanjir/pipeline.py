@@ -73,7 +73,9 @@ def validate(payload):
     if not any(payload[k] for k in fields):
         raise ValueError('Kamida bitta manba yoki nishonni tanlang.')
     if payload['target']:
-        scanners.target_root(payload['target'])
+        # check_target, not target_root: a remote repository has no local root
+        # until a stage clones it, and validating must not clone anything.
+        scanners.check_target(payload['target'])
     if payload['web_target']:
         webscan.target_for(payload['web_target'])
     if payload['image_target'] and payload['image_target'] not in {t['id'] for t in images.targets()}:
@@ -81,7 +83,7 @@ def validate(payload):
     if payload['repository_target']:
         repo_store.profile_for(payload['repository_target'])
     if payload.get('iac_target'):
-        scanners.target_root(payload['iac_target'])
+        scanners.check_target(payload['iac_target'])
     if (payload['web_target'] or payload['image_target']) and not payload['online']:
         raise ValueError('Web/image uchun online rejimni belgilang.')
 

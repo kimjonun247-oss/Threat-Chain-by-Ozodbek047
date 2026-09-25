@@ -240,7 +240,7 @@ class OutputContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp, \
              patch.object(dependencies, 'RUNS', Path(temp)), \
              patch.object(dependencies, 'start', return_value=fake) as start, \
-             patch.object(scanners, 'target_root', return_value=Path(temp)), \
+             patch.object(scanners, 'check_target', return_value=None), \
              patch.object(sys, 'argv', ['check_dependencies.py', '--target', 'validation-osv-control']), \
              contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             with self.assertRaises(SystemExit) as caught:
