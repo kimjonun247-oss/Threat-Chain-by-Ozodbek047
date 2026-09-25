@@ -1,0 +1,49 @@
+# ThreatChain o'zini uchala OS da tekshiradi — GitHub Actions namunasi.
+#
+# ThreatChain omborining o'z `.github/workflows/` papkasiga qo'yiladi (tekshiriladigan
+# loyihaga emas — buning uchun github-actions.yml bor). Windows tomoni hozircha faqat
+# macOS'dan yo'l mantiqi va binar turi bo'yicha tekshirilgan; bu ish oqimi uni haqiqiy
+# Windows mashinasida ishga tushiradi va natijani artefakt sifatida saqlaydi.
+#
+# Har bir OS da verify_platform.py:
+#   - to'rtta vositani ishga tushiradi (Semgrep, Gitleaks, Trivy, Nuclei; PMD ixtiyoriy),
+#   - unit testlarni o'tkazadi,
+#   - bundled chain-demo ustida haqiqiy kod skani, RP-001..008 va SX-001 zanjirini,
+#   - haqiqiy Nuclei nazorat sinovini va CI gate chiqish kodlarini tekshiradi.
+# Docker va jonli web nishon kerak emas.
+
+name: ThreatChain self-test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  platform:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-java@v4          # PMD (Apex) uchun
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Vositalarni o'rnatish
+        run: |
+          python -m pip install --upgrade pip certifi
+          python setup_all.py
+      - name: Platforma tekshiruvi
+        run: python verify_platform.py
+      - name: Natijani saqlash
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-${{ matrix.os }}
+          path: validation-runs/platform-*.json

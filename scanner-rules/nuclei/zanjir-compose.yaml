@@ -1,0 +1,23 @@
+id: zanjir-compose
+info:
+  name: Ochiq Docker Compose konfiguratsiyasi
+  author: zanjir
+  severity: medium
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/docker-compose.yml"
+      - "{{BaseURL}}/compose.yaml"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200, 206]
+      - type: regex
+        part: body
+        regex: ['(?m)^services:\s*$', '(?m)^\s+(image|build):\s*\S+']
+        condition: and
+      - type: word
+        part: body
+        words: ['<html', '<body']
+        negative: true
+

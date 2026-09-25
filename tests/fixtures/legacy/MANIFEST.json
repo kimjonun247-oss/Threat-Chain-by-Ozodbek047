@@ -1,0 +1,206 @@
+{
+ "assessment-newest.json": {
+  "stage": "assessment",
+  "source": "assessment-runs/20260922T041122-437485b3/report.json",
+  "report_id": "20260922T041122-437485b3",
+  "created_at": "2026-09-22T04:11:22.597417+00:00",
+  "state": "partial",
+  "changes": [
+   "['coverage', 'errors', 'findings', 'gaps', 'packages', 'suppressed'] lists cut to 3 entries",
+   "absolute home paths replaced",
+   "owner names replaced"
+  ]
+ },
+ "assessment-oldest.json": {
+  "stage": "assessment",
+  "source": "assessment-runs/20260914T042621-8a76f693/report.json",
+  "report_id": "20260914T042621-8a76f693",
+  "created_at": "2026-09-14T04:26:21.527074+00:00",
+  "state": "partial",
+  "changes": [
+   "['coverage', 'errors', 'findings', 'gaps', 'packages', 'suppressed'] lists cut to 3 entries",
+   "absolute home paths replaced",
+   "owner names replaced"
+  ]
+ },
+ "code-newest.json": {
+  "stage": "code",
+  "source": "scanner-runs/20260922T041122-6c3639a9/report.json",
+  "report_id": "20260922T041122-6c3639a9",
+  "created_at": "2026-09-22T04:11:22.599904+00:00",
+  "state": "completed",
+  "changes": [
+   "['coverage', 'errors', 'findings', 'gaps', 'packages', 'suppressed'] lists cut to 3 entries",
+   "absolute home paths replaced",
+   "owner names replaced"
+  ]
+ },
+ "code-oldest.json": {
+  "stage": "code",
+  "source": "scanner-runs/20260910T145235-1be779a8/report.json",
+  "report_id": "20260910T145235-1be779a8",
+  "created_at": "2026-09-10T14:52:35.924803+00:00",
+  "state": "partial",
+  "changes": [
+   "['coverage', 'errors', 'findings', 'gaps', 'packages', 'suppressed'] lists cut to 3 entries",
+   "absolute home paths replaced",
+   "owner names replaced"
+  ]
+ },
+ "code-richest.json": {
+  "stage": "code",
+  "source": "scanner-runs/20260918T043158-7bef5bae/report.json",
+  "report_id": "20260918T043158-7bef5bae",
+  "created_at": "2026-09-18T04:31:58.885731+00:00",
+  "state": "partial",
+  "changes": [
+   "['coverage', 'errors', 'findings', 'gaps', 'packages', 'suppressed'] lists cut to 3 entries",
+   "absolute home paths replaced",
+   "owner names replaced"
+  ]
+ },
+ "dependencies-newest.json": {
+  "stage": "dependencies",
+  "source": "dependency-runs/20260922T041122-edd3b194/report.json",
+  "report_id": "20260922T041122-edd3b194",
+  "created_at": "2026-09-22T04:11:22.600018+00:00",
+  "state": "no_supported_packages",
+  "changes": [
+   "['coverage', 'errors', 'findings', 'gaps', 'packages', 'suppressed'] lists cut to 3 entries",
+   "absolute home paths replaced",
+   "owner names replaced"
+  ]
+ },
+ "dependencies-oldest.json": {
+  "stage": "dependencies",
+  "source": "dependency-runs/20260913T022122-e7182066/report.json",
+  "report_id": "20260913T022122-e7182066",
+  "created_at": "2026-09-13T02:21:22.572463+00:00",
+  "state": "inventory_only",
+  "changes": [
+   "['coverage', 'errors', 'findings', 'gaps', 'packages', 'suppressed'] lists cut to 3 entries",
+   "absolute home paths replaced",
+   "owner names replaced"
+  ]
+ },
+ "dependencies-richest.json": {
+  "stage": "dependencies",
+  "source": "dependency-runs/20260913T022146-2d530bc8/report.json",
+  "report_id": "20260913T022146-2d530bc8",
+  "created_at": "2026-09-13T02:21:46.804431+00:00",
+  "state": "partial",
+  "changes": [
+   "['coverage', 'errors', 'findings', 'gaps', 'packages', 'suppressed'] lists cut to 3 entries",
+   "absolute home paths replaced",
+   "owner names replaced"
+  ]
+ },
+ "iac-newest.json": {
+  "stage": "iac",
+  "source": "iac-runs/20260923T104241-2ca6cca8/report.json",
+  "report_id": "20260923T104241-2ca6cca8",
+  "created_at": "2026-09-23T10:42:41.488476+00:00",
+  "state": "completed",
+  "changes": [
+   "['coverage', 'errors', 'findings', 'gaps', 'packages', 'suppressed'] lists cut to 3 entries",
+   "absolute home paths replaced",
+   "owner names replaced"
+  ]
+ },
+ "iac-oldest.json": {
+  "stage": "iac",
+  "source": "iac-runs/20260923T101124-eb9668d8/report.json",
+  "report_id": "20260923T101124-eb9668d8",
+  "created_at": "2026-09-23T10:11:24.057675+00:00",
+  "state": "completed",
+  "changes": [
+   "['coverage', 'errors', 'findings', 'gaps', 'packages', 'suppressed'] lists cut to 3 entries",
+   "absolute home paths replaced",
+   "owner names replaced"
+  ]
+ },
+ "images-newest.json": {
+  "stage": "images",
+  "source": "image-runs/20260918T125026-c51325f9/report.json",
+  "report_id": "20260918T125026-c51325f9",
+  "created_at": "2026-09-18T12:50:26.812954+00:00",
+  "state": "completed",
+  "changes": [
+   "['coverage', 'errors', 'findings', 'gaps', 'packages', 'suppressed'] lists cut to 3 entries",
+   "absolute home paths replaced",
+   "owner names replaced"
+  ]
+ },
+ "images-oldest.json": {
+  "stage": "images",
+  "source": "image-runs/20260913T023347-88b8a7b7/report.json",
+  "report_id": "20260913T023347-88b8a7b7",
+  "created_at": "2026-09-13T02:33:47.377981+00:00",
+  "state": "completed",
+  "changes": [
+   "['coverage', 'errors', 'findings', 'gaps', 'packages', 'suppressed'] lists cut to 3 entries",
+   "absolute home paths replaced",
+   "owner names replaced"
+  ]
+ },
+ "repository-newest.json": {
+  "stage": "repository",
+  "source": "repository-runs/20260922T041122-faeb6806.json",
+  "report_id": "20260922T041122-faeb6806",
+  "created_at": "2026-09-22T04:11:22.604119+00:00",
+  "state": null,
+  "changes": [
+   "['coverage', 'errors', 'findings', 'gaps', 'packages', 'suppressed'] lists cut to 3 entries",
+   "absolute home paths replaced",
+   "owner names replaced"
+  ]
+ },
+ "repository-oldest.json": {
+  "stage": "repository",
+  "source": "repository-runs/20260909T103006-620e5d43.json",
+  "report_id": "20260909T103006-620e5d43",
+  "created_at": "2026-09-09T10:30:06.365447+00:00",
+  "state": null,
+  "changes": [
+   "['coverage', 'errors', 'findings', 'gaps', 'packages', 'suppressed'] lists cut to 3 entries",
+   "absolute home paths replaced",
+   "owner names replaced"
+  ]
+ },
+ "web-newest.json": {
+  "stage": "web",
+  "source": "web-runs/20260917T065009-af067fd4/report.json",
+  "report_id": "20260917T065009-af067fd4",
+  "created_at": "2026-09-17T06:50:09.554196+00:00",
+  "state": "partial",
+  "changes": [
+   "['coverage', 'errors', 'findings', 'gaps', 'packages', 'suppressed'] lists cut to 3 entries",
+   "absolute home paths replaced",
+   "owner names replaced"
+  ]
+ },
+ "web-oldest.json": {
+  "stage": "web",
+  "source": "web-runs/20260914T042711-d725396c/report.json",
+  "report_id": "20260914T042711-d725396c",
+  "created_at": "2026-09-14T04:27:11.138263+00:00",
+  "state": "failed",
+  "changes": [
+   "['coverage', 'errors', 'findings', 'gaps', 'packages', 'suppressed'] lists cut to 3 entries",
+   "absolute home paths replaced",
+   "owner names replaced"
+  ]
+ },
+ "web-richest.json": {
+  "stage": "web",
+  "source": "web-runs/20260916T020908-57f342e4/report.json",
+  "report_id": "20260916T020908-57f342e4",
+  "created_at": "2026-09-16T02:09:08.829209+00:00",
+  "state": "partial",
+  "changes": [
+   "['coverage', 'errors', 'findings', 'gaps', 'packages', 'suppressed'] lists cut to 3 entries",
+   "absolute home paths replaced",
+   "owner names replaced"
+  ]
+ }
+}

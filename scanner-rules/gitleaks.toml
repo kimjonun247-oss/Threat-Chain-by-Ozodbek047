@@ -1,0 +1,3 @@
+title = "Zanjir local Gitleaks built-in rules"
+[extend]
+useDefault = true

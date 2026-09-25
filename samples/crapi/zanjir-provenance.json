@@ -1,0 +1,19 @@
+{
+  "repository": "https://github.com/OWASP/crAPI",
+  "commit": "700f03d12a392d9e408260b4beae72ed02a4a1a4",
+  "branch": "main",
+  "commit_date": "2025-09-22T14:58:30Z",
+  "archive_sha256": "a698a97d1d6eb1117ea8d6c7fa66e7e943851de06fe7268500fd8498ca3c4dc5",
+  "retrieved_at": "2026-09-09",
+  "execution": "source-only; no repository code executed",
+  "subset": [
+    "deploy/docker/docker-compose.yml",
+    "deploy/docker/.env",
+    "services/web/nginx.ssl.conf.template",
+    "services/web/nginx.conf.template",
+    "services/web/nginx-wrapper.sh",
+    "services/web/Dockerfile",
+    "LICENSE.md"
+  ],
+  "note": "Unmodified selected source files, not the full repository and not a runnable crAPI deployment."
+}

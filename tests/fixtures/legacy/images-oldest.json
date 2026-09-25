@@ -1,0 +1,88 @@
+{
+ "schema_version": 1,
+ "id": "20260913T023347-88b8a7b7",
+ "target": "pilot-crapi-web",
+ "reference": "crapi/crapi-web@sha256:b27d246c646bd33898e7d1d2095b6e7576c0993a7b81a73aa7386929493d7151",
+ "created_at": "2026-09-13T02:33:47.377981+00:00",
+ "state": "completed",
+ "findings": [
+  {
+   "id": "886b30bc2597ea3d9220cabf",
+   "package": "libcrypto3",
+   "version": "3.5.1-r0",
+   "advisory_id": "CVE-2026-31789",
+   "severity": "CRITICAL",
+   "fixed_version": "3.5.6-r0",
+   "title": "openssl: OpenSSL: Heap buffer overflow on 32-bit systems from large X.509 certificate processing",
+   "target": "crapi/crapi-web@sha256:b27d246c646bd33898e7d1d2095b6e7576c0993a7b81a73aa7386929493d7151 (alpine 3.22.1)",
+   "type": "alpine",
+   "state": "image_advisory_match",
+   "source": "Alpine Secdb"
+  },
+  {
+   "id": "afa60aa51c7b0fb862fb0ed1",
+   "package": "libssl3",
+   "version": "3.5.1-r0",
+   "advisory_id": "CVE-2026-31789",
+   "severity": "CRITICAL",
+   "fixed_version": "3.5.6-r0",
+   "title": "openssl: OpenSSL: Heap buffer overflow on 32-bit systems from large X.509 certificate processing",
+   "target": "crapi/crapi-web@sha256:b27d246c646bd33898e7d1d2095b6e7576c0993a7b81a73aa7386929493d7151 (alpine 3.22.1)",
+   "type": "alpine",
+   "state": "image_advisory_match",
+   "source": "Alpine Secdb"
+  },
+  {
+   "id": "968430d1ae684dfe52093ff6",
+   "package": "c-ares",
+   "version": "1.34.5-r0",
+   "advisory_id": "CVE-2026-33630",
+   "severity": "HIGH",
+   "fixed_version": "1.34.8-r0",
+   "title": "c-ares: c-ares: Use-after-free / double-free in query-completion handling",
+   "target": "crapi/crapi-web@sha256:b27d246c646bd33898e7d1d2095b6e7576c0993a7b81a73aa7386929493d7151 (alpine 3.22.1)",
+   "type": "alpine",
+   "state": "image_advisory_match",
+   "source": "Alpine Secdb"
+  }
+ ],
+ "count": 169,
+ "scope": "Public Docker Hub image, linux/amd64, 1 GB gacha. OS va aniqlangan til paketlari. Jarayon ishga tushirilmaydi.",
+ "limits": "Image topilmasi amaliy hujum tasdig‘i emas. Image digest ishlayotgan deploy va source commit bilan alohida bog‘lanadi. Qamrovga kirmagan paketlar bo‘lishi mumkin.",
+ "data_policy": "Public registry image va zaiflik bazalari yuklanadi. Lokal kod va Docker login ma’lumotlari yuborilmaydi.",
+ "progress": "Image tahlili tugadi; amaliy ta’sirini mutaxassis tekshiradi",
+ "tool": {
+  "name": "Trivy",
+  "version": "0.74.0",
+  "binary_sha256": "4c532e1f28f53282dc364671e87381cd77760fa9cafab143f576449c2207cdd5"
+ },
+ "coverage": [
+  {
+   "Target": "crapi/crapi-web@sha256:b27d246c646bd33898e7d1d2095b6e7576c0993a7b81a73aa7386929493d7151 (alpine 3.22.1)",
+   "Class": "os-pkgs",
+   "Type": "alpine",
+   "packages": 66
+  }
+ ],
+ "os": {
+  "Family": "alpine",
+  "Name": "3.22.1"
+ },
+ "image_id": "sha256:c1dbe7743d9cbad681486b03c831c9853cd16b2a518ed4c8090c7a95ade4ed68",
+ "repo_digests": [
+  "crapi/crapi-web@sha256:b27d246c646bd33898e7d1d2095b6e7576c0993a7b81a73aa7386929493d7151"
+ ],
+ "severity_counts": {
+  "CRITICAL": 2,
+  "HIGH": 42,
+  "MEDIUM": 65,
+  "LOW": 60
+ },
+ "database": {
+  "Version": 2,
+  "UpdatedAt": "2026-09-13T01:11:30.263571485Z",
+  "NextUpdate": "2026-09-14T01:11:30.263571315Z",
+  "DownloadedAt": "2026-09-13T02:34:09.3482392Z"
+ },
+ "finished_at": "2026-09-13T02:34:20.861582+00:00"
+}

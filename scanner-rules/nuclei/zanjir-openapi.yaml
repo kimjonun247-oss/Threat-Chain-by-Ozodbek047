@@ -1,0 +1,20 @@
+id: zanjir-openapi
+info:
+  name: Ochiq API sxemasi (kirish siyosatini tekshiring)
+  author: zanjir
+  severity: info
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/openapi.json"
+      - "{{BaseURL}}/swagger.json"
+      - "{{BaseURL}}/v3/api-docs"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200, 206]
+      - type: regex
+        part: body
+        regex: ['"(openapi|swagger)"\s*:\s*"[23]\.', '"paths"\s*:\s*\{']
+        condition: and
+

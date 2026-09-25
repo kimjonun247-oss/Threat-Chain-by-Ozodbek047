@@ -1,0 +1,42 @@
+__pycache__/
+*.pyc
+runs/*.tmp
+profiles/local/
+pilot/runtime/
+repository-runs/reviews.json
+.tools/
+advisory-cache/
+dependency-runs/
+image-runs/
+scanner-runs/
+profiles/code/
+profiles/images/
+validation-runs/
+repository-runs/
+pilot/evidence/
+pilot/tls-runs/
+*.tmp
+web-runs/
+assessment-runs/
+profiles/web/
+profiles/portfolio/
+# Rasmiy Semgrep qoida paketi: 1300+ fayl, `python3 setup_semgrep_rules.py`
+# pinlangan commit'dan aynan qayta tiklaydi, shuning uchun omborga kiritilmaydi.
+scanner-rules/semgrep-registry/
+# setup_semgrep_rules.py yaratadigan birlashtirilgan qoida fayli (2 MB, qayta tiklanadi)
+scanner-rules/semgrep-merged.yml
+
+# --- Git omboriga hech qachon kirmaydigan mahalliy holat ---
+# NVD API kaliti shu faylda turadi: hech qachon omborga tushmasligi kerak.
+profiles/settings.json
+profiles/triage/
+profiles/*.DS_Store
+runs/
+iac-runs/
+work/
+.DS_Store
+**/.DS_Store
+.claude/
+.openai/
+.venv/
+venv/

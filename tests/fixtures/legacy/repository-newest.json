@@ -1,0 +1,239 @@
+{
+ "schema_version": 2,
+ "kind": "repository",
+ "id": "20260922T041122-faeb6806",
+ "created_at": "2026-09-22T04:11:22.604119+00:00",
+ "engine_version": "0.7.0",
+ "duration_ms": 3.96,
+ "repository": {
+  "repository": "ThreatChain sun'iy namunasi (tashqi manba emas)",
+  "commit": null,
+  "source_type": "bundled_synthetic_sample",
+  "retrieved_at": "2026-09-17",
+  "execution": "source-only; hech qanday kod bajarilmaydi va bu deploy ishga tushirilmaydi",
+  "subset": [
+   "README.md",
+   "app/Dockerfile",
+   "app/config.py",
+   "docker-compose.yml",
+   "force-app/main/default/classes/AccountController.cls"
+  ],
+  "note": "Zanjir qoidalarini (RP-001, RP-005..008 va cross-skaner SX-001) ko'rsatish uchun qasddan noto'g'ri sozlangan sun'iy namuna. app/config.py dagi kalit soxta va hech qachon amal qilmagan. Apex klassi PMD qamrovini ko'rsatish uchun qasddan zaif yozilgan."
+ },
+ "profile": {
+  "compose": "docker-compose.yml",
+  "env_file": null,
+  "bindings": []
+ },
+ "input_sha256": "3f54b6e6709032a19b871289a413e221d2694ddc2fe23220c50d63f39217112a",
+ "files": [
+  {
+   "path": "docker-compose.yml",
+   "sha256": "4ebdbb3dc0489be8fc5bd9b1d4a256574f54ed9842ec8bebc47eb1fe30be0c5a",
+   "bytes": 749
+  }
+ ],
+ "services": [
+  {
+   "id": "web",
+   "ports": [
+    {
+     "host_ip": "0.0.0.0",
+     "published": "8080",
+     "target": 8080,
+     "protocol": "tcp",
+     "scope": "all_interfaces",
+     "evidence_id": "R002"
+    }
+   ],
+   "networks": [
+    "default"
+   ],
+   "image": "",
+   "build_context": "app",
+   "evidence_id": "R001",
+   "auth_status": "unknown",
+   "runtime_verified": false
+  },
+  {
+   "id": "db",
+   "ports": [],
+   "networks": [
+    "default"
+   ],
+   "image": "postgres:16",
+   "build_context": null,
+   "evidence_id": "R006",
+   "auth_status": "unknown",
+   "runtime_verified": false
+  }
+ ],
+ "edges": [],
+ "evidence": [
+  {
+   "id": "R001",
+   "path": "docker-compose.yml",
+   "line": 5,
+   "label": "Xizmat",
+   "value": "web"
+  },
+  {
+   "id": "R002",
+   "path": "docker-compose.yml",
+   "line": 7,
+   "label": "Host port mapping",
+   "value": {
+    "host_ip": "0.0.0.0",
+    "published": "8080",
+    "target": 8080,
+    "protocol": "tcp",
+    "scope": "all_interfaces",
+    "evidence_id": "R002"
+   }
+  },
+  {
+   "id": "R003",
+   "path": "docker-compose.yml",
+   "line": 5,
+   "label": "Debug muhit o‘zgaruvchisi",
+   "value": {
+    "DEBUG": "true"
+   }
+  },
+  {
+   "id": "R004",
+   "path": "docker-compose.yml",
+   "line": 5,
+   "label": "Docker socket mount",
+   "value": {
+    "volumes": [
+     "/var/run/docker.sock"
+    ]
+   }
+  },
+  {
+   "id": "R005",
+   "path": "docker-compose.yml",
+   "line": 5,
+   "label": "Konteyner imtiyozlari",
+   "value": {
+    "privileged": false,
+    "cap_add": [
+     "SYS_ADMIN"
+    ]
+   }
+  },
+  {
+   "id": "R006",
+   "path": "docker-compose.yml",
+   "line": 16,
+   "label": "Xizmat",
+   "value": "db"
+  }
+ ],
+ "findings": [
+  {
+   "rule_id": "RP-001",
+   "fingerprint": "2dc1bda158b9b0113ea12627",
+   "service_id": "web",
+   "title": "Host interfeysiga chiqarilgan port",
+   "detail": "Host interfeysi: 0.0.0.0. Internetdan ochiqlik, daemon sozlamasi va firewall tasdiqlanmagan.",
+   "evidence_ids": [
+    "R002"
+   ],
+   "level": "warning",
+   "status": "review_required",
+   "remediation": "Portni kerakli interfeysga bog‘lang va real firewall ruxsatini tekshiring.",
+   "runtime_verified": false,
+   "verified": false,
+   "cwe_ids": [
+    "CWE-284"
+   ],
+   "owasp_top10_2025": [
+    {
+     "code": "A01",
+     "name": "A01:2025 – Broken Access Control"
+    }
+   ],
+   "verification_note": "Compose/Nginx konfiguratsiyasidan statik o‘qilgan deklaratsiya; runtime, firewall va autentifikatsiya tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart."
+  },
+  {
+   "rule_id": "RP-006",
+   "fingerprint": "f479ad09d06df063f72908d2",
+   "service_id": "web",
+   "title": "Debug/dev rejimi yoqilgan xizmat host portidan bevosita ochiq",
+   "detail": "web xizmatida debug/dev muhiti yoqilgan (DEBUG=true) va shu xizmat host portidan ham to‘g‘ridan-to‘g‘ri ochiq. Ikkalasi alohida to‘g‘ri: debug rejimi lokal ishlab chiqish uchun odatiy, portni ochish ham alohida qaror. Ammo birgalikda: debug rejimi ko‘pincha batafsil xato sahifalari, interaktiv konsol yoki qo‘shimcha ichki yo‘llarni yoqadi — bular endi tashqi tarmoqdan ham yetkazilishi mumkin.",
+   "evidence_ids": [
+    "R003",
+    "R002"
+   ],
+   "level": "warning",
+   "status": "review_required",
+   "remediation": "Production yoki tashqi portga ochiq konteynerlarda debug/dev muhit o‘zgaruvchisini o‘chiring yoki alohida, faqat ichki tarmoqdan foydalaniladigan sozlamaga ko‘chiring.",
+   "runtime_verified": false,
+   "verified": false,
+   "cwe_ids": [
+    "CWE-489"
+   ],
+   "owasp_top10_2025": [
+    {
+     "code": "A02",
+     "name": "A02:2025 – Security Misconfiguration"
+    }
+   ],
+   "verification_note": "Compose/Nginx konfiguratsiyasidan statik o‘qilgan deklaratsiya; runtime, firewall va autentifikatsiya tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart."
+  },
+  {
+   "rule_id": "RP-007",
+   "fingerprint": "243768286590f921b8746fb5",
+   "service_id": "web",
+   "title": "Docker socket konteyner ichiga ulangan va xizmat host portidan ochiq",
+   "detail": "web xizmati Docker socketni (/var/run/docker.sock) konteyner ichiga ulagan va shu bilan birga host portidan ham to‘g‘ridan-to‘g‘ri ochiq. Ikkalasi alohida to‘g‘ri: ba’zi vositalarga (masalan CI runner, monitoring) Docker socket kerak, portni ochish ham alohida qaror. Ammo birgalikda: bu xizmat buzilsa, tashqi tarmoqdan Docker API’ga to‘liq — odatda daemon/root darajasidagi — nazorat qo‘lga kiritiladi.",
+   "evidence_ids": [
+    "R004",
+    "R002"
+   ],
+   "level": "error",
+   "status": "review_required",
+   "remediation": "Docker socketni konteynerga ulamang; zarur bo‘lsa faqat ichki (tashqi portsiz) xizmatga cheklang yoki faqat o‘qishga ruxsat beruvchi Docker socket proxy ishlating.",
+   "runtime_verified": false,
+   "verified": false,
+   "cwe_ids": [
+    "CWE-269"
+   ],
+   "owasp_top10_2025": [
+    {
+     "code": "A06",
+     "name": "A06:2025 – Insecure Design"
+    }
+   ],
+   "verification_note": "Compose/Nginx konfiguratsiyasidan statik o‘qilgan deklaratsiya; runtime, firewall va autentifikatsiya tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart."
+  }
+ ],
+ "unknowns": [],
+ "summary": {
+  "services": 2,
+  "published_ports": 1,
+  "loopback_ports": 0,
+  "proxy_routes": 0,
+  "findings": 5,
+  "runtime_confirmed": 0
+ },
+ "verification_summary": {
+  "total": 5,
+  "confirmed_by_evidence": 0,
+  "manual_review_required": 5,
+  "note": "confirmed_by_evidence: nishonning haqiqiy javobi/holati bilan bevosita kuzatilgan. manual_review_required: statik yoki bazaviy moslik — mutaxassis tomonidan qo‘lda tasdiqlanishi shart."
+ },
+ "limits": [
+  "Faqat berilgan Compose fayli, .env va proxy bindinglar o‘qildi; repository kodi bajarilmadi.",
+  "Ishga tushirilgan konteynerlar, image digest, firewall va autentifikatsiya tekshirilmagan.",
+  "Source → image mosligi qo‘lda berilgan mapping; latest image aynan shu commitdan ekanligi isbotlanmagan.",
+  "Nginx Lua va murakkab dinamik marshrutlar bajarilmaydi. Proxy grafigi hujum grafigi emas.",
+  "Boshqa override fayllari va shell environment qo‘llanmaydi; .env faqat literal qiymatlarni qo‘llaydi.",
+  "Ogohlantirishlar review talab qiladi; bu audit muvofiqligi yoki real ekspluatatsiya isboti emas."
+ ],
+ "profile_id": "chain-demo",
+ "profile_name": "Zanjir demo · sun'iy namuna",
+ "report_sha256": "073dc6b588d589b42c4c374862da104c22158f1c71a5a86e3407b11f9c62059d"
+}

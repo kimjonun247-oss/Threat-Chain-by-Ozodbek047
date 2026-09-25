@@ -1,0 +1,15 @@
+{
+  "repository": "ThreatChain sun'iy namunasi (tashqi manba emas)",
+  "commit": null,
+  "source_type": "bundled_synthetic_sample",
+  "retrieved_at": "2026-09-17",
+  "execution": "source-only; hech qanday kod bajarilmaydi va bu deploy ishga tushirilmaydi",
+  "subset": [
+    "README.md",
+    "app/Dockerfile",
+    "app/config.py",
+    "docker-compose.yml",
+    "force-app/main/default/classes/AccountController.cls"
+  ],
+  "note": "Zanjir qoidalarini (RP-001, RP-005..008 va cross-skaner SX-001) ko'rsatish uchun qasddan noto'g'ri sozlangan sun'iy namuna. app/config.py dagi kalit soxta va hech qachon amal qilmagan. Apex klassi PMD qamrovini ko'rsatish uchun qasddan zaif yozilgan."
+}

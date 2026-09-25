@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="uz">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ThreatChain — kod, kutubxona, image va tarmoq oralig‘idagi zaifliklar</title>
+  <meta name="description" content="Kod, joylashtirish va tarmoq orasidagi himoya talablarini real tahdid ma’lumotlari bilan tekshirish.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+  <script src="/shell.js" defer></script>
+  <script src="/dashboard.js" defer></script>
+  <script src="/findings.js" defer></script>
+  <script src="/project.js" defer></script>
+  <script src="/scanners.js" defer></script>
+  <script src="/dependencies.js" defer></script>
+  <script src="/pilot-dashboard.js" defer></script>
+  <script src="/web-pilot.js" defer></script>
+  <script src="/iac.js" defer></script>
+  <script src="/portfolio.js" defer></script>
+  <link rel="stylesheet" href="/dependencies.css">
+</head>
+<body>
+<svg class="sprite" aria-hidden="true" focusable="false"><defs>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v9a2 2 0 0 1-2 2h-4v-7H9v7H5a2 2 0 0 1-2-2z"/></symbol>
+<symbol id="i-list" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></symbol>
+<symbol id="i-grid" viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4l12 8-12 8z"/></symbol>
+<symbol id="i-server" viewBox="0 0 24 24"><path d="M4 4h16v6H4zM4 14h16v6H4zM7 7h.01M7 17h.01"/></symbol>
+<symbol id="i-code" viewBox="0 0 24 24"><path d="M9 18l-6-6 6-6M15 6l6 6-6 6"/></symbol>
+<symbol id="i-package" viewBox="0 0 24 24"><path d="M12 3l9 5v8l-9 5-9-5V8zM3 8l9 5 9-5M12 13v10"/></symbol>
+<symbol id="i-box" viewBox="0 0 24 24"><path d="M3 8h18v12H3zM3 8l3-4h12l3 4M9 12h6"/></symbol>
+<symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0M14 4v4M8 10v4M16 16v4"/></symbol>
+<symbol id="i-globe" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 11l5 5 5-5M4 19h16"/></symbol>
+<symbol id="i-target" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 11.5a.5.5 0 1 0 0 1 .5.5 0 0 0 0-1z"/></symbol>
+<symbol id="i-gear" viewBox="0 0 24 24"><path d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM19.4 13a7.9 7.9 0 0 0 0-2l2-1.5-2-3.5-2.4 1a8 8 0 0 0-1.7-1L14.9 3h-4l-.4 2.6a8 8 0 0 0-1.7 1l-2.4-1-2 3.5L6.5 11a7.9 7.9 0 0 0 0 2l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 1.7 1l.4 2.6h4l.4-2.6a8 8 0 0 0 1.7-1l2.4 1 2-3.5z"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4l9 16H3zM12 10v4M12 17h.01"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14a8 8 0 1 1-10-10 8 8 0 0 0 10 10z"/></symbol>
+<symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></symbol>
+<symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-1 5M20 5v6h-6"/></symbol>
+</defs></svg>
+<a class="skip" href="#main">Asosiy qismga o‘tish</a>
+<div class="layout">
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="ThreatChain bosh sahifa"><span class="brand-mark">TC</span><span><span class="brand-word">THREAT<em>CHAIN</em></span></span></a>
+    <nav aria-label="Bo‘limlar">
+      <p class="nav-group">BOSHQARUV PANELI</p>
+      <button class="nav active" data-view="readiness" aria-current="page"><svg class="ic"><use href="#i-home"/></svg> Bosh sahifa</button>
+
+      <p class="nav-group">TEKSHIRUV</p>
+      <button class="nav" data-view="assessments"><svg class="ic"><use href="#i-play"/></svg> Umumiy tekshiruv</button>
+      <button class="nav" data-view="code"><svg class="ic"><use href="#i-code"/></svg> Kod va sirlar</button>
+      <button class="nav" data-view="dependencies"><svg class="ic"><use href="#i-package"/></svg> Kutubxona (CVE)</button>
+      <button class="nav" data-view="images"><svg class="ic"><use href="#i-box"/></svg> Docker image</button>
+      <button class="nav" data-view="repository"><svg class="ic"><use href="#i-server"/></svg> Repository</button>
+      <button class="nav" data-view="iac"><svg class="ic"><use href="#i-sliders"/></svg> IaC</button>
+      <button class="nav" data-view="web"><svg class="ic"><use href="#i-globe"/></svg> Sayt va API</button>
+
+      <p class="nav-group">NATIJALAR</p>
+      <button class="nav" data-view="findings"><svg class="ic"><use href="#i-list"/></svg> Topilmalar <span class="nav-count" id="nav-findings-count" hidden></span></button>
+      <button class="nav" data-view="portfolio"><svg class="ic"><use href="#i-grid"/></svg> Loyihalar</button>
+      <button class="nav" data-view="project"><svg class="ic"><use href="#i-folder"/></svg> Loyiha kartasi</button>
+
+      <p class="nav-group">SOZLAMALAR</p>
+      <button class="nav" data-modal="register"><svg class="ic"><use href="#i-target"/></svg> Nishon qo‘shish</button>
+      <button class="nav" data-modal="export"><svg class="ic"><use href="#i-download"/></svg> Eksport</button>
+      <button class="nav" data-modal="settings"><svg class="ic"><use href="#i-gear"/></svg> Umumiy sozlamalar</button>
+    </nav>
+    <div class="history-heading">SO‘NGGI TEKSHIRUVLAR</div>
+    <div id="history" class="history"><p>Hali tekshiruv yo‘q.</p></div>
+    <div class="sidebar-foot"><strong>ThreatChain <span>0.7</span></strong></div>
+  </aside>
+  <main id="main">
+    <header class="topbar">
+      <form class="commandbar" id="commandbar" role="search">
+        <label class="sr-only" for="global-search">Barcha topilmalar ichidan qidirish</label>
+        <input id="global-search" type="search" placeholder="Barcha topilmalar ichidan qidirish — qoida, paket, CVE, fayl…" autocomplete="off">
+      </form>
+      <div class="topbar-actions">
+        <button class="ghost" id="theme-toggle" aria-pressed="false" title="Yorug‘ / qorong‘u rejim"><svg class="ic"><use href="#i-moon"/></svg></button>
+        <span id="environment-label" class="environment">REPOSITORY · FAQAT O‘QISH</span>
+      </div>
+    </header>
+    <div class="content">
+
+      <section id="readiness-view" class="view">
+        <div class="section-heading"><div><p class="eyebrow">BOSHQARUV PANELI</p><h2>Holat</h2></div><div class="heading-actions"><button id="readiness-refresh" class="ghost" title="Yangilash" aria-label="Yangilash"><svg class="ic"><use href="#i-refresh"/></svg></button><button id="open-assessment" class="primary"><svg class="ic"><use href="#i-play"/></svg> Tekshiruv</button></div></div>
+        <div id="dash" class="dash"><p class="empty">Yuklanmoqda…</p></div>
+      </section>
+      <section id="assessments-view" class="view" hidden>
+        <div class="section-heading"><div><p class="eyebrow">KOD + CVE + WEB + IMAGE</p><h2>Bitta jarayon, alohida dalillar</h2></div><button id="assessment-scan" class="primary">Tekshiruvni boshlash</button></div>
+        <div class="dep-filters"><label>Manba kodi<select id="assessment-target"></select></label><label>Repository (Compose)<select id="assessment-repository"></select></label><label>Sayt / API<select id="assessment-web"></select></label><label>Docker image<select id="assessment-image"></select></label></div>
+        <p id="assessment-progress" role="status" aria-live="polite"></p><button id="assessment-cancel" class="secondary" hidden>Bekor qilish</button>
+        <div id="assessment-result" class="empty">Tanlovni tekshirib jarayonni boshlang.</div>
+        <details class="pilot-help"><summary>Umumiy tekshiruvlar tarixi</summary><div id="assessment-history"></div></details>
+      </section>
+      <section id="web-view" class="view" hidden>
+        <div class="section-heading"><div><p class="eyebrow">NUCLEI + HTTP · CHEKLANGAN GET PROFILI</p><h2>Ishlayotgan sayt va API</h2></div><button id="web-scan" class="primary">Saytni tekshirish</button></div>
+        <div class="project-picker"><label for="web-target">Ruxsat berilgan nishon</label><select id="web-target"></select><p id="web-scope"></p></div>
+        <p id="web-progress" role="status" aria-live="polite"></p><button id="web-cancel" class="secondary" hidden>Bekor qilish</button>
+        <div id="web-result" class="empty">Nishonni tanlab tekshiruvni boshlang.</div>
+        <details class="pilot-help"><summary>Nuclei ishlashining nazorat dalili</summary><div id="web-control">Nazorat dalili yuklanmoqda…</div></details>
+        <details class="pilot-help"><summary>Sayt tekshiruvlari tarixi</summary><div id="web-history"></div></details>
+      </section>
+      <section id="images-view" class="view" hidden>
+        <div class="section-heading"><div><p class="eyebrow">TRIVY · ANIQ IMAGE DIGEST</p><h2>Docker image kutubxonalari</h2></div><button id="image-scan" class="primary">Image tekshiruvini boshlash ↗</button></div>
+        <div class="project-picker"><label for="image-target">Oldindan ro‘yxatga olingan public image</label><select id="image-target"></select></div>
+        <p id="image-progress" role="status" aria-live="polite"></p><button id="image-cancel" class="secondary" hidden>Bekor qilish</button>
+        <div id="image-result" class="empty">Hali image tekshirilmagan.</div>
+        <details class="pilot-help"><summary>Image tekshiruvlari tarixi</summary><div id="image-history"></div></details>
+      </section>
+      <div id="error" class="error" role="alert" hidden></div><p id="progress" class="progress" role="status" aria-live="polite"></p>
+      <section id="repository-view" class="view"><div class="section-heading"><div><p class="eyebrow">REPOSITORY · STATIK DALILLAR</p><h2>Repositorydagi ishonch chegaralari</h2></div><button id="repo-scan" class="secondary">Tanlangan loyihani tahlil qilish ↗</button></div><div class="project-picker"><label for="project">Ulangan loyiha</label><select id="project" disabled><option>Yuklanmoqda…</option></select><p id="project-scope" class="muted"></p></div><div id="repository-result" class="empty">Repository hisoboti yuklanmoqda…</div></section>
+      <section id="code-view" class="view" hidden>
+        <div class="section-heading"><div><p class="eyebrow">SEMGREP + GITLEAKS</p><h2>Kod va maxfiy qiymatlar</h2></div><button id="code-scan" class="primary">Tekshiruvni boshlash ↗</button></div>
+        <div class="project-picker"><label for="code-target">Tekshiriladigan manba</label><select id="code-target"><option value="crapi-full">OWASP crAPI · to‘liq manba nusxasi</option></select></div>
+        <p id="code-progress" role="status" aria-live="polite"></p>
+        <div id="code-result" class="empty">Natijalar yuklanmoqda…</div>
+        <details class="pilot-help"><summary>Oldingi kod tekshiruvlari</summary><div id="code-history"></div></details>
+        <div class="section-heading"><div><p class="eyebrow">ALOHIDA DALIL · crAPI</p><h2>Amaliy TLS nazorat tajribasi</h2></div></div>
+        <div id="pilot-result" class="empty">Amaliy dalil yuklanmoqda…</div>
+      </section>
+      <section id="findings-view" class="view" hidden>
+        <div class="section-heading"><div><p class="eyebrow">BARCHA SKANERLAR · BITTA JADVAL</p><h2>Topilmalar</h2></div><div class="heading-actions"><button id="findings-refresh" class="secondary">Yangilash</button><button id="findings-reset" class="ghost">Filtrlarni tozalash</button></div></div>
+        
+        <div id="findings-coverage" class="coverage-note"></div>
+        <div id="findings-facets" class="facets"></div>
+        <div class="bulk-bar" id="findings-bulk" hidden>
+          <span id="findings-selected">0 ta tanlandi</span>
+          <button class="secondary" data-bulk="accepted_risk">Xavf qabul qilindi</button>
+          <button class="secondary" data-bulk="false_positive">Noto‘g‘ri signal</button>
+          <button class="secondary" data-bulk="confirmed">Tasdiqlandi</button>
+          <button class="ghost" id="findings-clear-selection">Tanlovni bekor qilish</button>
+        </div>
+        <div id="findings-table" class="table-wrap"><p class="empty">Yuklanmoqda…</p></div>
+        <div class="scanner-summary"><button id="findings-prev" class="secondary">← Oldingi</button><span id="findings-page"></span><button id="findings-next" class="secondary">Keyingi →</button></div>
+      </section>
+      <section id="project-view" class="view" hidden>
+        <div class="section-heading"><div><p class="eyebrow">BITTA LOYIHA · BARCHA QATLAMLAR</p><h2>Loyiha sahifasi</h2></div><label class="inline-field">Loyiha <select id="project-picker"></select></label></div>
+        <div id="project-result" class="empty">Loyiha tanlang.</div>
+      </section>
+      <section id="iac-view" class="view" hidden>
+        <div class="section-heading"><div><p class="eyebrow">TRIVY CONFIG</p><h2>Konfiguratsiya va IaC</h2></div><button id="iac-scan" class="primary">Tekshiruvni boshlash ↗</button></div>
+        
+        <div class="project-picker"><label for="iac-target">Loyiha</label><select id="iac-target"></select></div>
+        <p id="iac-progress" role="status" aria-live="polite"></p>
+        <button id="iac-cancel" class="secondary" hidden>Bekor qilish</button>
+        <div id="iac-result" class="empty">Natijalar yuklanmoqda…</div>
+        <details class="pilot-help"><summary>Oldingi konfiguratsiya tekshiruvlari</summary><div id="iac-history"></div></details>
+      </section>
+      <section id="dependencies-view" class="view" hidden>
+        <div class="section-heading"><div><p class="eyebrow">OSV + CISA KEV</p><h2>CVE va kutubxonalar</h2></div><button id="dep-scan" class="primary">Tekshiruvni boshlash ↗</button></div>
+        
+        <div class="project-picker"><label for="dep-target">Loyiha</label><select id="dep-target"></select></div>
+        <div class="scanner-summary"><p id="dep-progress" role="status" aria-live="polite"></p><button id="dep-cancel" class="secondary" hidden>Bekor qilish</button></div>
+        <div id="dep-result" class="empty">Loyihani tanlab tekshiruvni boshlang yoki oldingi hisobotni oching.</div>
+        <details class="pilot-help"><summary>Hisobot tarixi va taqqoslash</summary><div id="dep-history"></div><div class="dep-filters"><label>Oldingi hisobot<select id="dep-before"></select></label><button id="dep-compare" class="secondary">Ochiq hisobot bilan solishtirish</button></div><p id="dep-delta" role="status"></p></details>
+      </section>
+      <section id="portfolio-view" class="view" hidden>
+        <div class="section-heading"><div><p class="eyebrow">PORTFEL · BARCHA LOYIHALAR</p><h2>Qaysi loyihaning qaysi qatlami tekshirilmagan?</h2></div><button id="portfolio-refresh" class="secondary">Yangilash</button></div>
+        
+        <div id="portfolio-result" class="empty">Yuklanmoqda…</div>
+        <div class="section-heading"><h2>Vaqt bo‘yicha o‘zgarish</h2></div>
+        <div class="dep-filters">
+          <label>Loyiha<select id="trend-project"></select></label>
+          <label>Bosqich<select id="trend-stage"></select></label>
+        </div>
+        <div id="trend-result" class="empty">Loyiha va bosqichni tanlang.</div>
+        <details class="pilot-help"><summary>Yangi loyiha guruhini qo‘shish</summary>
+          <div class="rule-editor">
+            <label for="pf-id">Guruh ID<input id="pf-id" type="text" placeholder="masalan: mening-loyiham" autocomplete="off"></label>
+            <label for="pf-name">Nomi<input id="pf-name" type="text" placeholder="Ko‘rinadigan nom" autocomplete="off"></label>
+            <label for="pf-owner">Mas’ul (ixtiyoriy)<input id="pf-owner" type="text" placeholder="Jamoa yoki shaxs" autocomplete="off"></label>
+            <div id="pf-stages"></div>
+            <div class="scanner-summary"><button id="pf-save" class="primary">Guruhni saqlash</button><span id="pf-status" role="status" aria-live="polite" class="rule-status"></span></div>
+          </div>
+        </details>
+      </section>
+    </div>
+  </main>
+  <div id="drawer" class="drawer" hidden role="dialog" aria-modal="false" aria-labelledby="drawer-title">
+    <div class="drawer-head"><h2 id="drawer-title">Topilma tafsiloti</h2><button id="drawer-close" class="ghost" aria-label="Yopish">✕</button></div>
+    <div id="drawer-body" class="drawer-body"></div>
+  </div>
+  <div id="modal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-card">
+      <div class="modal-head"><h2 id="modal-title">Oyna</h2><button id="modal-close" class="ghost" aria-label="Yopish">✕</button></div>
+      <div id="modal-body" class="modal-body"></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

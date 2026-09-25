@@ -1,0 +1,87 @@
+{
+ "id": "20260923T101124-eb9668d8",
+ "target": "chain-demo",
+ "created_at": "2026-09-23T10:11:24.057675+00:00",
+ "state": "completed",
+ "count": 2,
+ "findings": [
+  {
+   "tool": "trivy-config",
+   "rule_id": "DS-0002",
+   "check_type": "Dockerfile Security Check",
+   "title": "Image user should not be 'root'",
+   "message": "Specify at least 1 USER command in Dockerfile with non-root user as argument",
+   "remediation": "Add 'USER <non root user name>' line to the Dockerfile",
+   "path": "app/Dockerfile",
+   "line": null,
+   "provider": "Dockerfile",
+   "service": "general",
+   "severity": "HIGH",
+   "level": "error",
+   "reference": "https://avd.aquasec.com/misconfig/ds-0002",
+   "cwe_ids": [
+    "CWE-250"
+   ],
+   "owasp_top10_2025": [],
+   "fingerprint": "8e71af80a2e4d28eb3d8f78b",
+   "state": "unverified_static",
+   "verified": false,
+   "verification_note": "Konfiguratsiya fayli statik tekshirildi; fayl bajarilmagan va bu sozlama amalda qanday ta’sir qilishi tasdiqlanmagan. Mutaxassis ko‘rib chiqishi shart."
+  },
+  {
+   "tool": "trivy-config",
+   "rule_id": "DS-0026",
+   "check_type": "Dockerfile Security Check",
+   "title": "No HEALTHCHECK defined",
+   "message": "Add HEALTHCHECK instruction in your Dockerfile",
+   "remediation": "Add HEALTHCHECK instruction in Dockerfile",
+   "path": "app/Dockerfile",
+   "line": null,
+   "provider": "Dockerfile",
+   "service": "general",
+   "severity": "LOW",
+   "level": "note",
+   "reference": "https://avd.aquasec.com/misconfig/ds-0026",
+   "cwe_ids": [],
+   "owasp_top10_2025": [],
+   "fingerprint": "20fc7677bd1e89560b291f49",
+   "state": "unverified_static",
+   "verified": false,
+   "verification_note": "Konfiguratsiya fayli statik tekshirildi; fayl bajarilmagan va bu sozlama amalda qanday ta’sir qilishi tasdiqlanmagan. Mutaxassis ko‘rib chiqishi shart."
+  }
+ ],
+ "limits": "Trivy `config` rejimi: Dockerfile, Kubernetes, Terraform, CloudFormation, Helm va ARM fayllari statik tekshiriladi. Compose va Nginx uchun alohida Repository bosqichi ishlaydi. Hech bir fayl bajarilmaydi; topilmalar amalda ekspluatatsiya qilinishi tekshirilmagan.",
+ "progress": "Konfiguratsiya tekshiruvi tugadi",
+ "coverage_scope": "Joriy matn fayllari; Git tarixi, vendor/node_modules, binar va 1 MB dan katta fayllar kiritilmagan.",
+ "snapshot_sha256": "cc66a1aec2c5a441ce0b97407428db750031c4c9bcf020a9e61f9c4a1570cf2e",
+ "files": 6,
+ "coverage": [
+  {
+   "path": "app/Dockerfile",
+   "type": "dockerfile",
+   "checks": 2
+  }
+ ],
+ "untagged_checks": [
+  "DS-0026"
+ ],
+ "untagged_note": "Bu tekshiruvlar uchun CWE xaritada yo‘q; ular o‘z ID si bilan ko‘rsatiladi va hech qanday OWASP toifasiga taxmin qilinmaydi.",
+ "verification_summary": {
+  "total": 2,
+  "confirmed_by_evidence": 0,
+  "manual_review_required": 2,
+  "note": "confirmed_by_evidence: nishonning haqiqiy javobi/holati bilan bevosita kuzatilgan. manual_review_required: statik yoki bazaviy moslik — mutaxassis tomonidan qo‘lda tasdiqlanishi shart."
+ },
+ "severity_counts": {
+  "CRITICAL": 0,
+  "HIGH": 1,
+  "MEDIUM": 0,
+  "LOW": 1,
+  "UNKNOWN": 0
+ },
+ "tool": {
+  "name": "trivy config",
+  "version": "0.74.0"
+ },
+ "finished_at": "2026-09-23T10:11:28.228880+00:00"
+}

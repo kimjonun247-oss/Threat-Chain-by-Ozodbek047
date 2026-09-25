@@ -1,0 +1,37 @@
+{
+  "id": "crapi",
+  "name": "OWASP crAPI \u00b7 stable source",
+  "root": "samples/crapi",
+  "compose": "deploy/docker/docker-compose.yml",
+  "env_file": "deploy/docker/.env",
+  "bindings": [
+    {
+      "service_id": "crapi-web",
+      "path": "services/web/nginx.ssl.conf.template",
+      "when": {
+        "key": "TLS_ENABLED",
+        "values": [
+          "true",
+          "1"
+        ]
+      },
+      "template_variables": {
+        "HTTP_PROTOCOL": "https"
+      }
+    },
+    {
+      "service_id": "crapi-web",
+      "path": "services/web/nginx.conf.template",
+      "when": {
+        "key": "TLS_ENABLED",
+        "values": [
+          "false",
+          "0"
+        ]
+      },
+      "template_variables": {
+        "HTTP_PROTOCOL": "http"
+      }
+    }
+  ]
+}

@@ -1,0 +1,518 @@
+{
+ "id": "20260922T041122-437485b3",
+ "created_at": "2026-09-22T04:11:22.597417+00:00",
+ "state": "partial",
+ "selection": {
+  "target": "chain-demo",
+  "repository_target": "chain-demo",
+  "web_target": "",
+  "image_target": "",
+  "online": true
+ },
+ "stages": [
+  {
+   "kind": "code",
+   "target": "chain-demo",
+   "state": "completed",
+   "report_id": "20260922T041122-6c3639a9",
+   "count": 6,
+   "report": {
+    "id": "20260922T041122-6c3639a9",
+    "target": "chain-demo",
+    "created_at": "2026-09-22T04:11:22.599904+00:00",
+    "state": "completed",
+    "count": 6,
+    "findings": [
+     {
+      "tool": "semgrep",
+      "rule_id": "missing-user",
+      "path": "app/Dockerfile",
+      "line": 5,
+      "message": "By not specifying a USER, a program in the container may run as 'root'. This is a security hazard. If an attacker can control a process running as root, they may have control over the container. Ensure that the last USER in a Dockerfile is a USER other than 'root'.",
+      "severity": "ERROR",
+      "state": "unverified_static",
+      "secret_value": null,
+      "cwe_ids": [
+       "CWE-250"
+      ],
+      "owasp_top10_2025": [],
+      "verified": false,
+      "verification_note": "Statik kod naqshi mosligi; ma’lumot oqimi, ishga tushirish sharti va amaliy ta’siri tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart."
+     },
+     {
+      "tool": "semgrep",
+      "rule_id": "detected-stripe-api-key",
+      "path": "app/config.py",
+      "line": 7,
+      "message": "Stripe API Key detected",
+      "severity": "ERROR",
+      "state": "unverified_static",
+      "secret_value": null,
+      "cwe_ids": [
+       "CWE-798"
+      ],
+      "owasp_top10_2025": [
+       {
+        "code": "A07",
+        "name": "A07:2025 – Authentication Failures"
+       }
+      ],
+      "verified": false,
+      "verification_note": "Statik kod naqshi mosligi; ma’lumot oqimi, ishga tushirish sharti va amaliy ta’siri tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart."
+     },
+     {
+      "tool": "gitleaks",
+      "rule_id": "stripe-access-token",
+      "path": "app/config.py",
+      "line": 7,
+      "message": "Maxfiy qiymatga o‘xshash matn topildi. Bu demo qiymatmi yoki amaldagi sir ekanini tekshiring.",
+      "severity": null,
+      "state": "unverified_static",
+      "secret_value": "hidden",
+      "cwe_ids": [
+       "CWE-798"
+      ],
+      "owasp_top10_2025": [
+       {
+        "code": "A07",
+        "name": "A07:2025 – Authentication Failures"
+       }
+      ],
+      "verified": false,
+      "verification_note": "Statik kod naqshi mosligi; ma’lumot oqimi, ishga tushirish sharti va amaliy ta’siri tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart."
+     }
+    ],
+    "tools": {
+     "semgrep": {
+      "state": "completed",
+      "version": "1.177.0",
+      "count": 2,
+      "errors": 0,
+      "rule_set": "ThreatChain 7 lokal qoida + 1343 rasmiy semgrep-rules qoidasi (22 til)",
+      "rules_sha256": "039f79a2ff8f9b1faa15113c4bab42bf325128e5185793d2daeabf18f2cfdbf7",
+      "rule_pack": {
+       "source": "semgrep/semgrep-rules",
+       "commit": "40b8c63f75dc7c22c8a77482d73bfb864b146f7e",
+       "rules": 1343,
+       "files": 1327,
+       "languages": [
+        "bash",
+        "c",
+        "clojure",
+        "csharp",
+        "dockerfile",
+        "generic",
+        "go",
+        "html",
+        "java",
+        "javascript",
+        "json",
+        "kotlin",
+        "ocaml",
+        "php",
+        "python",
+        "ruby",
+        "rust",
+        "scala",
+        "solidity",
+        "terraform",
+        "typescript",
+        "yaml"
+       ]
+      },
+      "error_kinds": {},
+      "error_files": {}
+     },
+     "gitleaks": {
+      "state": "completed",
+      "version": "8.30.1",
+      "count": 1,
+      "errors": 0,
+      "rule_set": "Gitleaks ichki qoidalari",
+      "rules_sha256": "39a393b8200ddaf822e57ed18e3c932487c7a9449996e1a5197f601db7b787af"
+     },
+     "pmd": {
+      "state": "completed",
+      "version": "7.27.0",
+      "count": 3,
+      "errors": 0,
+      "rule_set": "PMD category/apex/security.xml (10 ta Apex xavfsizlik qoidasi)",
+      "rules_sha256": "dcfc549e11ff41ac8191c41156698f853476c16b44d9162ec901ba9ddf929b44"
+     }
+    },
+    "verification": "unverified_static",
+    "limits": "Topilmalar qo‘lda tekshiriladi. Maxfiy qiymat va kod parchasi hisobotga kiritilmaydi. Bu amaliy hujum tasdig‘i emas.",
+    "coverage": {
+     "files": 6,
+     "bytes": 4593,
+     "snapshot_sha256": "cc66a1aec2c5a441ce0b97407428db750031c4c9bcf020a9e61f9c4a1570cf2e",
+     "skipped": {
+      "excluded": 0,
+      "links": 0,
+      "binary": 0,
+      "large": 0
+     },
+     "scope": "Joriy matn fayllari; Git tarixi, vendor/node_modules, binar va 1 MB dan katta fayllar kiritilmagan."
+    },
+    "verification_summary": {
+     "total": 6,
+     "confirmed_by_evidence": 0,
+     "manual_review_required": 6,
+     "note": "confirmed_by_evidence: nishonning haqiqiy javobi/holati bilan bevosita kuzatilgan. manual_review_required: statik yoki bazaviy moslik — mutaxassis tomonidan qo‘lda tasdiqlanishi shart."
+    },
+    "finished_at": "2026-09-22T04:11:34.951856+00:00"
+   },
+   "report_sha256": "7afd8f46047a394b4df18f09287854f326a92f5f3790c5f83f49693266f5587b",
+   "verification": {
+    "total": 6,
+    "confirmed_by_evidence": 0,
+    "manual_review_required": 6,
+    "note": "confirmed_by_evidence: nishonning haqiqiy javobi/holati bilan bevosita kuzatilgan. manual_review_required: statik yoki bazaviy moslik — mutaxassis tomonidan qo‘lda tasdiqlanishi shart."
+   }
+  },
+  {
+   "kind": "repository",
+   "target": "chain-demo",
+   "state": "completed",
+   "report_id": "20260922T041122-faeb6806",
+   "count": 5,
+   "report": {
+    "schema_version": 2,
+    "kind": "repository",
+    "id": "20260922T041122-faeb6806",
+    "created_at": "2026-09-22T04:11:22.604119+00:00",
+    "engine_version": "0.7.0",
+    "duration_ms": 3.96,
+    "repository": {
+     "repository": "ThreatChain sun'iy namunasi (tashqi manba emas)",
+     "commit": null,
+     "source_type": "bundled_synthetic_sample",
+     "retrieved_at": "2026-09-17",
+     "execution": "source-only; hech qanday kod bajarilmaydi va bu deploy ishga tushirilmaydi",
+     "subset": [
+      "README.md",
+      "app/Dockerfile",
+      "app/config.py",
+      "docker-compose.yml",
+      "force-app/main/default/classes/AccountController.cls"
+     ],
+     "note": "Zanjir qoidalarini (RP-001, RP-005..008 va cross-skaner SX-001) ko'rsatish uchun qasddan noto'g'ri sozlangan sun'iy namuna. app/config.py dagi kalit soxta va hech qachon amal qilmagan. Apex klassi PMD qamrovini ko'rsatish uchun qasddan zaif yozilgan."
+    },
+    "profile": {
+     "compose": "docker-compose.yml",
+     "env_file": null,
+     "bindings": []
+    },
+    "input_sha256": "3f54b6e6709032a19b871289a413e221d2694ddc2fe23220c50d63f39217112a",
+    "files": [
+     {
+      "path": "docker-compose.yml",
+      "sha256": "4ebdbb3dc0489be8fc5bd9b1d4a256574f54ed9842ec8bebc47eb1fe30be0c5a",
+      "bytes": 749
+     }
+    ],
+    "services": [
+     {
+      "id": "web",
+      "ports": [
+       {
+        "host_ip": "0.0.0.0",
+        "published": "8080",
+        "target": 8080,
+        "protocol": "tcp",
+        "scope": "all_interfaces",
+        "evidence_id": "R002"
+       }
+      ],
+      "networks": [
+       "default"
+      ],
+      "image": "",
+      "build_context": "app",
+      "evidence_id": "R001",
+      "auth_status": "unknown",
+      "runtime_verified": false
+     },
+     {
+      "id": "db",
+      "ports": [],
+      "networks": [
+       "default"
+      ],
+      "image": "postgres:16",
+      "build_context": null,
+      "evidence_id": "R006",
+      "auth_status": "unknown",
+      "runtime_verified": false
+     }
+    ],
+    "edges": [],
+    "evidence": [
+     {
+      "id": "R001",
+      "path": "docker-compose.yml",
+      "line": 5,
+      "label": "Xizmat",
+      "value": "web"
+     },
+     {
+      "id": "R002",
+      "path": "docker-compose.yml",
+      "line": 7,
+      "label": "Host port mapping",
+      "value": {
+       "host_ip": "0.0.0.0",
+       "published": "8080",
+       "target": 8080,
+       "protocol": "tcp",
+       "scope": "all_interfaces",
+       "evidence_id": "R002"
+      }
+     },
+     {
+      "id": "R003",
+      "path": "docker-compose.yml",
+      "line": 5,
+      "label": "Debug muhit o‘zgaruvchisi",
+      "value": {
+       "DEBUG": "true"
+      }
+     },
+     {
+      "id": "R004",
+      "path": "docker-compose.yml",
+      "line": 5,
+      "label": "Docker socket mount",
+      "value": {
+       "volumes": [
+        "/var/run/docker.sock"
+       ]
+      }
+     },
+     {
+      "id": "R005",
+      "path": "docker-compose.yml",
+      "line": 5,
+      "label": "Konteyner imtiyozlari",
+      "value": {
+       "privileged": false,
+       "cap_add": [
+        "SYS_ADMIN"
+       ]
+      }
+     },
+     {
+      "id": "R006",
+      "path": "docker-compose.yml",
+      "line": 16,
+      "label": "Xizmat",
+      "value": "db"
+     }
+    ],
+    "findings": [
+     {
+      "rule_id": "RP-001",
+      "fingerprint": "2dc1bda158b9b0113ea12627",
+      "service_id": "web",
+      "title": "Host interfeysiga chiqarilgan port",
+      "detail": "Host interfeysi: 0.0.0.0. Internetdan ochiqlik, daemon sozlamasi va firewall tasdiqlanmagan.",
+      "evidence_ids": [
+       "R002"
+      ],
+      "level": "warning",
+      "status": "review_required",
+      "remediation": "Portni kerakli interfeysga bog‘lang va real firewall ruxsatini tekshiring.",
+      "runtime_verified": false,
+      "verified": false,
+      "cwe_ids": [
+       "CWE-284"
+      ],
+      "owasp_top10_2025": [
+       {
+        "code": "A01",
+        "name": "A01:2025 – Broken Access Control"
+       }
+      ],
+      "verification_note": "Compose/Nginx konfiguratsiyasidan statik o‘qilgan deklaratsiya; runtime, firewall va autentifikatsiya tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart."
+     },
+     {
+      "rule_id": "RP-006",
+      "fingerprint": "f479ad09d06df063f72908d2",
+      "service_id": "web",
+      "title": "Debug/dev rejimi yoqilgan xizmat host portidan bevosita ochiq",
+      "detail": "web xizmatida debug/dev muhiti yoqilgan (DEBUG=true) va shu xizmat host portidan ham to‘g‘ridan-to‘g‘ri ochiq. Ikkalasi alohida to‘g‘ri: debug rejimi lokal ishlab chiqish uchun odatiy, portni ochish ham alohida qaror. Ammo birgalikda: debug rejimi ko‘pincha batafsil xato sahifalari, interaktiv konsol yoki qo‘shimcha ichki yo‘llarni yoqadi — bular endi tashqi tarmoqdan ham yetkazilishi mumkin.",
+      "evidence_ids": [
+       "R003",
+       "R002"
+      ],
+      "level": "warning",
+      "status": "review_required",
+      "remediation": "Production yoki tashqi portga ochiq konteynerlarda debug/dev muhit o‘zgaruvchisini o‘chiring yoki alohida, faqat ichki tarmoqdan foydalaniladigan sozlamaga ko‘chiring.",
+      "runtime_verified": false,
+      "verified": false,
+      "cwe_ids": [
+       "CWE-489"
+      ],
+      "owasp_top10_2025": [
+       {
+        "code": "A02",
+        "name": "A02:2025 – Security Misconfiguration"
+       }
+      ],
+      "verification_note": "Compose/Nginx konfiguratsiyasidan statik o‘qilgan deklaratsiya; runtime, firewall va autentifikatsiya tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart."
+     },
+     {
+      "rule_id": "RP-007",
+      "fingerprint": "243768286590f921b8746fb5",
+      "service_id": "web",
+      "title": "Docker socket konteyner ichiga ulangan va xizmat host portidan ochiq",
+      "detail": "web xizmati Docker socketni (/var/run/docker.sock) konteyner ichiga ulagan va shu bilan birga host portidan ham to‘g‘ridan-to‘g‘ri ochiq. Ikkalasi alohida to‘g‘ri: ba’zi vositalarga (masalan CI runner, monitoring) Docker socket kerak, portni ochish ham alohida qaror. Ammo birgalikda: bu xizmat buzilsa, tashqi tarmoqdan Docker API’ga to‘liq — odatda daemon/root darajasidagi — nazorat qo‘lga kiritiladi.",
+      "evidence_ids": [
+       "R004",
+       "R002"
+      ],
+      "level": "error",
+      "status": "review_required",
+      "remediation": "Docker socketni konteynerga ulamang; zarur bo‘lsa faqat ichki (tashqi portsiz) xizmatga cheklang yoki faqat o‘qishga ruxsat beruvchi Docker socket proxy ishlating.",
+      "runtime_verified": false,
+      "verified": false,
+      "cwe_ids": [
+       "CWE-269"
+      ],
+      "owasp_top10_2025": [
+       {
+        "code": "A06",
+        "name": "A06:2025 – Insecure Design"
+       }
+      ],
+      "verification_note": "Compose/Nginx konfiguratsiyasidan statik o‘qilgan deklaratsiya; runtime, firewall va autentifikatsiya tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart."
+     }
+    ],
+    "unknowns": [],
+    "summary": {
+     "services": 2,
+     "published_ports": 1,
+     "loopback_ports": 0,
+     "proxy_routes": 0,
+     "findings": 5,
+     "runtime_confirmed": 0
+    },
+    "verification_summary": {
+     "total": 5,
+     "confirmed_by_evidence": 0,
+     "manual_review_required": 5,
+     "note": "confirmed_by_evidence: nishonning haqiqiy javobi/holati bilan bevosita kuzatilgan. manual_review_required: statik yoki bazaviy moslik — mutaxassis tomonidan qo‘lda tasdiqlanishi shart."
+    },
+    "limits": [
+     "Faqat berilgan Compose fayli, .env va proxy bindinglar o‘qildi; repository kodi bajarilmadi.",
+     "Ishga tushirilgan konteynerlar, image digest, firewall va autentifikatsiya tekshirilmagan.",
+     "Source → image mosligi qo‘lda berilgan mapping; latest image aynan shu commitdan ekanligi isbotlanmagan.",
+     "Nginx Lua va murakkab dinamik marshrutlar bajarilmaydi. Proxy grafigi hujum grafigi emas.",
+     "Boshqa override fayllari va shell environment qo‘llanmaydi; .env faqat literal qiymatlarni qo‘llaydi.",
+     "Ogohlantirishlar review talab qiladi; bu audit muvofiqligi yoki real ekspluatatsiya isboti emas."
+    ],
+    "profile_id": "chain-demo",
+    "profile_name": "Zanjir demo · sun'iy namuna",
+    "report_sha256": "073dc6b588d589b42c4c374862da104c22158f1c71a5a86e3407b11f9c62059d"
+   },
+   "report_sha256": "3a348572c1606e88e8da5324f1feb9835216f4122959688de964e2bd5f6510f0",
+   "verification": {
+    "total": 5,
+    "confirmed_by_evidence": 0,
+    "manual_review_required": 5,
+    "note": "confirmed_by_evidence: nishonning haqiqiy javobi/holati bilan bevosita kuzatilgan. manual_review_required: statik yoki bazaviy moslik — mutaxassis tomonidan qo‘lda tasdiqlanishi shart."
+   }
+  },
+  {
+   "kind": "dependencies",
+   "target": "chain-demo",
+   "state": "no_supported_packages",
+   "report_id": "20260922T041122-edd3b194",
+   "count": 0,
+   "report": {
+    "schema_version": 1,
+    "id": "20260922T041122-edd3b194",
+    "target": "chain-demo",
+    "created_at": "2026-09-22T04:11:22.600018+00:00",
+    "state": "no_supported_packages",
+    "count": 0,
+    "findings": [],
+    "limits": "OSV/NVD/CISA KEV paket/versiya mosligi amaliy hujum tasdig‘i emas. Qamrov, conditional/dev paketlar va ishlayotgan tizimga moslik qo‘lda tekshiriladi.",
+    "data_policy": "OSV, NVD va EPSS ga faqat paket nomi, ecosystem, versiya yoki CVE ID yuboriladi. Kod, fayl yo‘li, token yuborilmaydi. Bu tekshiruv doim internetga ulangan holda ishlaydi; offline/faqat-inventar rejim mavjud emas.",
+    "progress": "Qo‘llanadigan aniq versiyali paket topilmadi",
+    "inventory_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "coverage": {
+     "schema_version": 1,
+     "manifests": [],
+     "gaps": [],
+     "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+     "unique_packages": 0,
+     "occurrences": 0,
+     "excluded_directories": 0,
+     "scope": "npm lock v1–v3, Python == pins va Pipfile/poetry/uv lock, Go require, Gradle lockfile (Maven), Gemfile.lock (RubyGems), composer.lock (Packagist), Cargo.lock (crates.io). Faqat aniq versiya yozilgan formatlar o‘qiladi — versiyani hal qilish uchun build vositasini ishga tushirish kerak bo‘lgan fayllar (pom.xml, build.gradle, pyproject.toml) qamrovga kirmaydi va bo‘shliq sifatida ko‘rsatiladi. Tranzitiv bog‘liqliklar va ishlayotgan muhitning to‘liq inventari kafolatlanmaydi. Repository kodi bajarilmadi."
+    },
+    "finished_at": "2026-09-22T04:11:22.608417+00:00"
+   },
+   "report_sha256": "9ef5391f7f361a1957ebe186a6d3352b28491e92f9f9be8fd924ad74def0be1e",
+   "verification": {
+    "total": 0,
+    "confirmed_by_evidence": 0,
+    "manual_review_required": 0,
+    "note": "confirmed_by_evidence: nishonning haqiqiy javobi/holati bilan bevosita kuzatilgan. manual_review_required: statik yoki bazaviy moslik — mutaxassis tomonidan qo‘lda tasdiqlanishi shart."
+   }
+  },
+  {
+   "kind": "web",
+   "target": "",
+   "state": "not_selected"
+  },
+  {
+   "kind": "images",
+   "target": "",
+   "state": "not_selected"
+  }
+ ],
+ "limits": "Lokal bir foydalanuvchili pilot. Har bir skaner o‘z qamrovi va o‘z vaqtida olingan daliliga ega. Kod, image va URL aynan bir deployga tegishliligini operator tekshiradi. Tugamagan, o‘tkazib yuborilgan yoki qisman skan toza natija emas. AI ishlatilmaydi.",
+ "progress": "Jarayon yakunlandi; har bir bosqich holatini ko‘ring.",
+ "chain_findings": [
+  {
+   "rule_id": "SX-001",
+   "title": "Ochiq xizmat manbasida qattiq kodlangan sir topildi",
+   "service_id": "web",
+   "detail": "web xizmati host portidan to‘g‘ridan-to‘g‘ri ochiq va uning manba katalogida (app) Gitleaks stripe-access-token sirini topdi (app/config.py:7). Ikkalasi alohida to‘g‘ri: kodda test/dev qiymati qolishi va portni ochish alohida hodisalar. Ammo birgalikda: bu xizmat boshqa yo‘l bilan (masalan boshqa zanjir topilmasi orqali) buzilsa, sirning o‘zi darhol qo‘lga tushadi.",
+   "remediation": "Sirni darhol almashtiring (rotate) va muhit o‘zgaruvchisi yoki sir boshqaruvchisiga ko‘chiring; xizmat ochiq qolishi kerak bo‘lsa ham, manbada qattiq kodlangan qiymat qolmasligi kerak.",
+   "cwe_ids": [
+    "CWE-798",
+    "CWE-668"
+   ],
+   "owasp_top10_2025": [
+    {
+     "code": "A01",
+     "name": "A01:2025 – Broken Access Control"
+    },
+    {
+     "code": "A07",
+     "name": "A07:2025 – Authentication Failures"
+    }
+   ],
+   "level": "warning",
+   "verified": false,
+   "runtime_verified": false,
+   "verification_note": "Ikki mustaqil statik skaner natijasi bog‘langan; sirning haqiqiyligi va portning tashqi ochiqligi alohida-alohida qo‘lda tasdiqlanishi shart.",
+   "evidence": {
+    "gitleaks_path": "app/config.py",
+    "gitleaks_line": 7,
+    "gitleaks_rule_id": "stripe-access-token",
+    "compose_service": "web",
+    "build_context": "app"
+   }
+  }
+ ],
+ "verification_summary": {
+  "total": 12,
+  "confirmed_by_evidence": 0,
+  "manual_review_required": 12,
+  "note": "confirmed_by_evidence: nishonning haqiqiy javobi/holati bilan bevosita kuzatilgan. manual_review_required: statik yoki bazaviy moslik — mutaxassis tomonidan qo‘lda tasdiqlanishi shart."
+ },
+ "finished_at": "2026-09-22T04:11:35.144575+00:00"
+}

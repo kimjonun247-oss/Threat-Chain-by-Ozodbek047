@@ -1,0 +1,391 @@
+{
+ "id": "20260914T042621-8a76f693",
+ "created_at": "2026-09-14T04:26:21.527074+00:00",
+ "state": "partial",
+ "selection": {
+  "target": "crapi-full",
+  "web_target": "pilot-crapi",
+  "image_target": "pilot-crapi-web",
+  "online": true
+ },
+ "stages": [
+  {
+   "kind": "code",
+   "target": "crapi-full",
+   "state": "partial",
+   "report_id": "20260914T042621-c1bfac48",
+   "count": 10,
+   "report": {
+    "id": "20260914T042621-c1bfac48",
+    "target": "crapi-full",
+    "created_at": "2026-09-14T04:26:21.549164+00:00",
+    "state": "partial",
+    "count": 10,
+    "findings": [
+     {
+      "tool": "gitleaks",
+      "rule_id": "private-key",
+      "path": "services/chatbot/certs/server.key",
+      "line": 1,
+      "message": "Maxfiy qiymatga o‘xshash matn topildi. Bu demo qiymatmi yoki amaldagi sir ekanini tekshiring.",
+      "state": "unverified_static",
+      "secret_value": "hidden"
+     },
+     {
+      "tool": "gitleaks",
+      "rule_id": "private-key",
+      "path": "services/community/certs/server.key",
+      "line": 1,
+      "message": "Maxfiy qiymatga o‘xshash matn topildi. Bu demo qiymatmi yoki amaldagi sir ekanini tekshiring.",
+      "state": "unverified_static",
+      "secret_value": "hidden"
+     },
+     {
+      "tool": "gitleaks",
+      "rule_id": "private-key",
+      "path": "services/gateway-service/server.key",
+      "line": 1,
+      "message": "Maxfiy qiymatga o‘xshash matn topildi. Bu demo qiymatmi yoki amaldagi sir ekanini tekshiring.",
+      "state": "unverified_static",
+      "secret_value": "hidden"
+     }
+    ],
+    "tools": {
+     "semgrep": {
+      "state": "failed",
+      "count": 0,
+      "message": "Bu ish muhitida Windows sertifikat omboriga kirib bo‘lmadi. SCAN-CODE.cmd faylini Windows’da ochib tekshiring.",
+      "error_type": "RuntimeError",
+      "failure_stage": "version",
+      "diagnostic_code": "windows_certificate_store"
+     },
+     "gitleaks": {
+      "state": "completed",
+      "version": "8.30.1",
+      "count": 10,
+      "errors": 0,
+      "rule_set": "Gitleaks ichki qoidalari",
+      "rules_sha256": "39a393b8200ddaf822e57ed18e3c932487c7a9449996e1a5197f601db7b787af"
+     }
+    },
+    "verification": "unverified_static",
+    "limits": "Topilmalar qo‘lda tekshiriladi. Maxfiy qiymat va kod parchasi hisobotga kiritilmaydi. Bu amaliy hujum tasdig‘i emas.",
+    "coverage": {
+     "files": 493,
+     "bytes": 1654192,
+     "snapshot_sha256": "db5fafa979715b7a70f4b63822cbdafbd759783016a26dd6ecffff0bedbd43a3",
+     "skipped": {
+      "excluded": 1,
+      "links": 0,
+      "binary": 17,
+      "large": 1
+     },
+     "scope": "Joriy matn fayllari; Git tarixi, vendor/node_modules, binar va 1 MB dan katta fayllar kiritilmagan."
+    },
+    "finished_at": "2026-09-14T04:26:26.989834+00:00"
+   },
+   "report_sha256": "2351aadf92b0b6bdb591dbde8cb3a806826bc0b4aa1a42f0fd4cd32bba78dc1f"
+  },
+  {
+   "kind": "dependencies",
+   "target": "crapi-full",
+   "state": "failed",
+   "report_id": "20260914T042627-4c45fdb3",
+   "count": 0,
+   "report": {
+    "schema_version": 1,
+    "id": "20260914T042627-4c45fdb3",
+    "target": "crapi-full",
+    "created_at": "2026-09-14T04:26:27.373770+00:00",
+    "state": "failed",
+    "online": true,
+    "count": 0,
+    "findings": [],
+    "limits": "OSV paket/versiya mosligi amaliy hujum tasdig‘i emas. Qamrov, conditional/dev paketlar va ishlayotgan tizimga moslik qo‘lda tekshiriladi.",
+    "data_policy": "Online rejimda OSV ga faqat paket nomi, ecosystem va versiya yuboriladi. Kod, fayl yo‘li, token yuborilmaydi.",
+    "progress": "Tekshiruv tugallanmadi; bu toza natija emas",
+    "inventory_sha256": "44865575766e76c1dc6e1bee8372a6d36f631188197b291301392d11c91a08be",
+    "coverage": {
+     "schema_version": 1,
+     "manifests": [
+      {
+       "path": "services/chatbot/requirements-dev.txt",
+       "sha256": "9e03777a7e4a9d86c7d11cadce1ec496ea5ef90803c5b96ad25fceaecb155d9c",
+       "bytes": 6,
+       "state": "partial",
+       "packages": 0
+      },
+      {
+       "path": "services/chatbot/requirements.txt",
+       "sha256": "bced7af8dcc0cbe9473b75e86fb540b1aa68e44a37495fc8bc48c47325b828c6",
+       "bytes": 449,
+       "state": "partial",
+       "packages": 20
+      },
+      {
+       "path": "services/community/go.mod",
+       "sha256": "26eb71498a9df1c3451db20c465dc7121087405ceada65efa11545318d3aeac9",
+       "bytes": 976,
+       "state": "parsed",
+       "packages": 19
+      },
+      {
+       "path": "services/gateway-service/go.mod",
+       "sha256": "488b032c1130f160c0abd0e1cf70ecadddab9216995b63bb824718016556a5d7",
+       "bytes": 228,
+       "state": "parsed",
+       "packages": 3
+      },
+      {
+       "path": "services/identity/build.gradle.kts",
+       "sha256": "aff24988756aac240601f2874fcdc0239084db31cd0d9fa727db5354f97085cf",
+       "bytes": 3477,
+       "state": "unsupported"
+      },
+      {
+       "path": "services/web/package-lock.json",
+       "sha256": "990419f30cfd8f8709b03a133e0f9a12d9fdd2879caa03c0f32c0cf242fd9e90",
+       "bytes": 1626708,
+       "state": "parsed",
+       "packages": 1846
+      },
+      {
+       "path": "services/workshop/requirements.txt",
+       "sha256": "c3bbb55ad5a15155920c7f9053c340014bd3749d1eb560fbcc3d2220d6cd4443",
+       "bytes": 546,
+       "state": "partial",
+       "packages": 24
+      }
+     ],
+     "gaps": [
+      {
+       "path": "services/chatbot/requirements-dev.txt",
+       "line": 1,
+       "reason": "python_not_exact_pin_or_unsupported_directive"
+      },
+      {
+       "path": "services/chatbot/requirements.txt",
+       "line": 19,
+       "reason": "python_not_exact_pin_or_unsupported_directive"
+      },
+      {
+       "path": "services/chatbot/requirements.txt",
+       "line": 22,
+       "reason": "python_not_exact_pin_or_unsupported_directive"
+      }
+     ],
+     "sha256": "44865575766e76c1dc6e1bee8372a6d36f631188197b291301392d11c91a08be",
+     "unique_packages": 1649,
+     "occurrences": 1912,
+     "excluded_directories": 1,
+     "scope": "npm lock v1–v3, Python == pins, Go require. Go/Python tranzitiv bog‘liqliklari va ishlayotgan muhitning to‘liq inventari kafolatlanmaydi. Repository kodi bajarilmadi."
+    },
+    "error_type": "PermissionError",
+    "finished_at": "2026-09-14T04:27:10.953245+00:00"
+   },
+   "report_sha256": "fa48d8bd6c3e6670e5774fdf2f9245f3f45ae9835a1d69601ab8c668eeac49b3"
+  },
+  {
+   "kind": "web",
+   "target": "pilot-crapi",
+   "state": "failed",
+   "report_id": "20260914T042711-d725396c",
+   "count": 0,
+   "report": {
+    "id": "20260914T042711-d725396c",
+    "target": "pilot-crapi",
+    "url": "http://127.0.0.1:18888",
+    "authorization": {
+     "owner": "redacted",
+     "recorded_at": "existing_local_lab"
+    },
+    "created_at": "2026-09-14T04:27:11.138263+00:00",
+    "state": "failed",
+    "count": 0,
+    "findings": [],
+    "limits": "Cheklangan GET profili: kirishsiz javoblar, ochiq konfiguratsiya/fayl naqshlari va HTTP himoya sarlavhalari. Autentifikatsiya, biznes mantiqi, ekspluatatsiya va barcha CVE qamrovi yo‘q. Redirect kuzatilmaydi; sirlar hisobotga kiritilmaydi. Topilma yo‘qligi xavfsizlik kafolati emas.",
+    "scope": "Exact registered origin and base path; GET, 2 req/s, 32 requests, 64 KiB/response, 180 s.",
+    "progress": "Jarayon yakunlandi; holat va qamrovni ko‘ring.",
+    "profile_sha256": "f8760f3533110c9536ec8be2a7426b8143c04dd6a5852e774da96eab9d87a7e7",
+    "resolved_ip": "127.0.0.1",
+    "templates": {
+     "dir-listing": {
+      "file": "dir-listing.yaml",
+      "title": "Directory listing enabled",
+      "severity": "INFO",
+      "sha256": "616275a73fd26c454f3cd3f4304641975b7609dedf61c5255ebae42f4650706c",
+      "origin": "https://raw.githubusercontent.com/projectdiscovery/nuclei-templates/823ebcccf653310cb8df3264592027b437095943/http/miscellaneous/dir-listing.yaml"
+     },
+     "git-config": {
+      "file": "git-config.yaml",
+      "title": "Git Configuration - Detect",
+      "severity": "MEDIUM",
+      "sha256": "bd8bdfa0b5ed5bf4d3712edb793adfd0987d9282e51c6f7d673bf14b9e4dd524",
+      "origin": "https://raw.githubusercontent.com/projectdiscovery/nuclei-templates/823ebcccf653310cb8df3264592027b437095943/http/exposures/configs/git-config.yaml"
+     },
+     "zanjir-compose": {
+      "file": "zanjir-compose.yaml",
+      "title": "Ochiq Docker Compose konfiguratsiyasi",
+      "severity": "MEDIUM",
+      "sha256": "5dba48e5393d42e710a1d515d31419ad048be3fd22dfd0a1f9b5ac9e93866502",
+      "origin": "Zanjir local rule v1"
+     },
+     "zanjir-env": {
+      "file": "zanjir-env.yaml",
+      "title": "Ochiq muhit konfiguratsiyasi (.env)",
+      "severity": "HIGH",
+      "sha256": "887b944d4c76e970d77e7f4c70679a989e38fc5f30a920f7e02317fdc0a7d094",
+      "origin": "Zanjir local rule v1"
+     },
+     "zanjir-openapi": {
+      "file": "zanjir-openapi.yaml",
+      "title": "Ochiq API sxemasi (kirish siyosatini tekshiring)",
+      "severity": "INFO",
+      "sha256": "a8f222041c0035fb796f751234c56f76f80852706feed3cf2fe8b4d830402f4f",
+      "origin": "Zanjir local rule v1"
+     },
+     "zanjir-sql-backup": {
+      "file": "zanjir-sql-backup.yaml",
+      "title": "Ochiq SQL zaxira fayli",
+      "severity": "HIGH",
+      "sha256": "31ad6ef9176b4dd987a37a57f100cfea93907ae655a739fb6c0ddf777741471d",
+      "origin": "Zanjir local rule v1"
+     }
+    },
+    "error_type": "ConnectionRefusedError",
+    "message": "Tekshiruv to‘liq tugamadi. Nishon ishlashi, TLS sertifikati va Nuclei o‘rnatilishini tekshiring.",
+    "requests": 1,
+    "evidence": [],
+    "errors": [
+     {
+      "path": "/",
+      "type": "ConnectionRefusedError"
+     }
+    ],
+    "blocked_requests": 0,
+    "coverage": {
+     "attempted_paths": [],
+     "unvisited_paths": [
+      "/",
+      "/.env",
+      "/.env.production",
+      "/.git/config",
+      "/backup.sql",
+      "/compose.yaml",
+      "/docker-compose.yml",
+      "/dump.sql",
+      "/openapi.json",
+      "/swagger.json",
+      "/v3/api-docs",
+      "/zanjir-missing-aef7595acde841c6814723ff5b046b53"
+     ],
+     "restricted_responses": 0,
+     "redirects": 0,
+     "truncated_responses": 0
+    },
+    "severity_counts": {},
+    "finished_at": "2026-09-14T04:27:13.237883+00:00"
+   },
+   "report_sha256": "3691ace406de167962124aaa35165eb28e534b6f31e22536d9ec50de7b21bf2c"
+  },
+  {
+   "kind": "images",
+   "target": "pilot-crapi-web",
+   "state": "completed",
+   "report_id": "20260914T042713-1d24cfbd",
+   "count": 169,
+   "report": {
+    "schema_version": 1,
+    "id": "20260914T042713-1d24cfbd",
+    "target": "pilot-crapi-web",
+    "reference": "crapi/crapi-web@sha256:b27d246c646bd33898e7d1d2095b6e7576c0993a7b81a73aa7386929493d7151",
+    "created_at": "2026-09-14T04:27:13.660157+00:00",
+    "state": "completed",
+    "findings": [
+     {
+      "id": "85d4fdbad6af8bd10dd0d0bb",
+      "package": "libcrypto3",
+      "version": "3.5.1-r0",
+      "advisory_id": "CVE-2026-31789",
+      "severity": "CRITICAL",
+      "fixed_version": "3.5.6-r0",
+      "title": "openssl: OpenSSL: Heap buffer overflow on 32-bit systems from large X.509 certificate processing",
+      "target": "docker.io/crapi/crapi-web@sha256:b27d246c646bd33898e7d1d2095b6e7576c0993a7b81a73aa7386929493d7151 (alpine 3.22.1)",
+      "type": "alpine",
+      "state": "image_advisory_match",
+      "source": "Alpine Secdb"
+     },
+     {
+      "id": "d0fef5ade6ee365cd11adc90",
+      "package": "libssl3",
+      "version": "3.5.1-r0",
+      "advisory_id": "CVE-2026-31789",
+      "severity": "CRITICAL",
+      "fixed_version": "3.5.6-r0",
+      "title": "openssl: OpenSSL: Heap buffer overflow on 32-bit systems from large X.509 certificate processing",
+      "target": "docker.io/crapi/crapi-web@sha256:b27d246c646bd33898e7d1d2095b6e7576c0993a7b81a73aa7386929493d7151 (alpine 3.22.1)",
+      "type": "alpine",
+      "state": "image_advisory_match",
+      "source": "Alpine Secdb"
+     },
+     {
+      "id": "9c7c40162c1cd0cd36cb41ad",
+      "package": "c-ares",
+      "version": "1.34.5-r0",
+      "advisory_id": "CVE-2026-33630",
+      "severity": "HIGH",
+      "fixed_version": "1.34.8-r0",
+      "title": "c-ares: c-ares: Use-after-free / double-free in query-completion handling",
+      "target": "docker.io/crapi/crapi-web@sha256:b27d246c646bd33898e7d1d2095b6e7576c0993a7b81a73aa7386929493d7151 (alpine 3.22.1)",
+      "type": "alpine",
+      "state": "image_advisory_match",
+      "source": "Alpine Secdb"
+     }
+    ],
+    "count": 169,
+    "scope": "Public Docker Hub image, linux/amd64, 1 GB gacha. OS va aniqlangan til paketlari. Jarayon ishga tushirilmaydi.",
+    "limits": "Image topilmasi amaliy hujum tasdig‘i emas. Image digest ishlayotgan deploy va source commit bilan alohida bog‘lanadi. Qamrovga kirmagan paketlar bo‘lishi mumkin.",
+    "data_policy": "Public registry image va zaiflik bazalari yuklanadi. Lokal kod va Docker login ma’lumotlari yuborilmaydi.",
+    "progress": "Image tahlili tugadi; amaliy ta’sirini mutaxassis tekshiradi",
+    "tool": {
+     "name": "Trivy",
+     "version": "0.74.0",
+     "binary_sha256": "4c532e1f28f53282dc364671e87381cd77760fa9cafab143f576449c2207cdd5"
+    },
+    "coverage": [
+     {
+      "Target": "docker.io/crapi/crapi-web@sha256:b27d246c646bd33898e7d1d2095b6e7576c0993a7b81a73aa7386929493d7151 (alpine 3.22.1)",
+      "Class": "os-pkgs",
+      "Type": "alpine",
+      "packages": 66
+     }
+    ],
+    "os": {
+     "Family": "alpine",
+     "Name": "3.22.1"
+    },
+    "image_id": "sha256:c1dbe7743d9cbad681486b03c831c9853cd16b2a518ed4c8090c7a95ade4ed68",
+    "repo_digests": [
+     "crapi/crapi-web@sha256:b27d246c646bd33898e7d1d2095b6e7576c0993a7b81a73aa7386929493d7151"
+    ],
+    "severity_counts": {
+     "CRITICAL": 2,
+     "HIGH": 42,
+     "MEDIUM": 65,
+     "LOW": 60
+    },
+    "database": {
+     "Version": 2,
+     "UpdatedAt": "2026-09-14T01:15:36.63677888Z",
+     "NextUpdate": "2026-09-15T01:15:36.636778479Z",
+     "DownloadedAt": "2026-09-14T04:28:36.9202574Z"
+    },
+    "finished_at": "2026-09-14T04:29:04.926662+00:00"
+   },
+   "report_sha256": "2b70175eace91bf34069fbf0b7487fa850055b1499cfb947c4670607e0f00580"
+  }
+ ],
+ "limits": "Lokal bir foydalanuvchili pilot. Har bir skaner o‘z qamrovi va o‘z vaqtida olingan daliliga ega. Kod, image va URL aynan bir deployga tegishliligini operator tekshiradi. Tugamagan, o‘tkazib yuborilgan yoki qisman skan toza natija emas. AI ishlatilmaydi.",
+ "progress": "Jarayon yakunlandi; har bir bosqich holatini ko‘ring.",
+ "finished_at": "2026-09-14T04:29:05.326883+00:00"
+}

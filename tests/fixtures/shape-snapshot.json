@@ -1,0 +1,4109 @@
+{
+ "assessment-newest.json": {
+  "chain_findings": [
+   "list"
+  ],
+  "chain_findings[].cwe_ids": [
+   "list"
+  ],
+  "chain_findings[].detail": [
+   "str"
+  ],
+  "chain_findings[].evidence": [
+   "dict"
+  ],
+  "chain_findings[].evidence.build_context": [
+   "str"
+  ],
+  "chain_findings[].evidence.compose_service": [
+   "str"
+  ],
+  "chain_findings[].evidence.gitleaks_line": [
+   "int"
+  ],
+  "chain_findings[].evidence.gitleaks_path": [
+   "str"
+  ],
+  "chain_findings[].evidence.gitleaks_rule_id": [
+   "str"
+  ],
+  "chain_findings[].level": [
+   "str"
+  ],
+  "chain_findings[].owasp_top10_2025": [
+   "list"
+  ],
+  "chain_findings[].owasp_top10_2025[].code": [
+   "str"
+  ],
+  "chain_findings[].owasp_top10_2025[].name": [
+   "str"
+  ],
+  "chain_findings[].remediation": [
+   "str"
+  ],
+  "chain_findings[].rule_id": [
+   "str"
+  ],
+  "chain_findings[].runtime_verified": [
+   "bool"
+  ],
+  "chain_findings[].service_id": [
+   "str"
+  ],
+  "chain_findings[].title": [
+   "str"
+  ],
+  "chain_findings[].verification_note": [
+   "str"
+  ],
+  "chain_findings[].verified": [
+   "bool"
+  ],
+  "created_at": [
+   "str"
+  ],
+  "finished_at": [
+   "str"
+  ],
+  "id": [
+   "str"
+  ],
+  "limits": [
+   "str"
+  ],
+  "progress": [
+   "str"
+  ],
+  "selection": [
+   "dict"
+  ],
+  "selection.image_target": [
+   "str"
+  ],
+  "selection.online": [
+   "bool"
+  ],
+  "selection.repository_target": [
+   "str"
+  ],
+  "selection.target": [
+   "str"
+  ],
+  "selection.web_target": [
+   "str"
+  ],
+  "stages": [
+   "list"
+  ],
+  "stages[].count": [
+   "int"
+  ],
+  "stages[].kind": [
+   "str"
+  ],
+  "stages[].report": [
+   "dict"
+  ],
+  "stages[].report.count": [
+   "int"
+  ],
+  "stages[].report.coverage": [
+   "dict"
+  ],
+  "stages[].report.coverage.bytes": [
+   "int"
+  ],
+  "stages[].report.coverage.excluded_directories": [
+   "int"
+  ],
+  "stages[].report.coverage.files": [
+   "int"
+  ],
+  "stages[].report.coverage.gaps": [
+   "list"
+  ],
+  "stages[].report.coverage.manifests": [
+   "list"
+  ],
+  "stages[].report.coverage.occurrences": [
+   "int"
+  ],
+  "stages[].report.coverage.schema_version": [
+   "int"
+  ],
+  "stages[].report.coverage.scope": [
+   "str"
+  ],
+  "stages[].report.coverage.sha256": [
+   "str"
+  ],
+  "stages[].report.coverage.skipped": [
+   "dict"
+  ],
+  "stages[].report.coverage.skipped.binary": [
+   "int"
+  ],
+  "stages[].report.coverage.skipped.excluded": [
+   "int"
+  ],
+  "stages[].report.coverage.skipped.large": [
+   "int"
+  ],
+  "stages[].report.coverage.skipped.links": [
+   "int"
+  ],
+  "stages[].report.coverage.snapshot_sha256": [
+   "str"
+  ],
+  "stages[].report.coverage.unique_packages": [
+   "int"
+  ],
+  "stages[].report.created_at": [
+   "str"
+  ],
+  "stages[].report.data_policy": [
+   "str"
+  ],
+  "stages[].report.duration_ms": [
+   "float"
+  ],
+  "stages[].report.edges": [
+   "list"
+  ],
+  "stages[].report.engine_version": [
+   "str"
+  ],
+  "stages[].report.evidence": [
+   "list"
+  ],
+  "stages[].report.evidence[].id": [
+   "str"
+  ],
+  "stages[].report.evidence[].label": [
+   "str"
+  ],
+  "stages[].report.evidence[].line": [
+   "int"
+  ],
+  "stages[].report.evidence[].path": [
+   "str"
+  ],
+  "stages[].report.evidence[].value": [
+   "dict",
+   "str"
+  ],
+  "stages[].report.evidence[].value.DEBUG": [
+   "str"
+  ],
+  "stages[].report.evidence[].value.cap_add": [
+   "list"
+  ],
+  "stages[].report.evidence[].value.evidence_id": [
+   "str"
+  ],
+  "stages[].report.evidence[].value.host_ip": [
+   "str"
+  ],
+  "stages[].report.evidence[].value.privileged": [
+   "bool"
+  ],
+  "stages[].report.evidence[].value.protocol": [
+   "str"
+  ],
+  "stages[].report.evidence[].value.published": [
+   "str"
+  ],
+  "stages[].report.evidence[].value.scope": [
+   "str"
+  ],
+  "stages[].report.evidence[].value.target": [
+   "int"
+  ],
+  "stages[].report.evidence[].value.volumes": [
+   "list"
+  ],
+  "stages[].report.files": [
+   "list"
+  ],
+  "stages[].report.files[].bytes": [
+   "int"
+  ],
+  "stages[].report.files[].path": [
+   "str"
+  ],
+  "stages[].report.files[].sha256": [
+   "str"
+  ],
+  "stages[].report.findings": [
+   "list"
+  ],
+  "stages[].report.findings[].cwe_ids": [
+   "list"
+  ],
+  "stages[].report.findings[].detail": [
+   "str"
+  ],
+  "stages[].report.findings[].evidence_ids": [
+   "list"
+  ],
+  "stages[].report.findings[].fingerprint": [
+   "str"
+  ],
+  "stages[].report.findings[].level": [
+   "str"
+  ],
+  "stages[].report.findings[].line": [
+   "int"
+  ],
+  "stages[].report.findings[].message": [
+   "str"
+  ],
+  "stages[].report.findings[].owasp_top10_2025": [
+   "list"
+  ],
+  "stages[].report.findings[].owasp_top10_2025[].code": [
+   "str"
+  ],
+  "stages[].report.findings[].owasp_top10_2025[].name": [
+   "str"
+  ],
+  "stages[].report.findings[].path": [
+   "str"
+  ],
+  "stages[].report.findings[].remediation": [
+   "str"
+  ],
+  "stages[].report.findings[].rule_id": [
+   "str"
+  ],
+  "stages[].report.findings[].runtime_verified": [
+   "bool"
+  ],
+  "stages[].report.findings[].secret_value": [
+   "NoneType",
+   "str"
+  ],
+  "stages[].report.findings[].service_id": [
+   "str"
+  ],
+  "stages[].report.findings[].severity": [
+   "NoneType",
+   "str"
+  ],
+  "stages[].report.findings[].state": [
+   "str"
+  ],
+  "stages[].report.findings[].status": [
+   "str"
+  ],
+  "stages[].report.findings[].title": [
+   "str"
+  ],
+  "stages[].report.findings[].tool": [
+   "str"
+  ],
+  "stages[].report.findings[].verification_note": [
+   "str"
+  ],
+  "stages[].report.findings[].verified": [
+   "bool"
+  ],
+  "stages[].report.finished_at": [
+   "str"
+  ],
+  "stages[].report.id": [
+   "str"
+  ],
+  "stages[].report.input_sha256": [
+   "str"
+  ],
+  "stages[].report.inventory_sha256": [
+   "str"
+  ],
+  "stages[].report.kind": [
+   "str"
+  ],
+  "stages[].report.limits": [
+   "list",
+   "str"
+  ],
+  "stages[].report.profile": [
+   "dict"
+  ],
+  "stages[].report.profile.bindings": [
+   "list"
+  ],
+  "stages[].report.profile.compose": [
+   "str"
+  ],
+  "stages[].report.profile.env_file": [
+   "NoneType"
+  ],
+  "stages[].report.profile_id": [
+   "str"
+  ],
+  "stages[].report.profile_name": [
+   "str"
+  ],
+  "stages[].report.progress": [
+   "str"
+  ],
+  "stages[].report.report_sha256": [
+   "str"
+  ],
+  "stages[].report.repository": [
+   "dict"
+  ],
+  "stages[].report.repository.commit": [
+   "NoneType"
+  ],
+  "stages[].report.repository.execution": [
+   "str"
+  ],
+  "stages[].report.repository.note": [
+   "str"
+  ],
+  "stages[].report.repository.repository": [
+   "str"
+  ],
+  "stages[].report.repository.retrieved_at": [
+   "str"
+  ],
+  "stages[].report.repository.source_type": [
+   "str"
+  ],
+  "stages[].report.repository.subset": [
+   "list"
+  ],
+  "stages[].report.schema_version": [
+   "int"
+  ],
+  "stages[].report.services": [
+   "list"
+  ],
+  "stages[].report.services[].auth_status": [
+   "str"
+  ],
+  "stages[].report.services[].build_context": [
+   "NoneType",
+   "str"
+  ],
+  "stages[].report.services[].evidence_id": [
+   "str"
+  ],
+  "stages[].report.services[].id": [
+   "str"
+  ],
+  "stages[].report.services[].image": [
+   "str"
+  ],
+  "stages[].report.services[].networks": [
+   "list"
+  ],
+  "stages[].report.services[].ports": [
+   "list"
+  ],
+  "stages[].report.services[].ports[].evidence_id": [
+   "str"
+  ],
+  "stages[].report.services[].ports[].host_ip": [
+   "str"
+  ],
+  "stages[].report.services[].ports[].protocol": [
+   "str"
+  ],
+  "stages[].report.services[].ports[].published": [
+   "str"
+  ],
+  "stages[].report.services[].ports[].scope": [
+   "str"
+  ],
+  "stages[].report.services[].ports[].target": [
+   "int"
+  ],
+  "stages[].report.services[].runtime_verified": [
+   "bool"
+  ],
+  "stages[].report.state": [
+   "str"
+  ],
+  "stages[].report.summary": [
+   "dict"
+  ],
+  "stages[].report.summary.findings": [
+   "int"
+  ],
+  "stages[].report.summary.loopback_ports": [
+   "int"
+  ],
+  "stages[].report.summary.proxy_routes": [
+   "int"
+  ],
+  "stages[].report.summary.published_ports": [
+   "int"
+  ],
+  "stages[].report.summary.runtime_confirmed": [
+   "int"
+  ],
+  "stages[].report.summary.services": [
+   "int"
+  ],
+  "stages[].report.target": [
+   "str"
+  ],
+  "stages[].report.tools": [
+   "dict"
+  ],
+  "stages[].report.tools.gitleaks": [
+   "dict"
+  ],
+  "stages[].report.tools.gitleaks.count": [
+   "int"
+  ],
+  "stages[].report.tools.gitleaks.errors": [
+   "int"
+  ],
+  "stages[].report.tools.gitleaks.rule_set": [
+   "str"
+  ],
+  "stages[].report.tools.gitleaks.rules_sha256": [
+   "str"
+  ],
+  "stages[].report.tools.gitleaks.state": [
+   "str"
+  ],
+  "stages[].report.tools.gitleaks.version": [
+   "str"
+  ],
+  "stages[].report.tools.pmd": [
+   "dict"
+  ],
+  "stages[].report.tools.pmd.count": [
+   "int"
+  ],
+  "stages[].report.tools.pmd.errors": [
+   "int"
+  ],
+  "stages[].report.tools.pmd.rule_set": [
+   "str"
+  ],
+  "stages[].report.tools.pmd.rules_sha256": [
+   "str"
+  ],
+  "stages[].report.tools.pmd.state": [
+   "str"
+  ],
+  "stages[].report.tools.pmd.version": [
+   "str"
+  ],
+  "stages[].report.tools.semgrep": [
+   "dict"
+  ],
+  "stages[].report.tools.semgrep.count": [
+   "int"
+  ],
+  "stages[].report.tools.semgrep.error_files": [
+   "dict"
+  ],
+  "stages[].report.tools.semgrep.error_kinds": [
+   "dict"
+  ],
+  "stages[].report.tools.semgrep.errors": [
+   "int"
+  ],
+  "stages[].report.tools.semgrep.rule_pack": [
+   "dict"
+  ],
+  "stages[].report.tools.semgrep.rule_pack.commit": [
+   "str"
+  ],
+  "stages[].report.tools.semgrep.rule_pack.files": [
+   "int"
+  ],
+  "stages[].report.tools.semgrep.rule_pack.languages": [
+   "list"
+  ],
+  "stages[].report.tools.semgrep.rule_pack.rules": [
+   "int"
+  ],
+  "stages[].report.tools.semgrep.rule_pack.source": [
+   "str"
+  ],
+  "stages[].report.tools.semgrep.rule_set": [
+   "str"
+  ],
+  "stages[].report.tools.semgrep.rules_sha256": [
+   "str"
+  ],
+  "stages[].report.tools.semgrep.state": [
+   "str"
+  ],
+  "stages[].report.tools.semgrep.version": [
+   "str"
+  ],
+  "stages[].report.unknowns": [
+   "list"
+  ],
+  "stages[].report.verification": [
+   "str"
+  ],
+  "stages[].report.verification_summary": [
+   "dict"
+  ],
+  "stages[].report.verification_summary.confirmed_by_evidence": [
+   "int"
+  ],
+  "stages[].report.verification_summary.manual_review_required": [
+   "int"
+  ],
+  "stages[].report.verification_summary.note": [
+   "str"
+  ],
+  "stages[].report.verification_summary.total": [
+   "int"
+  ],
+  "stages[].report_id": [
+   "str"
+  ],
+  "stages[].report_sha256": [
+   "str"
+  ],
+  "stages[].state": [
+   "str"
+  ],
+  "stages[].target": [
+   "str"
+  ],
+  "stages[].verification": [
+   "dict"
+  ],
+  "stages[].verification.confirmed_by_evidence": [
+   "int"
+  ],
+  "stages[].verification.manual_review_required": [
+   "int"
+  ],
+  "stages[].verification.note": [
+   "str"
+  ],
+  "stages[].verification.total": [
+   "int"
+  ],
+  "state": [
+   "str"
+  ],
+  "verification_summary": [
+   "dict"
+  ],
+  "verification_summary.confirmed_by_evidence": [
+   "int"
+  ],
+  "verification_summary.manual_review_required": [
+   "int"
+  ],
+  "verification_summary.note": [
+   "str"
+  ],
+  "verification_summary.total": [
+   "int"
+  ]
+ },
+ "assessment-oldest.json": {
+  "created_at": [
+   "str"
+  ],
+  "finished_at": [
+   "str"
+  ],
+  "id": [
+   "str"
+  ],
+  "limits": [
+   "str"
+  ],
+  "progress": [
+   "str"
+  ],
+  "selection": [
+   "dict"
+  ],
+  "selection.image_target": [
+   "str"
+  ],
+  "selection.online": [
+   "bool"
+  ],
+  "selection.target": [
+   "str"
+  ],
+  "selection.web_target": [
+   "str"
+  ],
+  "stages": [
+   "list"
+  ],
+  "stages[].count": [
+   "int"
+  ],
+  "stages[].kind": [
+   "str"
+  ],
+  "stages[].report": [
+   "dict"
+  ],
+  "stages[].report.authorization": [
+   "dict"
+  ],
+  "stages[].report.authorization.owner": [
+   "str"
+  ],
+  "stages[].report.authorization.recorded_at": [
+   "str"
+  ],
+  "stages[].report.blocked_requests": [
+   "int"
+  ],
+  "stages[].report.count": [
+   "int"
+  ],
+  "stages[].report.coverage": [
+   "dict",
+   "list"
+  ],
+  "stages[].report.coverage.attempted_paths": [
+   "list"
+  ],
+  "stages[].report.coverage.bytes": [
+   "int"
+  ],
+  "stages[].report.coverage.excluded_directories": [
+   "int"
+  ],
+  "stages[].report.coverage.files": [
+   "int"
+  ],
+  "stages[].report.coverage.gaps": [
+   "list"
+  ],
+  "stages[].report.coverage.gaps[].line": [
+   "int"
+  ],
+  "stages[].report.coverage.gaps[].path": [
+   "str"
+  ],
+  "stages[].report.coverage.gaps[].reason": [
+   "str"
+  ],
+  "stages[].report.coverage.manifests": [
+   "list"
+  ],
+  "stages[].report.coverage.manifests[].bytes": [
+   "int"
+  ],
+  "stages[].report.coverage.manifests[].packages": [
+   "int"
+  ],
+  "stages[].report.coverage.manifests[].path": [
+   "str"
+  ],
+  "stages[].report.coverage.manifests[].sha256": [
+   "str"
+  ],
+  "stages[].report.coverage.manifests[].state": [
+   "str"
+  ],
+  "stages[].report.coverage.occurrences": [
+   "int"
+  ],
+  "stages[].report.coverage.redirects": [
+   "int"
+  ],
+  "stages[].report.coverage.restricted_responses": [
+   "int"
+  ],
+  "stages[].report.coverage.schema_version": [
+   "int"
+  ],
+  "stages[].report.coverage.scope": [
+   "str"
+  ],
+  "stages[].report.coverage.sha256": [
+   "str"
+  ],
+  "stages[].report.coverage.skipped": [
+   "dict"
+  ],
+  "stages[].report.coverage.skipped.binary": [
+   "int"
+  ],
+  "stages[].report.coverage.skipped.excluded": [
+   "int"
+  ],
+  "stages[].report.coverage.skipped.large": [
+   "int"
+  ],
+  "stages[].report.coverage.skipped.links": [
+   "int"
+  ],
+  "stages[].report.coverage.snapshot_sha256": [
+   "str"
+  ],
+  "stages[].report.coverage.truncated_responses": [
+   "int"
+  ],
+  "stages[].report.coverage.unique_packages": [
+   "int"
+  ],
+  "stages[].report.coverage.unvisited_paths": [
+   "list"
+  ],
+  "stages[].report.coverage[].Class": [
+   "str"
+  ],
+  "stages[].report.coverage[].Target": [
+   "str"
+  ],
+  "stages[].report.coverage[].Type": [
+   "str"
+  ],
+  "stages[].report.coverage[].packages": [
+   "int"
+  ],
+  "stages[].report.created_at": [
+   "str"
+  ],
+  "stages[].report.data_policy": [
+   "str"
+  ],
+  "stages[].report.database": [
+   "dict"
+  ],
+  "stages[].report.database.DownloadedAt": [
+   "str"
+  ],
+  "stages[].report.database.NextUpdate": [
+   "str"
+  ],
+  "stages[].report.database.UpdatedAt": [
+   "str"
+  ],
+  "stages[].report.database.Version": [
+   "int"
+  ],
+  "stages[].report.error_type": [
+   "str"
+  ],
+  "stages[].report.errors": [
+   "list"
+  ],
+  "stages[].report.errors[].path": [
+   "str"
+  ],
+  "stages[].report.errors[].type": [
+   "str"
+  ],
+  "stages[].report.evidence": [
+   "list"
+  ],
+  "stages[].report.findings": [
+   "list"
+  ],
+  "stages[].report.findings[].advisory_id": [
+   "str"
+  ],
+  "stages[].report.findings[].fixed_version": [
+   "str"
+  ],
+  "stages[].report.findings[].id": [
+   "str"
+  ],
+  "stages[].report.findings[].line": [
+   "int"
+  ],
+  "stages[].report.findings[].message": [
+   "str"
+  ],
+  "stages[].report.findings[].package": [
+   "str"
+  ],
+  "stages[].report.findings[].path": [
+   "str"
+  ],
+  "stages[].report.findings[].rule_id": [
+   "str"
+  ],
+  "stages[].report.findings[].secret_value": [
+   "str"
+  ],
+  "stages[].report.findings[].severity": [
+   "str"
+  ],
+  "stages[].report.findings[].source": [
+   "str"
+  ],
+  "stages[].report.findings[].state": [
+   "str"
+  ],
+  "stages[].report.findings[].target": [
+   "str"
+  ],
+  "stages[].report.findings[].title": [
+   "str"
+  ],
+  "stages[].report.findings[].tool": [
+   "str"
+  ],
+  "stages[].report.findings[].type": [
+   "str"
+  ],
+  "stages[].report.findings[].version": [
+   "str"
+  ],
+  "stages[].report.finished_at": [
+   "str"
+  ],
+  "stages[].report.id": [
+   "str"
+  ],
+  "stages[].report.image_id": [
+   "str"
+  ],
+  "stages[].report.inventory_sha256": [
+   "str"
+  ],
+  "stages[].report.limits": [
+   "str"
+  ],
+  "stages[].report.message": [
+   "str"
+  ],
+  "stages[].report.online": [
+   "bool"
+  ],
+  "stages[].report.os": [
+   "dict"
+  ],
+  "stages[].report.os.Family": [
+   "str"
+  ],
+  "stages[].report.os.Name": [
+   "str"
+  ],
+  "stages[].report.profile_sha256": [
+   "str"
+  ],
+  "stages[].report.progress": [
+   "str"
+  ],
+  "stages[].report.reference": [
+   "str"
+  ],
+  "stages[].report.repo_digests": [
+   "list"
+  ],
+  "stages[].report.requests": [
+   "int"
+  ],
+  "stages[].report.resolved_ip": [
+   "str"
+  ],
+  "stages[].report.schema_version": [
+   "int"
+  ],
+  "stages[].report.scope": [
+   "str"
+  ],
+  "stages[].report.severity_counts": [
+   "dict"
+  ],
+  "stages[].report.severity_counts.CRITICAL": [
+   "int"
+  ],
+  "stages[].report.severity_counts.HIGH": [
+   "int"
+  ],
+  "stages[].report.severity_counts.LOW": [
+   "int"
+  ],
+  "stages[].report.severity_counts.MEDIUM": [
+   "int"
+  ],
+  "stages[].report.state": [
+   "str"
+  ],
+  "stages[].report.target": [
+   "str"
+  ],
+  "stages[].report.templates": [
+   "dict"
+  ],
+  "stages[].report.templates.dir-listing": [
+   "dict"
+  ],
+  "stages[].report.templates.dir-listing.file": [
+   "str"
+  ],
+  "stages[].report.templates.dir-listing.origin": [
+   "str"
+  ],
+  "stages[].report.templates.dir-listing.severity": [
+   "str"
+  ],
+  "stages[].report.templates.dir-listing.sha256": [
+   "str"
+  ],
+  "stages[].report.templates.dir-listing.title": [
+   "str"
+  ],
+  "stages[].report.templates.git-config": [
+   "dict"
+  ],
+  "stages[].report.templates.git-config.file": [
+   "str"
+  ],
+  "stages[].report.templates.git-config.origin": [
+   "str"
+  ],
+  "stages[].report.templates.git-config.severity": [
+   "str"
+  ],
+  "stages[].report.templates.git-config.sha256": [
+   "str"
+  ],
+  "stages[].report.templates.git-config.title": [
+   "str"
+  ],
+  "stages[].report.templates.zanjir-compose": [
+   "dict"
+  ],
+  "stages[].report.templates.zanjir-compose.file": [
+   "str"
+  ],
+  "stages[].report.templates.zanjir-compose.origin": [
+   "str"
+  ],
+  "stages[].report.templates.zanjir-compose.severity": [
+   "str"
+  ],
+  "stages[].report.templates.zanjir-compose.sha256": [
+   "str"
+  ],
+  "stages[].report.templates.zanjir-compose.title": [
+   "str"
+  ],
+  "stages[].report.templates.zanjir-env": [
+   "dict"
+  ],
+  "stages[].report.templates.zanjir-env.file": [
+   "str"
+  ],
+  "stages[].report.templates.zanjir-env.origin": [
+   "str"
+  ],
+  "stages[].report.templates.zanjir-env.severity": [
+   "str"
+  ],
+  "stages[].report.templates.zanjir-env.sha256": [
+   "str"
+  ],
+  "stages[].report.templates.zanjir-env.title": [
+   "str"
+  ],
+  "stages[].report.templates.zanjir-openapi": [
+   "dict"
+  ],
+  "stages[].report.templates.zanjir-openapi.file": [
+   "str"
+  ],
+  "stages[].report.templates.zanjir-openapi.origin": [
+   "str"
+  ],
+  "stages[].report.templates.zanjir-openapi.severity": [
+   "str"
+  ],
+  "stages[].report.templates.zanjir-openapi.sha256": [
+   "str"
+  ],
+  "stages[].report.templates.zanjir-openapi.title": [
+   "str"
+  ],
+  "stages[].report.templates.zanjir-sql-backup": [
+   "dict"
+  ],
+  "stages[].report.templates.zanjir-sql-backup.file": [
+   "str"
+  ],
+  "stages[].report.templates.zanjir-sql-backup.origin": [
+   "str"
+  ],
+  "stages[].report.templates.zanjir-sql-backup.severity": [
+   "str"
+  ],
+  "stages[].report.templates.zanjir-sql-backup.sha256": [
+   "str"
+  ],
+  "stages[].report.templates.zanjir-sql-backup.title": [
+   "str"
+  ],
+  "stages[].report.tool": [
+   "dict"
+  ],
+  "stages[].report.tool.binary_sha256": [
+   "str"
+  ],
+  "stages[].report.tool.name": [
+   "str"
+  ],
+  "stages[].report.tool.version": [
+   "str"
+  ],
+  "stages[].report.tools": [
+   "dict"
+  ],
+  "stages[].report.tools.gitleaks": [
+   "dict"
+  ],
+  "stages[].report.tools.gitleaks.count": [
+   "int"
+  ],
+  "stages[].report.tools.gitleaks.errors": [
+   "int"
+  ],
+  "stages[].report.tools.gitleaks.rule_set": [
+   "str"
+  ],
+  "stages[].report.tools.gitleaks.rules_sha256": [
+   "str"
+  ],
+  "stages[].report.tools.gitleaks.state": [
+   "str"
+  ],
+  "stages[].report.tools.gitleaks.version": [
+   "str"
+  ],
+  "stages[].report.tools.semgrep": [
+   "dict"
+  ],
+  "stages[].report.tools.semgrep.count": [
+   "int"
+  ],
+  "stages[].report.tools.semgrep.diagnostic_code": [
+   "str"
+  ],
+  "stages[].report.tools.semgrep.error_type": [
+   "str"
+  ],
+  "stages[].report.tools.semgrep.failure_stage": [
+   "str"
+  ],
+  "stages[].report.tools.semgrep.message": [
+   "str"
+  ],
+  "stages[].report.tools.semgrep.state": [
+   "str"
+  ],
+  "stages[].report.url": [
+   "str"
+  ],
+  "stages[].report.verification": [
+   "str"
+  ],
+  "stages[].report_id": [
+   "str"
+  ],
+  "stages[].report_sha256": [
+   "str"
+  ],
+  "stages[].state": [
+   "str"
+  ],
+  "stages[].target": [
+   "str"
+  ],
+  "state": [
+   "str"
+  ]
+ },
+ "code-newest.json": {
+  "count": [
+   "int"
+  ],
+  "coverage": [
+   "dict"
+  ],
+  "coverage.bytes": [
+   "int"
+  ],
+  "coverage.files": [
+   "int"
+  ],
+  "coverage.scope": [
+   "str"
+  ],
+  "coverage.skipped": [
+   "dict"
+  ],
+  "coverage.skipped.binary": [
+   "int"
+  ],
+  "coverage.skipped.excluded": [
+   "int"
+  ],
+  "coverage.skipped.large": [
+   "int"
+  ],
+  "coverage.skipped.links": [
+   "int"
+  ],
+  "coverage.snapshot_sha256": [
+   "str"
+  ],
+  "created_at": [
+   "str"
+  ],
+  "findings": [
+   "list"
+  ],
+  "findings[].cwe_ids": [
+   "list"
+  ],
+  "findings[].line": [
+   "int"
+  ],
+  "findings[].message": [
+   "str"
+  ],
+  "findings[].owasp_top10_2025": [
+   "list"
+  ],
+  "findings[].owasp_top10_2025[].code": [
+   "str"
+  ],
+  "findings[].owasp_top10_2025[].name": [
+   "str"
+  ],
+  "findings[].path": [
+   "str"
+  ],
+  "findings[].rule_id": [
+   "str"
+  ],
+  "findings[].secret_value": [
+   "NoneType",
+   "str"
+  ],
+  "findings[].severity": [
+   "NoneType",
+   "str"
+  ],
+  "findings[].state": [
+   "str"
+  ],
+  "findings[].tool": [
+   "str"
+  ],
+  "findings[].verification_note": [
+   "str"
+  ],
+  "findings[].verified": [
+   "bool"
+  ],
+  "finished_at": [
+   "str"
+  ],
+  "id": [
+   "str"
+  ],
+  "limits": [
+   "str"
+  ],
+  "state": [
+   "str"
+  ],
+  "target": [
+   "str"
+  ],
+  "tools": [
+   "dict"
+  ],
+  "tools.gitleaks": [
+   "dict"
+  ],
+  "tools.gitleaks.count": [
+   "int"
+  ],
+  "tools.gitleaks.errors": [
+   "int"
+  ],
+  "tools.gitleaks.rule_set": [
+   "str"
+  ],
+  "tools.gitleaks.rules_sha256": [
+   "str"
+  ],
+  "tools.gitleaks.state": [
+   "str"
+  ],
+  "tools.gitleaks.version": [
+   "str"
+  ],
+  "tools.pmd": [
+   "dict"
+  ],
+  "tools.pmd.count": [
+   "int"
+  ],
+  "tools.pmd.errors": [
+   "int"
+  ],
+  "tools.pmd.rule_set": [
+   "str"
+  ],
+  "tools.pmd.rules_sha256": [
+   "str"
+  ],
+  "tools.pmd.state": [
+   "str"
+  ],
+  "tools.pmd.version": [
+   "str"
+  ],
+  "tools.semgrep": [
+   "dict"
+  ],
+  "tools.semgrep.count": [
+   "int"
+  ],
+  "tools.semgrep.error_files": [
+   "dict"
+  ],
+  "tools.semgrep.error_kinds": [
+   "dict"
+  ],
+  "tools.semgrep.errors": [
+   "int"
+  ],
+  "tools.semgrep.rule_pack": [
+   "dict"
+  ],
+  "tools.semgrep.rule_pack.commit": [
+   "str"
+  ],
+  "tools.semgrep.rule_pack.files": [
+   "int"
+  ],
+  "tools.semgrep.rule_pack.languages": [
+   "list"
+  ],
+  "tools.semgrep.rule_pack.rules": [
+   "int"
+  ],
+  "tools.semgrep.rule_pack.source": [
+   "str"
+  ],
+  "tools.semgrep.rule_set": [
+   "str"
+  ],
+  "tools.semgrep.rules_sha256": [
+   "str"
+  ],
+  "tools.semgrep.state": [
+   "str"
+  ],
+  "tools.semgrep.version": [
+   "str"
+  ],
+  "verification": [
+   "str"
+  ],
+  "verification_summary": [
+   "dict"
+  ],
+  "verification_summary.confirmed_by_evidence": [
+   "int"
+  ],
+  "verification_summary.manual_review_required": [
+   "int"
+  ],
+  "verification_summary.note": [
+   "str"
+  ],
+  "verification_summary.total": [
+   "int"
+  ]
+ },
+ "code-oldest.json": {
+  "count": [
+   "int"
+  ],
+  "coverage": [
+   "dict"
+  ],
+  "coverage.bytes": [
+   "int"
+  ],
+  "coverage.files": [
+   "int"
+  ],
+  "coverage.scope": [
+   "str"
+  ],
+  "coverage.skipped": [
+   "dict"
+  ],
+  "coverage.skipped.binary": [
+   "int"
+  ],
+  "coverage.skipped.excluded": [
+   "int"
+  ],
+  "coverage.skipped.large": [
+   "int"
+  ],
+  "coverage.skipped.links": [
+   "int"
+  ],
+  "coverage.snapshot_sha256": [
+   "str"
+  ],
+  "created_at": [
+   "str"
+  ],
+  "findings": [
+   "list"
+  ],
+  "findings[].line": [
+   "int"
+  ],
+  "findings[].message": [
+   "str"
+  ],
+  "findings[].path": [
+   "str"
+  ],
+  "findings[].rule_id": [
+   "str"
+  ],
+  "findings[].secret_value": [
+   "str"
+  ],
+  "findings[].state": [
+   "str"
+  ],
+  "findings[].tool": [
+   "str"
+  ],
+  "finished_at": [
+   "str"
+  ],
+  "id": [
+   "str"
+  ],
+  "limits": [
+   "str"
+  ],
+  "state": [
+   "str"
+  ],
+  "target": [
+   "str"
+  ],
+  "tools": [
+   "dict"
+  ],
+  "tools.gitleaks": [
+   "dict"
+  ],
+  "tools.gitleaks.count": [
+   "int"
+  ],
+  "tools.gitleaks.errors": [
+   "int"
+  ],
+  "tools.gitleaks.rule_set": [
+   "str"
+  ],
+  "tools.gitleaks.rules_sha256": [
+   "str"
+  ],
+  "tools.gitleaks.state": [
+   "str"
+  ],
+  "tools.gitleaks.version": [
+   "str"
+  ],
+  "tools.semgrep": [
+   "dict"
+  ],
+  "tools.semgrep.count": [
+   "int"
+  ],
+  "tools.semgrep.error_type": [
+   "str"
+  ],
+  "tools.semgrep.message": [
+   "str"
+  ],
+  "tools.semgrep.state": [
+   "str"
+  ],
+  "verification": [
+   "str"
+  ]
+ },
+ "code-richest.json": {
+  "count": [
+   "int"
+  ],
+  "coverage": [
+   "dict"
+  ],
+  "coverage.bytes": [
+   "int"
+  ],
+  "coverage.files": [
+   "int"
+  ],
+  "coverage.scope": [
+   "str"
+  ],
+  "coverage.skipped": [
+   "dict"
+  ],
+  "coverage.skipped.binary": [
+   "int"
+  ],
+  "coverage.skipped.excluded": [
+   "int"
+  ],
+  "coverage.skipped.large": [
+   "int"
+  ],
+  "coverage.skipped.links": [
+   "int"
+  ],
+  "coverage.snapshot_sha256": [
+   "str"
+  ],
+  "created_at": [
+   "str"
+  ],
+  "findings": [
+   "list"
+  ],
+  "findings[].cwe_ids": [
+   "list"
+  ],
+  "findings[].line": [
+   "int"
+  ],
+  "findings[].message": [
+   "str"
+  ],
+  "findings[].owasp_top10_2025": [
+   "list"
+  ],
+  "findings[].owasp_top10_2025[].code": [
+   "str"
+  ],
+  "findings[].owasp_top10_2025[].name": [
+   "str"
+  ],
+  "findings[].path": [
+   "str"
+  ],
+  "findings[].rule_id": [
+   "str"
+  ],
+  "findings[].secret_value": [
+   "NoneType"
+  ],
+  "findings[].severity": [
+   "str"
+  ],
+  "findings[].state": [
+   "str"
+  ],
+  "findings[].tool": [
+   "str"
+  ],
+  "findings[].verification_note": [
+   "str"
+  ],
+  "findings[].verified": [
+   "bool"
+  ],
+  "finished_at": [
+   "str"
+  ],
+  "id": [
+   "str"
+  ],
+  "limits": [
+   "str"
+  ],
+  "state": [
+   "str"
+  ],
+  "target": [
+   "str"
+  ],
+  "tools": [
+   "dict"
+  ],
+  "tools.gitleaks": [
+   "dict"
+  ],
+  "tools.gitleaks.count": [
+   "int"
+  ],
+  "tools.gitleaks.errors": [
+   "int"
+  ],
+  "tools.gitleaks.rule_set": [
+   "str"
+  ],
+  "tools.gitleaks.rules_sha256": [
+   "str"
+  ],
+  "tools.gitleaks.state": [
+   "str"
+  ],
+  "tools.gitleaks.version": [
+   "str"
+  ],
+  "tools.semgrep": [
+   "dict"
+  ],
+  "tools.semgrep.count": [
+   "int"
+  ],
+  "tools.semgrep.error_files": [
+   "dict"
+  ],
+  "tools.semgrep.error_files.helm_template": [
+   "dict"
+  ],
+  "tools.semgrep.error_files.helm_template.action": [
+   "str"
+  ],
+  "tools.semgrep.error_files.helm_template.count": [
+   "int"
+  ],
+  "tools.semgrep.error_files.helm_template.files": [
+   "list"
+  ],
+  "tools.semgrep.error_kinds": [
+   "dict"
+  ],
+  "tools.semgrep.error_kinds.Other syntax error": [
+   "int"
+  ],
+  "tools.semgrep.errors": [
+   "int"
+  ],
+  "tools.semgrep.rule_pack": [
+   "dict"
+  ],
+  "tools.semgrep.rule_pack.commit": [
+   "str"
+  ],
+  "tools.semgrep.rule_pack.files": [
+   "int"
+  ],
+  "tools.semgrep.rule_pack.languages": [
+   "list"
+  ],
+  "tools.semgrep.rule_pack.rules": [
+   "int"
+  ],
+  "tools.semgrep.rule_pack.source": [
+   "str"
+  ],
+  "tools.semgrep.rule_set": [
+   "str"
+  ],
+  "tools.semgrep.rules_sha256": [
+   "str"
+  ],
+  "tools.semgrep.state": [
+   "str"
+  ],
+  "tools.semgrep.version": [
+   "str"
+  ],
+  "verification": [
+   "str"
+  ],
+  "verification_summary": [
+   "dict"
+  ],
+  "verification_summary.confirmed_by_evidence": [
+   "int"
+  ],
+  "verification_summary.manual_review_required": [
+   "int"
+  ],
+  "verification_summary.note": [
+   "str"
+  ],
+  "verification_summary.total": [
+   "int"
+  ]
+ },
+ "dependencies-newest.json": {
+  "count": [
+   "int"
+  ],
+  "coverage": [
+   "dict"
+  ],
+  "coverage.excluded_directories": [
+   "int"
+  ],
+  "coverage.gaps": [
+   "list"
+  ],
+  "coverage.manifests": [
+   "list"
+  ],
+  "coverage.occurrences": [
+   "int"
+  ],
+  "coverage.schema_version": [
+   "int"
+  ],
+  "coverage.scope": [
+   "str"
+  ],
+  "coverage.sha256": [
+   "str"
+  ],
+  "coverage.unique_packages": [
+   "int"
+  ],
+  "created_at": [
+   "str"
+  ],
+  "data_policy": [
+   "str"
+  ],
+  "findings": [
+   "list"
+  ],
+  "finished_at": [
+   "str"
+  ],
+  "id": [
+   "str"
+  ],
+  "inventory_sha256": [
+   "str"
+  ],
+  "limits": [
+   "str"
+  ],
+  "progress": [
+   "str"
+  ],
+  "schema_version": [
+   "int"
+  ],
+  "state": [
+   "str"
+  ],
+  "target": [
+   "str"
+  ]
+ },
+ "dependencies-oldest.json": {
+  "count": [
+   "int"
+  ],
+  "coverage": [
+   "dict"
+  ],
+  "coverage.excluded_directories": [
+   "int"
+  ],
+  "coverage.gaps": [
+   "list"
+  ],
+  "coverage.gaps[].line": [
+   "int"
+  ],
+  "coverage.gaps[].path": [
+   "str"
+  ],
+  "coverage.gaps[].reason": [
+   "str"
+  ],
+  "coverage.manifests": [
+   "list"
+  ],
+  "coverage.manifests[].bytes": [
+   "int"
+  ],
+  "coverage.manifests[].packages": [
+   "int"
+  ],
+  "coverage.manifests[].path": [
+   "str"
+  ],
+  "coverage.manifests[].sha256": [
+   "str"
+  ],
+  "coverage.manifests[].state": [
+   "str"
+  ],
+  "coverage.occurrences": [
+   "int"
+  ],
+  "coverage.schema_version": [
+   "int"
+  ],
+  "coverage.scope": [
+   "str"
+  ],
+  "coverage.sha256": [
+   "str"
+  ],
+  "coverage.unique_packages": [
+   "int"
+  ],
+  "created_at": [
+   "str"
+  ],
+  "data_policy": [
+   "str"
+  ],
+  "findings": [
+   "list"
+  ],
+  "finished_at": [
+   "str"
+  ],
+  "id": [
+   "str"
+  ],
+  "inventory_sha256": [
+   "str"
+  ],
+  "limits": [
+   "str"
+  ],
+  "online": [
+   "bool"
+  ],
+  "progress": [
+   "str"
+  ],
+  "schema_version": [
+   "int"
+  ],
+  "state": [
+   "str"
+  ],
+  "target": [
+   "str"
+  ]
+ },
+ "dependencies-richest.json": {
+  "count": [
+   "int"
+  ],
+  "coverage": [
+   "dict"
+  ],
+  "coverage.excluded_directories": [
+   "int"
+  ],
+  "coverage.gaps": [
+   "list"
+  ],
+  "coverage.gaps[].line": [
+   "int"
+  ],
+  "coverage.gaps[].path": [
+   "str"
+  ],
+  "coverage.gaps[].reason": [
+   "str"
+  ],
+  "coverage.manifests": [
+   "list"
+  ],
+  "coverage.manifests[].bytes": [
+   "int"
+  ],
+  "coverage.manifests[].packages": [
+   "int"
+  ],
+  "coverage.manifests[].path": [
+   "str"
+  ],
+  "coverage.manifests[].sha256": [
+   "str"
+  ],
+  "coverage.manifests[].state": [
+   "str"
+  ],
+  "coverage.occurrences": [
+   "int"
+  ],
+  "coverage.schema_version": [
+   "int"
+  ],
+  "coverage.scope": [
+   "str"
+  ],
+  "coverage.sha256": [
+   "str"
+  ],
+  "coverage.unique_packages": [
+   "int"
+  ],
+  "created_at": [
+   "str"
+  ],
+  "data_policy": [
+   "str"
+  ],
+  "feeds": [
+   "dict"
+  ],
+  "feeds.kev": [
+   "dict"
+  ],
+  "feeds.kev.cache": [
+   "str"
+  ],
+  "feeds.kev.catalog_version": [
+   "str"
+  ],
+  "feeds.kev.date_released": [
+   "str"
+  ],
+  "feeds.kev.retrieved_at": [
+   "str"
+  ],
+  "feeds.kev.state": [
+   "str"
+  ],
+  "feeds.kev.url": [
+   "str"
+  ],
+  "feeds.osv": [
+   "dict"
+  ],
+  "feeds.osv.cache_ttl_hours": [
+   "int"
+  ],
+  "feeds.osv.checked_packages": [
+   "int"
+  ],
+  "feeds.osv.oldest_retrieved_at": [
+   "str"
+  ],
+  "feeds.osv.requested_packages": [
+   "int"
+  ],
+  "feeds.osv.responses": [
+   "int"
+  ],
+  "findings": [
+   "list"
+  ],
+  "findings[].advisory_id": [
+   "str"
+  ],
+  "findings[].aliases": [
+   "list"
+  ],
+  "findings[].family": [
+   "str"
+  ],
+  "findings[].fixed_versions": [
+   "list"
+  ],
+  "findings[].id": [
+   "str"
+  ],
+  "findings[].known_exploited": [
+   "bool"
+  ],
+  "findings[].occurrences": [
+   "list"
+  ],
+  "findings[].occurrences[].ecosystem": [
+   "str"
+  ],
+  "findings[].occurrences[].evidence_kind": [
+   "str"
+  ],
+  "findings[].occurrences[].id": [
+   "str"
+  ],
+  "findings[].occurrences[].locator": [
+   "str"
+  ],
+  "findings[].occurrences[].manifest": [
+   "str"
+  ],
+  "findings[].occurrences[].name": [
+   "str"
+  ],
+  "findings[].occurrences[].scope": [
+   "str"
+  ],
+  "findings[].occurrences[].version": [
+   "str"
+  ],
+  "findings[].package": [
+   "dict"
+  ],
+  "findings[].package.ecosystem": [
+   "str"
+  ],
+  "findings[].package.name": [
+   "str"
+  ],
+  "findings[].package.version": [
+   "str"
+  ],
+  "findings[].priority": [
+   "str"
+  ],
+  "findings[].priority_reason": [
+   "str"
+  ],
+  "findings[].references": [
+   "list"
+  ],
+  "findings[].remediation": [
+   "str"
+  ],
+  "findings[].severity": [
+   "str"
+  ],
+  "findings[].state": [
+   "str"
+  ],
+  "findings[].summary": [
+   "str"
+  ],
+  "finished_at": [
+   "str"
+  ],
+  "id": [
+   "str"
+  ],
+  "inventory_sha256": [
+   "str"
+  ],
+  "limits": [
+   "str"
+  ],
+  "online": [
+   "bool"
+  ],
+  "priority_counts": [
+   "dict"
+  ],
+  "priority_counts.P1": [
+   "int"
+  ],
+  "priority_counts.P2": [
+   "int"
+  ],
+  "priority_counts.P3": [
+   "int"
+  ],
+  "priority_counts.REVIEW": [
+   "int"
+  ],
+  "progress": [
+   "str"
+  ],
+  "query_errors": [
+   "list"
+  ],
+  "schema_version": [
+   "int"
+  ],
+  "state": [
+   "str"
+  ],
+  "target": [
+   "str"
+  ]
+ },
+ "iac-newest.json": {
+  "count": [
+   "int"
+  ],
+  "coverage": [
+   "list"
+  ],
+  "coverage[].checks": [
+   "int"
+  ],
+  "coverage[].path": [
+   "str"
+  ],
+  "coverage[].type": [
+   "str"
+  ],
+  "coverage_scope": [
+   "str"
+  ],
+  "created_at": [
+   "str"
+  ],
+  "files": [
+   "int"
+  ],
+  "findings": [
+   "list"
+  ],
+  "findings[].check_type": [
+   "str"
+  ],
+  "findings[].cwe_ids": [
+   "list"
+  ],
+  "findings[].fingerprint": [
+   "str"
+  ],
+  "findings[].level": [
+   "str"
+  ],
+  "findings[].line": [
+   "NoneType"
+  ],
+  "findings[].message": [
+   "str"
+  ],
+  "findings[].owasp_top10_2025": [
+   "list"
+  ],
+  "findings[].path": [
+   "str"
+  ],
+  "findings[].provider": [
+   "str"
+  ],
+  "findings[].reference": [
+   "str"
+  ],
+  "findings[].remediation": [
+   "str"
+  ],
+  "findings[].rule_id": [
+   "str"
+  ],
+  "findings[].service": [
+   "str"
+  ],
+  "findings[].severity": [
+   "str"
+  ],
+  "findings[].state": [
+   "str"
+  ],
+  "findings[].title": [
+   "str"
+  ],
+  "findings[].tool": [
+   "str"
+  ],
+  "findings[].verification_note": [
+   "str"
+  ],
+  "findings[].verified": [
+   "bool"
+  ],
+  "finished_at": [
+   "str"
+  ],
+  "id": [
+   "str"
+  ],
+  "limits": [
+   "str"
+  ],
+  "progress": [
+   "str"
+  ],
+  "severity_counts": [
+   "dict"
+  ],
+  "severity_counts.CRITICAL": [
+   "int"
+  ],
+  "severity_counts.HIGH": [
+   "int"
+  ],
+  "severity_counts.LOW": [
+   "int"
+  ],
+  "severity_counts.MEDIUM": [
+   "int"
+  ],
+  "severity_counts.UNKNOWN": [
+   "int"
+  ],
+  "snapshot_sha256": [
+   "str"
+  ],
+  "state": [
+   "str"
+  ],
+  "target": [
+   "str"
+  ],
+  "tool": [
+   "dict"
+  ],
+  "tool.name": [
+   "str"
+  ],
+  "tool.version": [
+   "str"
+  ],
+  "untagged_checks": [
+   "list"
+  ],
+  "untagged_note": [
+   "str"
+  ],
+  "verification_summary": [
+   "dict"
+  ],
+  "verification_summary.confirmed_by_evidence": [
+   "int"
+  ],
+  "verification_summary.manual_review_required": [
+   "int"
+  ],
+  "verification_summary.note": [
+   "str"
+  ],
+  "verification_summary.total": [
+   "int"
+  ]
+ },
+ "iac-oldest.json": {
+  "count": [
+   "int"
+  ],
+  "coverage": [
+   "list"
+  ],
+  "coverage[].checks": [
+   "int"
+  ],
+  "coverage[].path": [
+   "str"
+  ],
+  "coverage[].type": [
+   "str"
+  ],
+  "coverage_scope": [
+   "str"
+  ],
+  "created_at": [
+   "str"
+  ],
+  "files": [
+   "int"
+  ],
+  "findings": [
+   "list"
+  ],
+  "findings[].check_type": [
+   "str"
+  ],
+  "findings[].cwe_ids": [
+   "list"
+  ],
+  "findings[].fingerprint": [
+   "str"
+  ],
+  "findings[].level": [
+   "str"
+  ],
+  "findings[].line": [
+   "NoneType"
+  ],
+  "findings[].message": [
+   "str"
+  ],
+  "findings[].owasp_top10_2025": [
+   "list"
+  ],
+  "findings[].path": [
+   "str"
+  ],
+  "findings[].provider": [
+   "str"
+  ],
+  "findings[].reference": [
+   "str"
+  ],
+  "findings[].remediation": [
+   "str"
+  ],
+  "findings[].rule_id": [
+   "str"
+  ],
+  "findings[].service": [
+   "str"
+  ],
+  "findings[].severity": [
+   "str"
+  ],
+  "findings[].state": [
+   "str"
+  ],
+  "findings[].title": [
+   "str"
+  ],
+  "findings[].tool": [
+   "str"
+  ],
+  "findings[].verification_note": [
+   "str"
+  ],
+  "findings[].verified": [
+   "bool"
+  ],
+  "finished_at": [
+   "str"
+  ],
+  "id": [
+   "str"
+  ],
+  "limits": [
+   "str"
+  ],
+  "progress": [
+   "str"
+  ],
+  "severity_counts": [
+   "dict"
+  ],
+  "severity_counts.CRITICAL": [
+   "int"
+  ],
+  "severity_counts.HIGH": [
+   "int"
+  ],
+  "severity_counts.LOW": [
+   "int"
+  ],
+  "severity_counts.MEDIUM": [
+   "int"
+  ],
+  "severity_counts.UNKNOWN": [
+   "int"
+  ],
+  "snapshot_sha256": [
+   "str"
+  ],
+  "state": [
+   "str"
+  ],
+  "target": [
+   "str"
+  ],
+  "tool": [
+   "dict"
+  ],
+  "tool.name": [
+   "str"
+  ],
+  "tool.version": [
+   "str"
+  ],
+  "untagged_checks": [
+   "list"
+  ],
+  "untagged_note": [
+   "str"
+  ],
+  "verification_summary": [
+   "dict"
+  ],
+  "verification_summary.confirmed_by_evidence": [
+   "int"
+  ],
+  "verification_summary.manual_review_required": [
+   "int"
+  ],
+  "verification_summary.note": [
+   "str"
+  ],
+  "verification_summary.total": [
+   "int"
+  ]
+ },
+ "images-newest.json": {
+  "count": [
+   "int"
+  ],
+  "coverage": [
+   "list"
+  ],
+  "coverage[].Class": [
+   "str"
+  ],
+  "coverage[].Target": [
+   "str"
+  ],
+  "coverage[].Type": [
+   "str"
+  ],
+  "coverage[].packages": [
+   "int"
+  ],
+  "created_at": [
+   "str"
+  ],
+  "data_policy": [
+   "str"
+  ],
+  "database": [
+   "dict"
+  ],
+  "database.DownloadedAt": [
+   "str"
+  ],
+  "database.NextUpdate": [
+   "str"
+  ],
+  "database.UpdatedAt": [
+   "str"
+  ],
+  "database.Version": [
+   "int"
+  ],
+  "database_refresh": [
+   "dict"
+  ],
+  "database_refresh.current": [
+   "list"
+  ],
+  "database_refresh.failed": [
+   "list"
+  ],
+  "database_refresh.refreshed": [
+   "list"
+  ],
+  "findings": [
+   "list"
+  ],
+  "findings[].advisory_id": [
+   "str"
+  ],
+  "findings[].cwe_ids": [
+   "list"
+  ],
+  "findings[].fixed_version": [
+   "str"
+  ],
+  "findings[].id": [
+   "str"
+  ],
+  "findings[].owasp_top10_2025": [
+   "list"
+  ],
+  "findings[].owasp_top10_2025[].code": [
+   "str"
+  ],
+  "findings[].owasp_top10_2025[].name": [
+   "str"
+  ],
+  "findings[].package": [
+   "str"
+  ],
+  "findings[].severity": [
+   "str"
+  ],
+  "findings[].source": [
+   "str"
+  ],
+  "findings[].state": [
+   "str"
+  ],
+  "findings[].target": [
+   "str"
+  ],
+  "findings[].title": [
+   "str"
+  ],
+  "findings[].type": [
+   "str"
+  ],
+  "findings[].verification_note": [
+   "str"
+  ],
+  "findings[].verified": [
+   "bool"
+  ],
+  "findings[].version": [
+   "str"
+  ],
+  "finished_at": [
+   "str"
+  ],
+  "id": [
+   "str"
+  ],
+  "image_id": [
+   "str"
+  ],
+  "limits": [
+   "str"
+  ],
+  "os": [
+   "dict"
+  ],
+  "os.Family": [
+   "str"
+  ],
+  "os.Name": [
+   "str"
+  ],
+  "progress": [
+   "str"
+  ],
+  "reference": [
+   "str"
+  ],
+  "repo_digests": [
+   "list"
+  ],
+  "schema_version": [
+   "int"
+  ],
+  "scope": [
+   "str"
+  ],
+  "severity_counts": [
+   "dict"
+  ],
+  "severity_counts.CRITICAL": [
+   "int"
+  ],
+  "severity_counts.HIGH": [
+   "int"
+  ],
+  "severity_counts.LOW": [
+   "int"
+  ],
+  "severity_counts.MEDIUM": [
+   "int"
+  ],
+  "severity_counts.UNKNOWN": [
+   "int"
+  ],
+  "size_check": [
+   "str"
+  ],
+  "size_limit": [
+   "str"
+  ],
+  "size_limit_raised": [
+   "bool"
+  ],
+  "state": [
+   "str"
+  ],
+  "target": [
+   "str"
+  ],
+  "time_budget_minutes": [
+   "int"
+  ],
+  "tool": [
+   "dict"
+  ],
+  "tool.binary_sha256": [
+   "str"
+  ],
+  "tool.name": [
+   "str"
+  ],
+  "tool.version": [
+   "str"
+  ],
+  "verification_summary": [
+   "dict"
+  ],
+  "verification_summary.confirmed_by_evidence": [
+   "int"
+  ],
+  "verification_summary.manual_review_required": [
+   "int"
+  ],
+  "verification_summary.note": [
+   "str"
+  ],
+  "verification_summary.total": [
+   "int"
+  ]
+ },
+ "images-oldest.json": {
+  "count": [
+   "int"
+  ],
+  "coverage": [
+   "list"
+  ],
+  "coverage[].Class": [
+   "str"
+  ],
+  "coverage[].Target": [
+   "str"
+  ],
+  "coverage[].Type": [
+   "str"
+  ],
+  "coverage[].packages": [
+   "int"
+  ],
+  "created_at": [
+   "str"
+  ],
+  "data_policy": [
+   "str"
+  ],
+  "database": [
+   "dict"
+  ],
+  "database.DownloadedAt": [
+   "str"
+  ],
+  "database.NextUpdate": [
+   "str"
+  ],
+  "database.UpdatedAt": [
+   "str"
+  ],
+  "database.Version": [
+   "int"
+  ],
+  "findings": [
+   "list"
+  ],
+  "findings[].advisory_id": [
+   "str"
+  ],
+  "findings[].fixed_version": [
+   "str"
+  ],
+  "findings[].id": [
+   "str"
+  ],
+  "findings[].package": [
+   "str"
+  ],
+  "findings[].severity": [
+   "str"
+  ],
+  "findings[].source": [
+   "str"
+  ],
+  "findings[].state": [
+   "str"
+  ],
+  "findings[].target": [
+   "str"
+  ],
+  "findings[].title": [
+   "str"
+  ],
+  "findings[].type": [
+   "str"
+  ],
+  "findings[].version": [
+   "str"
+  ],
+  "finished_at": [
+   "str"
+  ],
+  "id": [
+   "str"
+  ],
+  "image_id": [
+   "str"
+  ],
+  "limits": [
+   "str"
+  ],
+  "os": [
+   "dict"
+  ],
+  "os.Family": [
+   "str"
+  ],
+  "os.Name": [
+   "str"
+  ],
+  "progress": [
+   "str"
+  ],
+  "reference": [
+   "str"
+  ],
+  "repo_digests": [
+   "list"
+  ],
+  "schema_version": [
+   "int"
+  ],
+  "scope": [
+   "str"
+  ],
+  "severity_counts": [
+   "dict"
+  ],
+  "severity_counts.CRITICAL": [
+   "int"
+  ],
+  "severity_counts.HIGH": [
+   "int"
+  ],
+  "severity_counts.LOW": [
+   "int"
+  ],
+  "severity_counts.MEDIUM": [
+   "int"
+  ],
+  "state": [
+   "str"
+  ],
+  "target": [
+   "str"
+  ],
+  "tool": [
+   "dict"
+  ],
+  "tool.binary_sha256": [
+   "str"
+  ],
+  "tool.name": [
+   "str"
+  ],
+  "tool.version": [
+   "str"
+  ]
+ },
+ "repository-newest.json": {
+  "created_at": [
+   "str"
+  ],
+  "duration_ms": [
+   "float"
+  ],
+  "edges": [
+   "list"
+  ],
+  "engine_version": [
+   "str"
+  ],
+  "evidence": [
+   "list"
+  ],
+  "evidence[].id": [
+   "str"
+  ],
+  "evidence[].label": [
+   "str"
+  ],
+  "evidence[].line": [
+   "int"
+  ],
+  "evidence[].path": [
+   "str"
+  ],
+  "evidence[].value": [
+   "dict",
+   "str"
+  ],
+  "evidence[].value.DEBUG": [
+   "str"
+  ],
+  "evidence[].value.cap_add": [
+   "list"
+  ],
+  "evidence[].value.evidence_id": [
+   "str"
+  ],
+  "evidence[].value.host_ip": [
+   "str"
+  ],
+  "evidence[].value.privileged": [
+   "bool"
+  ],
+  "evidence[].value.protocol": [
+   "str"
+  ],
+  "evidence[].value.published": [
+   "str"
+  ],
+  "evidence[].value.scope": [
+   "str"
+  ],
+  "evidence[].value.target": [
+   "int"
+  ],
+  "evidence[].value.volumes": [
+   "list"
+  ],
+  "files": [
+   "list"
+  ],
+  "files[].bytes": [
+   "int"
+  ],
+  "files[].path": [
+   "str"
+  ],
+  "files[].sha256": [
+   "str"
+  ],
+  "findings": [
+   "list"
+  ],
+  "findings[].cwe_ids": [
+   "list"
+  ],
+  "findings[].detail": [
+   "str"
+  ],
+  "findings[].evidence_ids": [
+   "list"
+  ],
+  "findings[].fingerprint": [
+   "str"
+  ],
+  "findings[].level": [
+   "str"
+  ],
+  "findings[].owasp_top10_2025": [
+   "list"
+  ],
+  "findings[].owasp_top10_2025[].code": [
+   "str"
+  ],
+  "findings[].owasp_top10_2025[].name": [
+   "str"
+  ],
+  "findings[].remediation": [
+   "str"
+  ],
+  "findings[].rule_id": [
+   "str"
+  ],
+  "findings[].runtime_verified": [
+   "bool"
+  ],
+  "findings[].service_id": [
+   "str"
+  ],
+  "findings[].status": [
+   "str"
+  ],
+  "findings[].title": [
+   "str"
+  ],
+  "findings[].verification_note": [
+   "str"
+  ],
+  "findings[].verified": [
+   "bool"
+  ],
+  "id": [
+   "str"
+  ],
+  "input_sha256": [
+   "str"
+  ],
+  "kind": [
+   "str"
+  ],
+  "limits": [
+   "list"
+  ],
+  "profile": [
+   "dict"
+  ],
+  "profile.bindings": [
+   "list"
+  ],
+  "profile.compose": [
+   "str"
+  ],
+  "profile.env_file": [
+   "NoneType"
+  ],
+  "profile_id": [
+   "str"
+  ],
+  "profile_name": [
+   "str"
+  ],
+  "report_sha256": [
+   "str"
+  ],
+  "repository": [
+   "dict"
+  ],
+  "repository.commit": [
+   "NoneType"
+  ],
+  "repository.execution": [
+   "str"
+  ],
+  "repository.note": [
+   "str"
+  ],
+  "repository.repository": [
+   "str"
+  ],
+  "repository.retrieved_at": [
+   "str"
+  ],
+  "repository.source_type": [
+   "str"
+  ],
+  "repository.subset": [
+   "list"
+  ],
+  "schema_version": [
+   "int"
+  ],
+  "services": [
+   "list"
+  ],
+  "services[].auth_status": [
+   "str"
+  ],
+  "services[].build_context": [
+   "NoneType",
+   "str"
+  ],
+  "services[].evidence_id": [
+   "str"
+  ],
+  "services[].id": [
+   "str"
+  ],
+  "services[].image": [
+   "str"
+  ],
+  "services[].networks": [
+   "list"
+  ],
+  "services[].ports": [
+   "list"
+  ],
+  "services[].ports[].evidence_id": [
+   "str"
+  ],
+  "services[].ports[].host_ip": [
+   "str"
+  ],
+  "services[].ports[].protocol": [
+   "str"
+  ],
+  "services[].ports[].published": [
+   "str"
+  ],
+  "services[].ports[].scope": [
+   "str"
+  ],
+  "services[].ports[].target": [
+   "int"
+  ],
+  "services[].runtime_verified": [
+   "bool"
+  ],
+  "summary": [
+   "dict"
+  ],
+  "summary.findings": [
+   "int"
+  ],
+  "summary.loopback_ports": [
+   "int"
+  ],
+  "summary.proxy_routes": [
+   "int"
+  ],
+  "summary.published_ports": [
+   "int"
+  ],
+  "summary.runtime_confirmed": [
+   "int"
+  ],
+  "summary.services": [
+   "int"
+  ],
+  "unknowns": [
+   "list"
+  ],
+  "verification_summary": [
+   "dict"
+  ],
+  "verification_summary.confirmed_by_evidence": [
+   "int"
+  ],
+  "verification_summary.manual_review_required": [
+   "int"
+  ],
+  "verification_summary.note": [
+   "str"
+  ],
+  "verification_summary.total": [
+   "int"
+  ]
+ },
+ "repository-oldest.json": {
+  "created_at": [
+   "str"
+  ],
+  "duration_ms": [
+   "float"
+  ],
+  "edges": [
+   "list"
+  ],
+  "edges[].evidence_ids": [
+   "list"
+  ],
+  "edges[].from": [
+   "str"
+  ],
+  "edges[].listen": [
+   "str"
+  ],
+  "edges[].location": [
+   "str"
+  ],
+  "edges[].reachability": [
+   "str"
+  ],
+  "edges[].runtime_verified": [
+   "bool"
+  ],
+  "edges[].scheme": [
+   "str"
+  ],
+  "edges[].shared_networks": [
+   "list"
+  ],
+  "edges[].target_port": [
+   "int"
+  ],
+  "edges[].to": [
+   "str"
+  ],
+  "edges[].type": [
+   "str"
+  ],
+  "engine_version": [
+   "str"
+  ],
+  "evidence": [
+   "list"
+  ],
+  "evidence[].id": [
+   "str"
+  ],
+  "evidence[].label": [
+   "str"
+  ],
+  "evidence[].line": [
+   "int"
+  ],
+  "evidence[].path": [
+   "str"
+  ],
+  "evidence[].value": [
+   "dict",
+   "str"
+  ],
+  "evidence[].value.evidence_id": [
+   "str"
+  ],
+  "evidence[].value.host_ip": [
+   "str"
+  ],
+  "evidence[].value.listen": [
+   "str"
+  ],
+  "evidence[].value.location": [
+   "str"
+  ],
+  "evidence[].value.path": [
+   "str"
+  ],
+  "evidence[].value.protocol": [
+   "str"
+  ],
+  "evidence[].value.published": [
+   "str"
+  ],
+  "evidence[].value.scope": [
+   "str"
+  ],
+  "evidence[].value.service": [
+   "str"
+  ],
+  "evidence[].value.service_id": [
+   "str"
+  ],
+  "evidence[].value.target": [
+   "int"
+  ],
+  "evidence[].value.upstream": [
+   "str"
+  ],
+  "files": [
+   "list"
+  ],
+  "files[].bytes": [
+   "int"
+  ],
+  "files[].path": [
+   "str"
+  ],
+  "files[].sha256": [
+   "str"
+  ],
+  "findings": [
+   "list"
+  ],
+  "findings[].detail": [
+   "str"
+  ],
+  "findings[].evidence_ids": [
+   "list"
+  ],
+  "findings[].fingerprint": [
+   "str"
+  ],
+  "findings[].level": [
+   "str"
+  ],
+  "findings[].remediation": [
+   "str"
+  ],
+  "findings[].rule_id": [
+   "str"
+  ],
+  "findings[].runtime_verified": [
+   "bool"
+  ],
+  "findings[].service_id": [
+   "str"
+  ],
+  "findings[].status": [
+   "str"
+  ],
+  "findings[].title": [
+   "str"
+  ],
+  "id": [
+   "str"
+  ],
+  "input_sha256": [
+   "str"
+  ],
+  "kind": [
+   "str"
+  ],
+  "limits": [
+   "list"
+  ],
+  "profile": [
+   "dict"
+  ],
+  "profile.bindings": [
+   "list"
+  ],
+  "profile.bindings[].path": [
+   "str"
+  ],
+  "profile.bindings[].service_id": [
+   "str"
+  ],
+  "profile.bindings[].template_variables": [
+   "dict"
+  ],
+  "profile.bindings[].template_variables.HTTP_PROTOCOL": [
+   "str"
+  ],
+  "profile.bindings[].when": [
+   "dict"
+  ],
+  "profile.bindings[].when.key": [
+   "str"
+  ],
+  "profile.bindings[].when.values": [
+   "list"
+  ],
+  "profile.compose": [
+   "str"
+  ],
+  "profile.env_file": [
+   "str"
+  ],
+  "profile_id": [
+   "str"
+  ],
+  "report_sha256": [
+   "str"
+  ],
+  "repository": [
+   "dict"
+  ],
+  "repository.archive_sha256": [
+   "str"
+  ],
+  "repository.branch": [
+   "str"
+  ],
+  "repository.commit": [
+   "str"
+  ],
+  "repository.commit_date": [
+   "str"
+  ],
+  "repository.execution": [
+   "str"
+  ],
+  "repository.note": [
+   "str"
+  ],
+  "repository.repository": [
+   "str"
+  ],
+  "repository.retrieved_at": [
+   "str"
+  ],
+  "repository.subset": [
+   "list"
+  ],
+  "schema_version": [
+   "int"
+  ],
+  "services": [
+   "list"
+  ],
+  "services[].auth_status": [
+   "str"
+  ],
+  "services[].evidence_id": [
+   "str"
+  ],
+  "services[].id": [
+   "str"
+  ],
+  "services[].image": [
+   "str"
+  ],
+  "services[].networks": [
+   "list"
+  ],
+  "services[].ports": [
+   "list"
+  ],
+  "services[].ports[].evidence_id": [
+   "str"
+  ],
+  "services[].ports[].host_ip": [
+   "str"
+  ],
+  "services[].ports[].protocol": [
+   "str"
+  ],
+  "services[].ports[].published": [
+   "str"
+  ],
+  "services[].ports[].scope": [
+   "str"
+  ],
+  "services[].ports[].target": [
+   "int"
+  ],
+  "services[].runtime_verified": [
+   "bool"
+  ],
+  "summary": [
+   "dict"
+  ],
+  "summary.findings": [
+   "int"
+  ],
+  "summary.loopback_ports": [
+   "int"
+  ],
+  "summary.proxy_routes": [
+   "int"
+  ],
+  "summary.published_ports": [
+   "int"
+  ],
+  "summary.runtime_confirmed": [
+   "int"
+  ],
+  "summary.services": [
+   "int"
+  ],
+  "unknowns": [
+   "list"
+  ]
+ },
+ "web-newest.json": {
+  "authorization": [
+   "dict"
+  ],
+  "authorization.owner": [
+   "str"
+  ],
+  "authorization.recorded_at": [
+   "str"
+  ],
+  "blocked_requests": [
+   "int"
+  ],
+  "count": [
+   "int"
+  ],
+  "coverage": [
+   "dict"
+  ],
+  "coverage.ambiguous_fallback_matches": [
+   "int"
+  ],
+  "coverage.attempted_paths": [
+   "list"
+  ],
+  "coverage.redirects": [
+   "int"
+  ],
+  "coverage.restricted_responses": [
+   "int"
+  ],
+  "coverage.truncated_responses": [
+   "int"
+  ],
+  "coverage.unsupported_encodings": [
+   "int"
+  ],
+  "coverage.unvisited_paths": [
+   "list"
+  ],
+  "crawled_pages": [
+   "list"
+  ],
+  "created_at": [
+   "str"
+  ],
+  "errors": [
+   "list"
+  ],
+  "evidence": [
+   "list"
+  ],
+  "evidence[].body_sha256": [
+   "str"
+  ],
+  "evidence[].bytes_read": [
+   "int"
+  ],
+  "evidence[].content_range": [
+   "dict"
+  ],
+  "evidence[].content_range.end": [
+   "int"
+  ],
+  "evidence[].content_range.start": [
+   "int"
+  ],
+  "evidence[].content_range.total": [
+   "int"
+  ],
+  "evidence[].nuclei_status": [
+   "int"
+  ],
+  "evidence[].observed_at": [
+   "str"
+  ],
+  "evidence[].path": [
+   "str"
+  ],
+  "evidence[].probe": [
+   "str"
+  ],
+  "evidence[].status": [
+   "int"
+  ],
+  "evidence[].truncated": [
+   "bool"
+  ],
+  "evidence[].unsupported_encoding": [
+   "bool"
+  ],
+  "findings": [
+   "list"
+  ],
+  "findings[].cwe_ids": [
+   "list"
+  ],
+  "findings[].evidence": [
+   "str"
+  ],
+  "findings[].id": [
+   "str"
+  ],
+  "findings[].owasp_top10_2025": [
+   "list"
+  ],
+  "findings[].owasp_top10_2025[].code": [
+   "str"
+  ],
+  "findings[].owasp_top10_2025[].name": [
+   "str"
+  ],
+  "findings[].path": [
+   "str"
+  ],
+  "findings[].remediation": [
+   "str"
+  ],
+  "findings[].rule_id": [
+   "str"
+  ],
+  "findings[].severity": [
+   "str"
+  ],
+  "findings[].state": [
+   "str"
+  ],
+  "findings[].title": [
+   "str"
+  ],
+  "findings[].tool": [
+   "str"
+  ],
+  "findings[].verification_note": [
+   "str"
+  ],
+  "findings[].verified": [
+   "bool"
+  ],
+  "finished_at": [
+   "str"
+  ],
+  "id": [
+   "str"
+  ],
+  "limits": [
+   "str"
+  ],
+  "profile_sha256": [
+   "str"
+  ],
+  "progress": [
+   "str"
+  ],
+  "requests": [
+   "int"
+  ],
+  "resolved_ip": [
+   "str"
+  ],
+  "scope": [
+   "str"
+  ],
+  "severity_counts": [
+   "dict"
+  ],
+  "severity_counts.HIGH": [
+   "int"
+  ],
+  "severity_counts.LOW": [
+   "int"
+  ],
+  "state": [
+   "str"
+  ],
+  "target": [
+   "str"
+  ],
+  "templates": [
+   "dict"
+  ],
+  "templates.dir-listing": [
+   "dict"
+  ],
+  "templates.dir-listing.file": [
+   "str"
+  ],
+  "templates.dir-listing.origin": [
+   "str"
+  ],
+  "templates.dir-listing.severity": [
+   "str"
+  ],
+  "templates.dir-listing.sha256": [
+   "str"
+  ],
+  "templates.dir-listing.title": [
+   "str"
+  ],
+  "templates.git-config": [
+   "dict"
+  ],
+  "templates.git-config.file": [
+   "str"
+  ],
+  "templates.git-config.origin": [
+   "str"
+  ],
+  "templates.git-config.severity": [
+   "str"
+  ],
+  "templates.git-config.sha256": [
+   "str"
+  ],
+  "templates.git-config.title": [
+   "str"
+  ],
+  "templates.zanjir-compose": [
+   "dict"
+  ],
+  "templates.zanjir-compose.file": [
+   "str"
+  ],
+  "templates.zanjir-compose.origin": [
+   "str"
+  ],
+  "templates.zanjir-compose.severity": [
+   "str"
+  ],
+  "templates.zanjir-compose.sha256": [
+   "str"
+  ],
+  "templates.zanjir-compose.title": [
+   "str"
+  ],
+  "templates.zanjir-env": [
+   "dict"
+  ],
+  "templates.zanjir-env.file": [
+   "str"
+  ],
+  "templates.zanjir-env.origin": [
+   "str"
+  ],
+  "templates.zanjir-env.severity": [
+   "str"
+  ],
+  "templates.zanjir-env.sha256": [
+   "str"
+  ],
+  "templates.zanjir-env.title": [
+   "str"
+  ],
+  "templates.zanjir-openapi": [
+   "dict"
+  ],
+  "templates.zanjir-openapi.file": [
+   "str"
+  ],
+  "templates.zanjir-openapi.origin": [
+   "str"
+  ],
+  "templates.zanjir-openapi.severity": [
+   "str"
+  ],
+  "templates.zanjir-openapi.sha256": [
+   "str"
+  ],
+  "templates.zanjir-openapi.title": [
+   "str"
+  ],
+  "templates.zanjir-sql-backup": [
+   "dict"
+  ],
+  "templates.zanjir-sql-backup.file": [
+   "str"
+  ],
+  "templates.zanjir-sql-backup.origin": [
+   "str"
+  ],
+  "templates.zanjir-sql-backup.severity": [
+   "str"
+  ],
+  "templates.zanjir-sql-backup.sha256": [
+   "str"
+  ],
+  "templates.zanjir-sql-backup.title": [
+   "str"
+  ],
+  "tool": [
+   "dict"
+  ],
+  "tool.binary_sha256": [
+   "str"
+  ],
+  "tool.name": [
+   "str"
+  ],
+  "tool.state": [
+   "str"
+  ],
+  "tool.suppressed_soft404": [
+   "int"
+  ],
+  "tool.templates": [
+   "int"
+  ],
+  "tool.version": [
+   "str"
+  ],
+  "url": [
+   "str"
+  ],
+  "verification_summary": [
+   "dict"
+  ],
+  "verification_summary.confirmed_by_evidence": [
+   "int"
+  ],
+  "verification_summary.manual_review_required": [
+   "int"
+  ],
+  "verification_summary.note": [
+   "str"
+  ],
+  "verification_summary.total": [
+   "int"
+  ]
+ },
+ "web-oldest.json": {
+  "authorization": [
+   "dict"
+  ],
+  "authorization.owner": [
+   "str"
+  ],
+  "authorization.recorded_at": [
+   "str"
+  ],
+  "blocked_requests": [
+   "int"
+  ],
+  "count": [
+   "int"
+  ],
+  "coverage": [
+   "dict"
+  ],
+  "coverage.attempted_paths": [
+   "list"
+  ],
+  "coverage.redirects": [
+   "int"
+  ],
+  "coverage.restricted_responses": [
+   "int"
+  ],
+  "coverage.truncated_responses": [
+   "int"
+  ],
+  "coverage.unvisited_paths": [
+   "list"
+  ],
+  "created_at": [
+   "str"
+  ],
+  "error_type": [
+   "str"
+  ],
+  "errors": [
+   "list"
+  ],
+  "errors[].path": [
+   "str"
+  ],
+  "errors[].type": [
+   "str"
+  ],
+  "evidence": [
+   "list"
+  ],
+  "findings": [
+   "list"
+  ],
+  "finished_at": [
+   "str"
+  ],
+  "id": [
+   "str"
+  ],
+  "limits": [
+   "str"
+  ],
+  "message": [
+   "str"
+  ],
+  "profile_sha256": [
+   "str"
+  ],
+  "progress": [
+   "str"
+  ],
+  "requests": [
+   "int"
+  ],
+  "resolved_ip": [
+   "str"
+  ],
+  "scope": [
+   "str"
+  ],
+  "severity_counts": [
+   "dict"
+  ],
+  "state": [
+   "str"
+  ],
+  "target": [
+   "str"
+  ],
+  "templates": [
+   "dict"
+  ],
+  "templates.dir-listing": [
+   "dict"
+  ],
+  "templates.dir-listing.file": [
+   "str"
+  ],
+  "templates.dir-listing.origin": [
+   "str"
+  ],
+  "templates.dir-listing.severity": [
+   "str"
+  ],
+  "templates.dir-listing.sha256": [
+   "str"
+  ],
+  "templates.dir-listing.title": [
+   "str"
+  ],
+  "templates.git-config": [
+   "dict"
+  ],
+  "templates.git-config.file": [
+   "str"
+  ],
+  "templates.git-config.origin": [
+   "str"
+  ],
+  "templates.git-config.severity": [
+   "str"
+  ],
+  "templates.git-config.sha256": [
+   "str"
+  ],
+  "templates.git-config.title": [
+   "str"
+  ],
+  "templates.zanjir-compose": [
+   "dict"
+  ],
+  "templates.zanjir-compose.file": [
+   "str"
+  ],
+  "templates.zanjir-compose.origin": [
+   "str"
+  ],
+  "templates.zanjir-compose.severity": [
+   "str"
+  ],
+  "templates.zanjir-compose.sha256": [
+   "str"
+  ],
+  "templates.zanjir-compose.title": [
+   "str"
+  ],
+  "templates.zanjir-env": [
+   "dict"
+  ],
+  "templates.zanjir-env.file": [
+   "str"
+  ],
+  "templates.zanjir-env.origin": [
+   "str"
+  ],
+  "templates.zanjir-env.severity": [
+   "str"
+  ],
+  "templates.zanjir-env.sha256": [
+   "str"
+  ],
+  "templates.zanjir-env.title": [
+   "str"
+  ],
+  "templates.zanjir-openapi": [
+   "dict"
+  ],
+  "templates.zanjir-openapi.file": [
+   "str"
+  ],
+  "templates.zanjir-openapi.origin": [
+   "str"
+  ],
+  "templates.zanjir-openapi.severity": [
+   "str"
+  ],
+  "templates.zanjir-openapi.sha256": [
+   "str"
+  ],
+  "templates.zanjir-openapi.title": [
+   "str"
+  ],
+  "templates.zanjir-sql-backup": [
+   "dict"
+  ],
+  "templates.zanjir-sql-backup.file": [
+   "str"
+  ],
+  "templates.zanjir-sql-backup.origin": [
+   "str"
+  ],
+  "templates.zanjir-sql-backup.severity": [
+   "str"
+  ],
+  "templates.zanjir-sql-backup.sha256": [
+   "str"
+  ],
+  "templates.zanjir-sql-backup.title": [
+   "str"
+  ],
+  "url": [
+   "str"
+  ]
+ },
+ "web-richest.json": {
+  "authorization": [
+   "dict"
+  ],
+  "authorization.owner": [
+   "str"
+  ],
+  "authorization.recorded_at": [
+   "str"
+  ],
+  "blocked_requests": [
+   "int"
+  ],
+  "count": [
+   "int"
+  ],
+  "coverage": [
+   "dict"
+  ],
+  "coverage.ambiguous_fallback_matches": [
+   "int"
+  ],
+  "coverage.attempted_paths": [
+   "list"
+  ],
+  "coverage.redirects": [
+   "int"
+  ],
+  "coverage.restricted_responses": [
+   "int"
+  ],
+  "coverage.truncated_responses": [
+   "int"
+  ],
+  "coverage.unsupported_encodings": [
+   "int"
+  ],
+  "coverage.unvisited_paths": [
+   "list"
+  ],
+  "crawled_pages": [
+   "list"
+  ],
+  "created_at": [
+   "str"
+  ],
+  "error_type": [
+   "str"
+  ],
+  "errors": [
+   "list"
+  ],
+  "evidence": [
+   "list"
+  ],
+  "evidence[].body_sha256": [
+   "str"
+  ],
+  "evidence[].bytes_read": [
+   "int"
+  ],
+  "evidence[].observed_at": [
+   "str"
+  ],
+  "evidence[].path": [
+   "str"
+  ],
+  "evidence[].probe": [
+   "str"
+  ],
+  "evidence[].status": [
+   "int"
+  ],
+  "evidence[].truncated": [
+   "bool"
+  ],
+  "evidence[].unsupported_encoding": [
+   "bool"
+  ],
+  "findings": [
+   "list"
+  ],
+  "findings[].cwe_ids": [
+   "list"
+  ],
+  "findings[].evidence": [
+   "str"
+  ],
+  "findings[].id": [
+   "str"
+  ],
+  "findings[].owasp_top10_2025": [
+   "list"
+  ],
+  "findings[].owasp_top10_2025[].code": [
+   "str"
+  ],
+  "findings[].owasp_top10_2025[].name": [
+   "str"
+  ],
+  "findings[].path": [
+   "str"
+  ],
+  "findings[].remediation": [
+   "str"
+  ],
+  "findings[].rule_id": [
+   "str"
+  ],
+  "findings[].severity": [
+   "str"
+  ],
+  "findings[].state": [
+   "str"
+  ],
+  "findings[].title": [
+   "str"
+  ],
+  "findings[].tool": [
+   "str"
+  ],
+  "findings[].verification_note": [
+   "str"
+  ],
+  "findings[].verified": [
+   "bool"
+  ],
+  "finished_at": [
+   "str"
+  ],
+  "id": [
+   "str"
+  ],
+  "limits": [
+   "str"
+  ],
+  "message": [
+   "str"
+  ],
+  "profile_sha256": [
+   "str"
+  ],
+  "progress": [
+   "str"
+  ],
+  "requests": [
+   "int"
+  ],
+  "resolved_ip": [
+   "str"
+  ],
+  "scope": [
+   "str"
+  ],
+  "severity_counts": [
+   "dict"
+  ],
+  "severity_counts.HIGH": [
+   "int"
+  ],
+  "severity_counts.LOW": [
+   "int"
+  ],
+  "severity_counts.MEDIUM": [
+   "int"
+  ],
+  "state": [
+   "str"
+  ],
+  "target": [
+   "str"
+  ],
+  "templates": [
+   "dict"
+  ],
+  "templates.dir-listing": [
+   "dict"
+  ],
+  "templates.dir-listing.file": [
+   "str"
+  ],
+  "templates.dir-listing.origin": [
+   "str"
+  ],
+  "templates.dir-listing.severity": [
+   "str"
+  ],
+  "templates.dir-listing.sha256": [
+   "str"
+  ],
+  "templates.dir-listing.title": [
+   "str"
+  ],
+  "templates.git-config": [
+   "dict"
+  ],
+  "templates.git-config.file": [
+   "str"
+  ],
+  "templates.git-config.origin": [
+   "str"
+  ],
+  "templates.git-config.severity": [
+   "str"
+  ],
+  "templates.git-config.sha256": [
+   "str"
+  ],
+  "templates.git-config.title": [
+   "str"
+  ],
+  "templates.zanjir-compose": [
+   "dict"
+  ],
+  "templates.zanjir-compose.file": [
+   "str"
+  ],
+  "templates.zanjir-compose.origin": [
+   "str"
+  ],
+  "templates.zanjir-compose.severity": [
+   "str"
+  ],
+  "templates.zanjir-compose.sha256": [
+   "str"
+  ],
+  "templates.zanjir-compose.title": [
+   "str"
+  ],
+  "templates.zanjir-env": [
+   "dict"
+  ],
+  "templates.zanjir-env.file": [
+   "str"
+  ],
+  "templates.zanjir-env.origin": [
+   "str"
+  ],
+  "templates.zanjir-env.severity": [
+   "str"
+  ],
+  "templates.zanjir-env.sha256": [
+   "str"
+  ],
+  "templates.zanjir-env.title": [
+   "str"
+  ],
+  "templates.zanjir-openapi": [
+   "dict"
+  ],
+  "templates.zanjir-openapi.file": [
+   "str"
+  ],
+  "templates.zanjir-openapi.origin": [
+   "str"
+  ],
+  "templates.zanjir-openapi.severity": [
+   "str"
+  ],
+  "templates.zanjir-openapi.sha256": [
+   "str"
+  ],
+  "templates.zanjir-openapi.title": [
+   "str"
+  ],
+  "templates.zanjir-sql-backup": [
+   "dict"
+  ],
+  "templates.zanjir-sql-backup.file": [
+   "str"
+  ],
+  "templates.zanjir-sql-backup.origin": [
+   "str"
+  ],
+  "templates.zanjir-sql-backup.severity": [
+   "str"
+  ],
+  "templates.zanjir-sql-backup.sha256": [
+   "str"
+  ],
+  "templates.zanjir-sql-backup.title": [
+   "str"
+  ],
+  "url": [
+   "str"
+  ],
+  "verification_summary": [
+   "dict"
+  ],
+  "verification_summary.confirmed_by_evidence": [
+   "int"
+  ],
+  "verification_summary.manual_review_required": [
+   "int"
+  ],
+  "verification_summary.note": [
+   "str"
+  ],
+  "verification_summary.total": [
+   "int"
+  ]
+ }
+}

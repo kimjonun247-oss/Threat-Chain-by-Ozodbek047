@@ -1,0 +1,116 @@
+# ThreatChain CI/CD Quality Gate — GitHub Actions namunasi.
+#
+# Bu fayl ThreatChain omborida emas, TEKSHIRILADIGAN loyihaning
+# `.github/workflows/` papkasiga nusxalanadi. ThreatChain o'zi alohida
+# checkout qilinadi (pastdagi 2-qadam), chunki u tekshiruvchi vosita —
+# tekshiriladigan loyihaning bir qismi emas.
+#
+# Gate mantiqi: zanjir/ci_gate.py. Hech qanday aralash "xavfsizlik foizi"
+# hisoblanmaydi — faqat aniq nomlangan shartlar sanaladi:
+#   - repository (Compose/Nginx) topilmasi level == 'error' (RP-004/007/008)
+#   - dependencies / images topilmasi CRITICAL yoki HIGH
+#   - web topilmasi HIGH
+#   - har qanday cross-skaner zanjir topilmasi (SX-00X)
+# `--allow N` shu topilmalardan nechtasiga ruxsat berilishini belgilaydi.
+
+name: ThreatChain
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write   # SARIF'ni Code scanning'ga yuklash uchun
+
+jobs:
+  threatchain:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tekshiriladigan loyihani checkout qilish
+        uses: actions/checkout@v4
+        with:
+          path: project
+
+      - name: ThreatChain'ni checkout qilish
+        uses: actions/checkout@v4
+        with:
+          repository: your-org/threatchain     # o'zingizning ThreatChain omboringiz
+          path: threatchain
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Skaner vositalarini o'rnatish (rasmiy reliz, SHA-256 tekshiriladi)
+        working-directory: threatchain
+        run: |
+          python -m pip install --upgrade pip certifi
+          python setup_tools.py          # Trivy
+          python setup_nuclei.py         # Nuclei
+          python setup_semgrep_rules.py  # rasmiy semgrep-rules security paketi (~1343 qoida, 22 til)
+
+      - name: Loyihani ro'yxatdan o'tkazish
+        working-directory: threatchain
+        run: |
+          # Manba kodi (Semgrep + Gitleaks + SCA) uchun:
+          python check_dependencies.py --register ci-project \
+            --repo "$GITHUB_WORKSPACE/project" --name "$GITHUB_REPOSITORY"
+          # Compose/Nginx tahlili uchun (loyihada compose fayli bo'lsa):
+          python app.py --register-project ci-deploy \
+            --repo "$GITHUB_WORKSPACE/project" --compose docker-compose.yml \
+            --name "$GITHUB_REPOSITORY"
+
+      - name: ThreatChain gate
+        working-directory: threatchain
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}   # ixtiyoriy, NVD so'rov cheklovini yumshatadi
+        run: |
+          python ci_gate.py \
+            --target ci-project \
+            --repository-target ci-deploy \
+            --allow 0 \
+            --sarif-out "$GITHUB_WORKSPACE/threatchain.sarif"
+          # Chiqish kodi: 0 = gate o'tdi, 1 = gate to'xtatdi, 2 = skan bajarilmadi.
+          #
+          # MAVJUD LOYIHADA shu qatorni ishlating (tavsiya etiladi):
+          #
+          #   python ci_gate.py \
+          #     --target ci-project --repository-target ci-deploy \
+          #     --baseline last-green --fail-on new-high --respect-triage \
+          #     --sarif-out "$GITHUB_WORKSPACE/threatchain.sarif"
+          #
+          # U faqat shu o'zgarish kiritgan HIGH/CRITICAL topilmalarni sanaydi va
+          # odam yopgan (false_positive / accepted_risk) topilmalarni hisobga
+          # olmaydi. Mavjud qarz gate'ni birinchi kundanoq qizil qilmaydi, lekin
+          # hisobotda ko'rinib turadi (`total` maydoni).
+          #
+          # Asos skan — bir xil tanlov bilan bajarilgan oxirgi `completed` skan.
+          # Asos topilmasa gate 2 kod bilan to'xtaydi (jimgina o'tkazmaydi), shuning
+          # uchun birinchi marta yuqorida turgan --allow variantini ishlating.
+          # Yangi loyihada esa to'g'ridan-to'g'ri --allow 0 dan boshlash mumkin.
+
+      # SARIF har doim yuklanadi — gate to'xtatgan bo'lsa ham topilmalar
+      # PR'da satr darajasida ko'rinishi kerak.
+      - name: SARIF'ni Code scanning'ga yuklash
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: threatchain.sarif
+          category: threatchain
+
+      - name: SARIF'ni artefakt sifatida saqlash
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: threatchain-sarif
+          path: threatchain.sarif
+
+# Eslatma — "Sayt va API" (DAST) bosqichi bu namunaga qasddan kiritilmagan:
+# u haqiqiy tarmoq so'rovlari yuboradi va faqat yozma ruxsat berilgan
+# nishonga qarshi ishlatiladi. Agar CI'da staging muhitini tekshirmoqchi
+# bo'lsangiz, avval uni ro'yxatdan o'tkazing:
+#   python check_web.py --register ci-staging --url https://staging.example.com \
+#     --owner "Team" --authorized
+# so'ng ci_gate.py ga `--web-target ci-staging` qo'shing.

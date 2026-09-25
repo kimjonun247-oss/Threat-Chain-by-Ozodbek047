@@ -1,0 +1,18 @@
+# Sun'iy namuna: har bir sozlama qasddan zanjir qoidasini uyg'otish uchun yozilgan.
+# Bu deploy ishga tushirish uchun mo'ljallanmagan. Tafsilot: README.md
+services:
+  web:
+    build: ./app
+    ports:
+      - "0.0.0.0:8080:8080"          # RP-001: host interfeysiga ochiq
+    environment:
+      DEBUG: "true"                   # RP-006: debug rejimi + ochiq port
+      DATABASE_URL: "postgresql://demo@db:5432/demo"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock   # RP-007: Docker socket + ochiq port
+    cap_add:
+      - SYS_ADMIN                     # RP-008: kengaytirilgan imtiyoz + ochiq port
+  db:
+    image: postgres:16                # RP-005: ochiq xizmat bilan bitta tarmoqda
+    environment:
+      POSTGRES_PASSWORD: demo

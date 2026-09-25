@@ -1,0 +1,183 @@
+{
+ "id": "20260918T043158-7bef5bae",
+ "target": "crapi-full",
+ "created_at": "2026-09-18T04:31:58.885731+00:00",
+ "state": "partial",
+ "count": 148,
+ "findings": [
+  {
+   "tool": "semgrep",
+   "rule_id": "run-as-non-root",
+   "path": "deploy/k8s/base/chatbot/deployment.yaml",
+   "line": 14,
+   "message": "When running containers in Kubernetes, it's important to ensure that they are properly secured to prevent privilege escalation attacks. One potential vulnerability is when a container is allowed to run applications as the root user, which could allow an attacker to gain access to sensitive resources. To mitigate this risk, it's recommended to add a `securityContext` to the container, with the para",
+   "severity": "INFO",
+   "state": "unverified_static",
+   "secret_value": null,
+   "cwe_ids": [
+    "CWE-250"
+   ],
+   "owasp_top10_2025": [],
+   "verified": false,
+   "verification_note": "Statik kod naqshi mosligi; ma’lumot oqimi, ishga tushirish sharti va amaliy ta’siri tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart."
+  },
+  {
+   "tool": "semgrep",
+   "rule_id": "allow-privilege-escalation-no-securitycontext",
+   "path": "deploy/k8s/base/chatbot/deployment.yaml",
+   "line": 16,
+   "message": "In Kubernetes, each pod runs in its own isolated environment with its own set of security policies. However, certain container images may contain `setuid` or `setgid` binaries that could allow an attacker to perform privilege escalation and gain access to sensitive resources. To mitigate this risk, it's recommended to add a `securityContext` to the container in the pod, with the parameter `allowPr",
+   "severity": "WARNING",
+   "state": "unverified_static",
+   "secret_value": null,
+   "cwe_ids": [
+    "CWE-732"
+   ],
+   "owasp_top10_2025": [
+    {
+     "code": "A01",
+     "name": "A01:2025 – Broken Access Control"
+    }
+   ],
+   "verified": false,
+   "verification_note": "Statik kod naqshi mosligi; ma’lumot oqimi, ishga tushirish sharti va amaliy ta’siri tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart."
+  },
+  {
+   "tool": "semgrep",
+   "rule_id": "writable-filesystem-container",
+   "path": "deploy/k8s/base/chatbot/deployment.yaml",
+   "line": 16,
+   "message": "Container $CONTAINER is running with a writable root filesystem. This may allow malicious applications to download and run additional payloads, or modify container files. If an application inside a container has to save something temporarily consider using a tmpfs. Add 'readOnlyRootFilesystem: true' to this container to prevent this.",
+   "severity": "WARNING",
+   "state": "unverified_static",
+   "secret_value": null,
+   "cwe_ids": [
+    "CWE-732"
+   ],
+   "owasp_top10_2025": [
+    {
+     "code": "A01",
+     "name": "A01:2025 – Broken Access Control"
+    }
+   ],
+   "verified": false,
+   "verification_note": "Statik kod naqshi mosligi; ma’lumot oqimi, ishga tushirish sharti va amaliy ta’siri tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart."
+  }
+ ],
+ "tools": {
+  "semgrep": {
+   "state": "partial",
+   "version": "1.177.0",
+   "count": 138,
+   "errors": 36,
+   "rule_set": "ThreatChain 7 lokal qoida + 1343 rasmiy semgrep-rules qoidasi (22 til)",
+   "rules_sha256": "039f79a2ff8f9b1faa15113c4bab42bf325128e5185793d2daeabf18f2cfdbf7",
+   "rule_pack": {
+    "source": "semgrep/semgrep-rules",
+    "commit": "40b8c63f75dc7c22c8a77482d73bfb864b146f7e",
+    "rules": 1343,
+    "files": 1327,
+    "languages": [
+     "bash",
+     "c",
+     "clojure",
+     "csharp",
+     "dockerfile",
+     "generic",
+     "go",
+     "html",
+     "java",
+     "javascript",
+     "json",
+     "kotlin",
+     "ocaml",
+     "php",
+     "python",
+     "ruby",
+     "rust",
+     "scala",
+     "solidity",
+     "terraform",
+     "typescript",
+     "yaml"
+    ]
+   },
+   "error_kinds": {
+    "Other syntax error": 36
+   },
+   "error_files": {
+    "helm_template": {
+     "files": [
+      "deploy/helm/templates/api-gateway-service/config.yaml",
+      "deploy/helm/templates/api-gateway-service/deployment.yaml",
+      "deploy/helm/templates/api-gateway-service/service.yaml",
+      "deploy/helm/templates/chatbot/config.yaml",
+      "deploy/helm/templates/chatbot/deployment.yaml",
+      "deploy/helm/templates/chatbot/service.yaml",
+      "deploy/helm/templates/chromadb/config.yaml",
+      "deploy/helm/templates/chromadb/service.yaml",
+      "deploy/helm/templates/chromadb/statefulset.yaml",
+      "deploy/helm/templates/chromadb/storage.yaml",
+      "deploy/helm/templates/community/config.yaml",
+      "deploy/helm/templates/community/deployment.yaml",
+      "deploy/helm/templates/community/service.yaml",
+      "deploy/helm/templates/identity/config.yaml",
+      "deploy/helm/templates/identity/deployment.yaml",
+      "deploy/helm/templates/identity/jwt-key-secret.yaml",
+      "deploy/helm/templates/identity/service.yaml",
+      "deploy/helm/templates/mailhog/config.yaml",
+      "deploy/helm/templates/mailhog/deployment.yaml",
+      "deploy/helm/templates/mailhog/ingress.yaml",
+      "deploy/helm/templates/mailhog/service.yaml",
+      "deploy/helm/templates/mailhog/webservice.yaml",
+      "deploy/helm/templates/mongodb/config.yaml",
+      "deploy/helm/templates/mongodb/service.yaml",
+      "deploy/helm/templates/mongodb/statefulset.yaml",
+      "deploy/helm/templates/mongodb/storage.yaml",
+      "deploy/helm/templates/postgres/config.yaml",
+      "deploy/helm/templates/postgres/service.yaml",
+      "deploy/helm/templates/postgres/statefulset.yaml",
+      "deploy/helm/templates/postgres/storage.yaml",
+      "deploy/helm/templates/web/configmap.yaml",
+      "deploy/helm/templates/web/deployment.yaml",
+      "deploy/helm/templates/web/ingress.yaml",
+      "deploy/helm/templates/workshop/config.yaml",
+      "deploy/helm/templates/workshop/deployment.yaml",
+      "deploy/helm/templates/workshop/service.yaml"
+     ],
+     "count": 36,
+     "action": "Bu fayllar Helm (Go) shabloni, YAML emas — hech bir YAML tahlilchisi ularni o‘qiy olmaydi. Qamrovga kiritish uchun `helm template` bilan render qilib, natijani alohida loyiha sifatida tekshiring."
+    }
+   }
+  },
+  "gitleaks": {
+   "state": "completed",
+   "version": "8.30.1",
+   "count": 10,
+   "errors": 0,
+   "rule_set": "Gitleaks ichki qoidalari",
+   "rules_sha256": "39a393b8200ddaf822e57ed18e3c932487c7a9449996e1a5197f601db7b787af"
+  }
+ },
+ "verification": "unverified_static",
+ "limits": "Topilmalar qo‘lda tekshiriladi. Maxfiy qiymat va kod parchasi hisobotga kiritilmaydi. Bu amaliy hujum tasdig‘i emas.",
+ "coverage": {
+  "files": 485,
+  "bytes": 1617518,
+  "snapshot_sha256": "1f8c5353f6211954bfdcfe8f85e8af2fc910109d9bce2832254febdd2d643664",
+  "skipped": {
+   "excluded": 1,
+   "links": 0,
+   "binary": 17,
+   "large": 1
+  },
+  "scope": "Joriy matn fayllari; Git tarixi, vendor/node_modules, binar va 1 MB dan katta fayllar kiritilmagan."
+ },
+ "verification_summary": {
+  "total": 148,
+  "confirmed_by_evidence": 0,
+  "manual_review_required": 148,
+  "note": "confirmed_by_evidence: nishonning haqiqiy javobi/holati bilan bevosita kuzatilgan. manual_review_required: statik yoki bazaviy moslik — mutaxassis tomonidan qo‘lda tasdiqlanishi shart."
+ },
+ "finished_at": "2026-09-18T04:32:16.656306+00:00"
+}

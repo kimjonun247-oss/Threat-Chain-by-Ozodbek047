@@ -1,0 +1,27 @@
+id: zanjir-env
+info:
+  name: Ochiq muhit konfiguratsiyasi (.env)
+  author: zanjir
+  severity: high
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.env"
+      - "{{BaseURL}}/.env.production"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200, 206]
+      - type: regex
+        part: body
+        regex:
+          - '(?m)^(DB_PASSWORD|DATABASE_URL|APP_KEY|SECRET_KEY|AWS_SECRET_ACCESS_KEY|API_KEY)\s*=\s*\S+'
+      - type: regex
+        part: body
+        regex:
+          - '(?m)^(APP_ENV|APP_NAME|DB_HOST|DB_DATABASE|DB_USERNAME|DEBUG|PORT|NODE_ENV)\s*='
+      - type: word
+        part: body
+        words: ['<html', '<body']
+        negative: true
+

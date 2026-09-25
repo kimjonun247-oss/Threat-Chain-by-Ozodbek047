@@ -1,0 +1,851 @@
+{
+ "schema_version": 2,
+ "kind": "repository",
+ "id": "20260909T103006-620e5d43",
+ "created_at": "2026-09-09T10:30:06.365447+00:00",
+ "engine_version": "0.2.0",
+ "duration_ms": 100.15,
+ "repository": {
+  "repository": "https://github.com/OWASP/crAPI",
+  "commit": "700f03d12a392d9e408260b4beae72ed02a4a1a4",
+  "branch": "main",
+  "commit_date": "2025-09-22T14:58:30Z",
+  "archive_sha256": "a698a97d1d6eb1117ea8d6c7fa66e7e943851de06fe7268500fd8498ca3c4dc5",
+  "retrieved_at": "2026-09-09",
+  "execution": "source-only; no repository code executed",
+  "subset": [
+   "deploy/docker/docker-compose.yml",
+   "deploy/docker/.env",
+   "services/web/nginx.ssl.conf.template",
+   "services/web/nginx.conf.template",
+   "services/web/nginx-wrapper.sh",
+   "services/web/Dockerfile",
+   "LICENSE.md"
+  ],
+  "note": "Unmodified selected source files, not the full repository and not a runnable crAPI deployment."
+ },
+ "profile": {
+  "compose": "deploy/docker/docker-compose.yml",
+  "env_file": "deploy/docker/.env",
+  "bindings": [
+   {
+    "service_id": "crapi-web",
+    "path": "services/web/nginx.ssl.conf.template",
+    "when": {
+     "key": "TLS_ENABLED",
+     "values": [
+      "true",
+      "1"
+     ]
+    },
+    "template_variables": {
+     "HTTP_PROTOCOL": "https"
+    }
+   },
+   {
+    "service_id": "crapi-web",
+    "path": "services/web/nginx.conf.template",
+    "when": {
+     "key": "TLS_ENABLED",
+     "values": [
+      "false",
+      "0"
+     ]
+    },
+    "template_variables": {
+     "HTTP_PROTOCOL": "http"
+    }
+   }
+  ]
+ },
+ "input_sha256": "723b05f000e0b4fef02706dad98fa87cc8f9fa53c4565946a4332b1346a04773",
+ "files": [
+  {
+   "path": "deploy/docker/docker-compose.yml",
+   "sha256": "dbcc43442d2c2a4cc572f232a714d522f0b9433cf69e8cc854e4c2e07c6b013f",
+   "bytes": 9208
+  },
+  {
+   "path": "deploy/docker/.env",
+   "sha256": "7770e557099ec5cefb268e5cd38e360582a6b76a0bbe7bf39767a7339e35a22f",
+   "bytes": 220
+  },
+  {
+   "path": "services/web/nginx.ssl.conf.template",
+   "sha256": "e45482465860cbf584f08ce40de002ab796be0ae40877df4c622cee9fa13560c",
+   "bytes": 8547
+  }
+ ],
+ "services": [
+  {
+   "id": "crapi-identity",
+   "ports": [],
+   "networks": [
+    "default"
+   ],
+   "image": "crapi/crapi-identity:${VERSION:-latest}",
+   "evidence_id": "R001",
+   "auth_status": "unknown",
+   "runtime_verified": false
+  },
+  {
+   "id": "crapi-community",
+   "ports": [],
+   "networks": [
+    "default"
+   ],
+   "image": "crapi/crapi-community:${VERSION:-latest}",
+   "evidence_id": "R002",
+   "auth_status": "unknown",
+   "runtime_verified": false
+  },
+  {
+   "id": "crapi-workshop",
+   "ports": [],
+   "networks": [
+    "default"
+   ],
+   "image": "crapi/crapi-workshop:${VERSION:-latest}",
+   "evidence_id": "R003",
+   "auth_status": "unknown",
+   "runtime_verified": false
+  },
+  {
+   "id": "crapi-chatbot",
+   "ports": [],
+   "networks": [
+    "default"
+   ],
+   "image": "crapi/crapi-chatbot:${VERSION:-latest}",
+   "evidence_id": "R004",
+   "auth_status": "unknown",
+   "runtime_verified": false
+  },
+  {
+   "id": "crapi-web",
+   "ports": [
+    {
+     "host_ip": "127.0.0.1",
+     "published": "8888",
+     "target": 80,
+     "protocol": "tcp",
+     "scope": "loopback",
+     "evidence_id": "R006"
+    },
+    {
+     "host_ip": "127.0.0.1",
+     "published": "30080",
+     "target": 80,
+     "protocol": "tcp",
+     "scope": "loopback",
+     "evidence_id": "R007"
+    },
+    {
+     "host_ip": "127.0.0.1",
+     "published": "8443",
+     "target": 443,
+     "protocol": "tcp",
+     "scope": "loopback",
+     "evidence_id": "R008"
+    },
+    {
+     "host_ip": "127.0.0.1",
+     "published": "30443",
+     "target": 443,
+     "protocol": "tcp",
+     "scope": "loopback",
+     "evidence_id": "R009"
+    }
+   ],
+   "networks": [
+    "default"
+   ],
+   "image": "crapi/crapi-web:${VERSION:-latest}",
+   "evidence_id": "R005",
+   "auth_status": "unknown",
+   "runtime_verified": false
+  },
+  {
+   "id": "postgresdb",
+   "ports": [],
+   "networks": [
+    "default"
+   ],
+   "image": "postgres:14",
+   "evidence_id": "R010",
+   "auth_status": "unknown",
+   "runtime_verified": false
+  },
+  {
+   "id": "mongodb",
+   "ports": [],
+   "networks": [
+    "default"
+   ],
+   "image": "mongo:4.4",
+   "evidence_id": "R011",
+   "auth_status": "unknown",
+   "runtime_verified": false
+  },
+  {
+   "id": "chromadb",
+   "ports": [],
+   "networks": [
+    "default"
+   ],
+   "image": "chromadb/chroma:latest",
+   "evidence_id": "R012",
+   "auth_status": "unknown",
+   "runtime_verified": false
+  },
+  {
+   "id": "mailhog",
+   "ports": [
+    {
+     "host_ip": "127.0.0.1",
+     "published": "8025",
+     "target": 8025,
+     "protocol": "tcp",
+     "scope": "loopback",
+     "evidence_id": "R014"
+    }
+   ],
+   "networks": [
+    "default"
+   ],
+   "image": "crapi/mailhog:${VERSION:-latest}",
+   "evidence_id": "R013",
+   "auth_status": "unknown",
+   "runtime_verified": false
+  },
+  {
+   "id": "api.mypremiumdealership.com",
+   "ports": [],
+   "networks": [
+    "default"
+   ],
+   "image": "crapi/gateway-service:${VERSION:-latest}",
+   "evidence_id": "R015",
+   "auth_status": "unknown",
+   "runtime_verified": false
+  }
+ ],
+ "edges": [
+  {
+   "from": "crapi-web",
+   "to": "crapi-community",
+   "type": "proxy_route",
+   "location": "/community/",
+   "listen": "443",
+   "target_port": 8087,
+   "scheme": "https",
+   "shared_networks": [
+    "default"
+   ],
+   "reachability": "candidate",
+   "evidence_ids": [
+    "R016",
+    "R017"
+   ],
+   "runtime_verified": false
+  },
+  {
+   "from": "crapi-web",
+   "to": "crapi-identity",
+   "type": "proxy_route",
+   "location": "/identity/",
+   "listen": "443",
+   "target_port": 8080,
+   "scheme": "https",
+   "shared_networks": [
+    "default"
+   ],
+   "reachability": "candidate",
+   "evidence_ids": [
+    "R016",
+    "R019"
+   ],
+   "runtime_verified": false
+  },
+  {
+   "from": "crapi-web",
+   "to": "crapi-workshop",
+   "type": "proxy_route",
+   "location": "/workshop/",
+   "listen": "443",
+   "target_port": 8000,
+   "scheme": "https",
+   "shared_networks": [
+    "default"
+   ],
+   "reachability": "candidate",
+   "evidence_ids": [
+    "R016",
+    "R021"
+   ],
+   "runtime_verified": false
+  },
+  {
+   "from": "crapi-web",
+   "to": "crapi-chatbot",
+   "type": "proxy_route",
+   "location": "/chatbot/",
+   "listen": "443",
+   "target_port": 5002,
+   "scheme": "https",
+   "shared_networks": [
+    "default"
+   ],
+   "reachability": "candidate",
+   "evidence_ids": [
+    "R016",
+    "R023"
+   ],
+   "runtime_verified": false
+  },
+  {
+   "from": "crapi-web",
+   "to": "crapi-identity",
+   "type": "proxy_route",
+   "location": "/.well-known/jwks.json",
+   "listen": "443",
+   "target_port": 8080,
+   "scheme": "https",
+   "shared_networks": [
+    "default"
+   ],
+   "reachability": "candidate",
+   "evidence_ids": [
+    "R016",
+    "R025"
+   ],
+   "runtime_verified": false
+  },
+  {
+   "from": "crapi-web",
+   "to": "mailhog",
+   "type": "proxy_route",
+   "location": "/mailhog/",
+   "listen": "443",
+   "target_port": 8025,
+   "scheme": "http",
+   "shared_networks": [
+    "default"
+   ],
+   "reachability": "candidate",
+   "evidence_ids": [
+    "R016",
+    "R027"
+   ],
+   "runtime_verified": false
+  },
+  {
+   "from": "crapi-web",
+   "to": "crapi-community",
+   "type": "proxy_route",
+   "location": "/community/",
+   "listen": "80",
+   "target_port": 8087,
+   "scheme": "https",
+   "shared_networks": [
+    "default"
+   ],
+   "reachability": "candidate",
+   "evidence_ids": [
+    "R016",
+    "R028"
+   ],
+   "runtime_verified": false
+  },
+  {
+   "from": "crapi-web",
+   "to": "crapi-identity",
+   "type": "proxy_route",
+   "location": "/identity/",
+   "listen": "80",
+   "target_port": 8080,
+   "scheme": "https",
+   "shared_networks": [
+    "default"
+   ],
+   "reachability": "candidate",
+   "evidence_ids": [
+    "R016",
+    "R029"
+   ],
+   "runtime_verified": false
+  },
+  {
+   "from": "crapi-web",
+   "to": "crapi-workshop",
+   "type": "proxy_route",
+   "location": "/workshop/",
+   "listen": "80",
+   "target_port": 8000,
+   "scheme": "https",
+   "shared_networks": [
+    "default"
+   ],
+   "reachability": "candidate",
+   "evidence_ids": [
+    "R016",
+    "R030"
+   ],
+   "runtime_verified": false
+  },
+  {
+   "from": "crapi-web",
+   "to": "crapi-chatbot",
+   "type": "proxy_route",
+   "location": "/chatbot/",
+   "listen": "80",
+   "target_port": 5002,
+   "scheme": "https",
+   "shared_networks": [
+    "default"
+   ],
+   "reachability": "candidate",
+   "evidence_ids": [
+    "R016",
+    "R031"
+   ],
+   "runtime_verified": false
+  },
+  {
+   "from": "crapi-web",
+   "to": "crapi-identity",
+   "type": "proxy_route",
+   "location": "/.well-known/jwks.json",
+   "listen": "80",
+   "target_port": 8080,
+   "scheme": "https",
+   "shared_networks": [
+    "default"
+   ],
+   "reachability": "candidate",
+   "evidence_ids": [
+    "R016",
+    "R032"
+   ],
+   "runtime_verified": false
+  },
+  {
+   "from": "crapi-web",
+   "to": "mailhog",
+   "type": "proxy_route",
+   "location": "/mailhog/",
+   "listen": "80",
+   "target_port": 8025,
+   "scheme": "http",
+   "shared_networks": [
+    "default"
+   ],
+   "reachability": "candidate",
+   "evidence_ids": [
+    "R016",
+    "R033"
+   ],
+   "runtime_verified": false
+  }
+ ],
+ "evidence": [
+  {
+   "id": "R001",
+   "path": "deploy/docker/docker-compose.yml",
+   "line": 16,
+   "label": "Xizmat",
+   "value": "crapi-identity"
+  },
+  {
+   "id": "R002",
+   "path": "deploy/docker/docker-compose.yml",
+   "line": 70,
+   "label": "Xizmat",
+   "value": "crapi-community"
+  },
+  {
+   "id": "R003",
+   "path": "deploy/docker/docker-compose.yml",
+   "line": 110,
+   "label": "Xizmat",
+   "value": "crapi-workshop"
+  },
+  {
+   "id": "R004",
+   "path": "deploy/docker/docker-compose.yml",
+   "line": 155,
+   "label": "Xizmat",
+   "value": "crapi-chatbot"
+  },
+  {
+   "id": "R005",
+   "path": "deploy/docker/docker-compose.yml",
+   "line": 190,
+   "label": "Xizmat",
+   "value": "crapi-web"
+  },
+  {
+   "id": "R006",
+   "path": "deploy/docker/docker-compose.yml",
+   "line": 193,
+   "label": "Host port mapping",
+   "value": {
+    "host_ip": "127.0.0.1",
+    "published": "8888",
+    "target": 80,
+    "protocol": "tcp",
+    "scope": "loopback",
+    "evidence_id": "R006"
+   }
+  },
+  {
+   "id": "R007",
+   "path": "deploy/docker/docker-compose.yml",
+   "line": 194,
+   "label": "Host port mapping",
+   "value": {
+    "host_ip": "127.0.0.1",
+    "published": "30080",
+    "target": 80,
+    "protocol": "tcp",
+    "scope": "loopback",
+    "evidence_id": "R007"
+   }
+  },
+  {
+   "id": "R008",
+   "path": "deploy/docker/docker-compose.yml",
+   "line": 195,
+   "label": "Host port mapping",
+   "value": {
+    "host_ip": "127.0.0.1",
+    "published": "8443",
+    "target": 443,
+    "protocol": "tcp",
+    "scope": "loopback",
+    "evidence_id": "R008"
+   }
+  },
+  {
+   "id": "R009",
+   "path": "deploy/docker/docker-compose.yml",
+   "line": 196,
+   "label": "Host port mapping",
+   "value": {
+    "host_ip": "127.0.0.1",
+    "published": "30443",
+    "target": 443,
+    "protocol": "tcp",
+    "scope": "loopback",
+    "evidence_id": "R009"
+   }
+  },
+  {
+   "id": "R010",
+   "path": "deploy/docker/docker-compose.yml",
+   "line": 223,
+   "label": "Xizmat",
+   "value": "postgresdb"
+  },
+  {
+   "id": "R011",
+   "path": "deploy/docker/docker-compose.yml",
+   "line": 246,
+   "label": "Xizmat",
+   "value": "mongodb"
+  },
+  {
+   "id": "R012",
+   "path": "deploy/docker/docker-compose.yml",
+   "line": 268,
+   "label": "Xizmat",
+   "value": "chromadb"
+  },
+  {
+   "id": "R013",
+   "path": "deploy/docker/docker-compose.yml",
+   "line": 284,
+   "label": "Xizmat",
+   "value": "mailhog"
+  },
+  {
+   "id": "R014",
+   "path": "deploy/docker/docker-compose.yml",
+   "line": 292,
+   "label": "Host port mapping",
+   "value": {
+    "host_ip": "127.0.0.1",
+    "published": "8025",
+    "target": 8025,
+    "protocol": "tcp",
+    "scope": "loopback",
+    "evidence_id": "R014"
+   }
+  },
+  {
+   "id": "R015",
+   "path": "deploy/docker/docker-compose.yml",
+   "line": 305,
+   "label": "Xizmat",
+   "value": "api.mypremiumdealership.com"
+  },
+  {
+   "id": "R016",
+   "path": "profile.json",
+   "line": 1,
+   "label": "Qo‘lda berilgan source → service mapping",
+   "value": {
+    "service_id": "crapi-web",
+    "path": "services/web/nginx.ssl.conf.template"
+   }
+  },
+  {
+   "id": "R017",
+   "path": "services/web/nginx.ssl.conf.template",
+   "line": 21,
+   "label": "Proxy yo‘li",
+   "value": {
+    "service": "crapi-web",
+    "location": "/community/",
+    "upstream": "https://crapi-community:8087",
+    "listen": "443"
+   }
+  },
+  {
+   "id": "R018",
+   "path": "services/web/nginx.ssl.conf.template",
+   "line": 28,
+   "label": "proxy_ssl_verify",
+   "value": "off"
+  },
+  {
+   "id": "R019",
+   "path": "services/web/nginx.ssl.conf.template",
+   "line": 41,
+   "label": "Proxy yo‘li",
+   "value": {
+    "service": "crapi-web",
+    "location": "/identity/",
+    "upstream": "https://crapi-identity:8080",
+    "listen": "443"
+   }
+  },
+  {
+   "id": "R020",
+   "path": "services/web/nginx.ssl.conf.template",
+   "line": 45,
+   "label": "proxy_ssl_verify",
+   "value": "off"
+  },
+  {
+   "id": "R021",
+   "path": "services/web/nginx.ssl.conf.template",
+   "line": 58,
+   "label": "Proxy yo‘li",
+   "value": {
+    "service": "crapi-web",
+    "location": "/workshop/",
+    "upstream": "https://crapi-workshop:8000",
+    "listen": "443"
+   }
+  },
+  {
+   "id": "R022",
+   "path": "services/web/nginx.ssl.conf.template",
+   "line": 65,
+   "label": "proxy_ssl_verify",
+   "value": "off"
+  },
+  {
+   "id": "R023",
+   "path": "services/web/nginx.ssl.conf.template",
+   "line": 78,
+   "label": "Proxy yo‘li",
+   "value": {
+    "service": "crapi-web",
+    "location": "/chatbot/",
+    "upstream": "https://crapi-chatbot:5002",
+    "listen": "443"
+   }
+  },
+  {
+   "id": "R024",
+   "path": "services/web/nginx.ssl.conf.template",
+   "line": 85,
+   "label": "proxy_ssl_verify",
+   "value": "off"
+  },
+  {
+   "id": "R025",
+   "path": "services/web/nginx.ssl.conf.template",
+   "line": 98,
+   "label": "Proxy yo‘li",
+   "value": {
+    "service": "crapi-web",
+    "location": "/.well-known/jwks.json",
+    "upstream": "https://crapi-identity:8080/identity/api/auth/jwks.json",
+    "listen": "443"
+   }
+  },
+  {
+   "id": "R026",
+   "path": "services/web/nginx.ssl.conf.template",
+   "line": 99,
+   "label": "proxy_ssl_verify",
+   "value": "off"
+  },
+  {
+   "id": "R027",
+   "path": "services/web/nginx.ssl.conf.template",
+   "line": 112,
+   "label": "Proxy yo‘li",
+   "value": {
+    "service": "crapi-web",
+    "location": "/mailhog/",
+    "upstream": "http://mailhog:8025/",
+    "listen": "443"
+   }
+  },
+  {
+   "id": "R028",
+   "path": "services/web/nginx.ssl.conf.template",
+   "line": 152,
+   "label": "Proxy yo‘li",
+   "value": {
+    "service": "crapi-web",
+    "location": "/community/",
+    "upstream": "https://crapi-community:8087",
+    "listen": "80"
+   }
+  },
+  {
+   "id": "R029",
+   "path": "services/web/nginx.ssl.conf.template",
+   "line": 170,
+   "label": "Proxy yo‘li",
+   "value": {
+    "service": "crapi-web",
+    "location": "/identity/",
+    "upstream": "https://crapi-identity:8080",
+    "listen": "80"
+   }
+  },
+  {
+   "id": "R030",
+   "path": "services/web/nginx.ssl.conf.template",
+   "line": 185,
+   "label": "Proxy yo‘li",
+   "value": {
+    "service": "crapi-web",
+    "location": "/workshop/",
+    "upstream": "https://crapi-workshop:8000",
+    "listen": "80"
+   }
+  },
+  {
+   "id": "R031",
+   "path": "services/web/nginx.ssl.conf.template",
+   "line": 203,
+   "label": "Proxy yo‘li",
+   "value": {
+    "service": "crapi-web",
+    "location": "/chatbot/",
+    "upstream": "https://crapi-chatbot:5002",
+    "listen": "80"
+   }
+  },
+  {
+   "id": "R032",
+   "path": "services/web/nginx.ssl.conf.template",
+   "line": 221,
+   "label": "Proxy yo‘li",
+   "value": {
+    "service": "crapi-web",
+    "location": "/.well-known/jwks.json",
+    "upstream": "https://crapi-identity:8080/identity/api/auth/jwks.json",
+    "listen": "80"
+   }
+  },
+  {
+   "id": "R033",
+   "path": "services/web/nginx.ssl.conf.template",
+   "line": 233,
+   "label": "Proxy yo‘li",
+   "value": {
+    "service": "crapi-web",
+    "location": "/mailhog/",
+    "upstream": "http://mailhog:8025/",
+    "listen": "80"
+   }
+  }
+ ],
+ "findings": [
+  {
+   "rule_id": "RP-002",
+   "fingerprint": "a2f91504f63094d88eca28ae",
+   "service_id": "crapi-web",
+   "title": "HTTPS upstream sertifikati tekshirilmaydi",
+   "detail": "crapi-web → crapi-community, /community/: HTTPS tanlangan, lekin upstream sertifikatini tekshirish off. Source mapping qo‘lda berilgan; deployed image mosligi va amaliy ta’sir tekshirilmagan.",
+   "evidence_ids": [
+    "R016",
+    "R017",
+    "R018"
+   ],
+   "level": "warning",
+   "status": "review_required",
+   "remediation": "Ishonchli CA, server nomi va SNI sozlamalarini moslab, proxy_ssl_verify on bilan test muhitida tekshiring.",
+   "runtime_verified": false
+  },
+  {
+   "rule_id": "RP-002",
+   "fingerprint": "c5c5bf3d7c144b9ec3c6189e",
+   "service_id": "crapi-web",
+   "title": "HTTPS upstream sertifikati tekshirilmaydi",
+   "detail": "crapi-web → crapi-identity, /identity/: HTTPS tanlangan, lekin upstream sertifikatini tekshirish off. Source mapping qo‘lda berilgan; deployed image mosligi va amaliy ta’sir tekshirilmagan.",
+   "evidence_ids": [
+    "R016",
+    "R019",
+    "R020"
+   ],
+   "level": "warning",
+   "status": "review_required",
+   "remediation": "Ishonchli CA, server nomi va SNI sozlamalarini moslab, proxy_ssl_verify on bilan test muhitida tekshiring.",
+   "runtime_verified": false
+  },
+  {
+   "rule_id": "RP-002",
+   "fingerprint": "e1895dfe9598a0297552acc3",
+   "service_id": "crapi-web",
+   "title": "HTTPS upstream sertifikati tekshirilmaydi",
+   "detail": "crapi-web → crapi-workshop, /workshop/: HTTPS tanlangan, lekin upstream sertifikatini tekshirish off. Source mapping qo‘lda berilgan; deployed image mosligi va amaliy ta’sir tekshirilmagan.",
+   "evidence_ids": [
+    "R016",
+    "R021",
+    "R022"
+   ],
+   "level": "warning",
+   "status": "review_required",
+   "remediation": "Ishonchli CA, server nomi va SNI sozlamalarini moslab, proxy_ssl_verify on bilan test muhitida tekshiring.",
+   "runtime_verified": false
+  }
+ ],
+ "unknowns": [],
+ "summary": {
+  "services": 10,
+  "published_ports": 5,
+  "loopback_ports": 5,
+  "proxy_routes": 12,
+  "findings": 6,
+  "runtime_confirmed": 0
+ },
+ "limits": [
+  "Faqat berilgan Compose fayli, .env va proxy bindinglar o‘qildi; repository kodi bajarilmadi.",
+  "Ishga tushirilgan konteynerlar, image digest, firewall va autentifikatsiya tekshirilmagan.",
+  "Source → image mosligi qo‘lda berilgan mapping; latest image aynan shu commitdan ekanligi isbotlanmagan.",
+  "Nginx Lua va murakkab dinamik marshrutlar bajarilmaydi. Proxy grafigi hujum grafigi emas.",
+  "Boshqa override fayllari va shell environment qo‘llanmaydi; .env faqat literal qiymatlarni qo‘llaydi.",
+  "Ogohlantirishlar review talab qiladi; bu audit muvofiqligi yoki real ekspluatatsiya isboti emas."
+ ],
+ "profile_id": "crapi",
+ "report_sha256": "4e7bf667d812dc598cacfa9e335292212d5ca0671ef0b2807bf48dd521088fa3"
+}

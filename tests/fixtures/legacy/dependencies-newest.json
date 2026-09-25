@@ -1,0 +1,24 @@
+{
+ "schema_version": 1,
+ "id": "20260922T041122-edd3b194",
+ "target": "chain-demo",
+ "created_at": "2026-09-22T04:11:22.600018+00:00",
+ "state": "no_supported_packages",
+ "count": 0,
+ "findings": [],
+ "limits": "OSV/NVD/CISA KEV paket/versiya mosligi amaliy hujum tasdig‘i emas. Qamrov, conditional/dev paketlar va ishlayotgan tizimga moslik qo‘lda tekshiriladi.",
+ "data_policy": "OSV, NVD va EPSS ga faqat paket nomi, ecosystem, versiya yoki CVE ID yuboriladi. Kod, fayl yo‘li, token yuborilmaydi. Bu tekshiruv doim internetga ulangan holda ishlaydi; offline/faqat-inventar rejim mavjud emas.",
+ "progress": "Qo‘llanadigan aniq versiyali paket topilmadi",
+ "inventory_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+ "coverage": {
+  "schema_version": 1,
+  "manifests": [],
+  "gaps": [],
+  "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "unique_packages": 0,
+  "occurrences": 0,
+  "excluded_directories": 0,
+  "scope": "npm lock v1–v3, Python == pins va Pipfile/poetry/uv lock, Go require, Gradle lockfile (Maven), Gemfile.lock (RubyGems), composer.lock (Packagist), Cargo.lock (crates.io). Faqat aniq versiya yozilgan formatlar o‘qiladi — versiyani hal qilish uchun build vositasini ishga tushirish kerak bo‘lgan fayllar (pom.xml, build.gradle, pyproject.toml) qamrovga kirmaydi va bo‘shliq sifatida ko‘rsatiladi. Tranzitiv bog‘liqliklar va ishlayotgan muhitning to‘liq inventari kafolatlanmaydi. Repository kodi bajarilmadi."
+ },
+ "finished_at": "2026-09-22T04:11:22.608417+00:00"
+}

@@ -1,0 +1,15 @@
+{
+  "commit": "823ebcccf653310cb8df3264592027b437095943",
+  "templates": [
+    {
+      "file": "git-config.yaml",
+      "url": "https://raw.githubusercontent.com/projectdiscovery/nuclei-templates/823ebcccf653310cb8df3264592027b437095943/http/exposures/configs/git-config.yaml",
+      "sha256": "bd8bdfa0b5ed5bf4d3712edb793adfd0987d9282e51c6f7d673bf14b9e4dd524"
+    },
+    {
+      "file": "dir-listing.yaml",
+      "url": "https://raw.githubusercontent.com/projectdiscovery/nuclei-templates/823ebcccf653310cb8df3264592027b437095943/http/miscellaneous/dir-listing.yaml",
+      "sha256": "616275a73fd26c454f3cd3f4304641975b7609dedf61c5255ebae42f4650706c"
+    }
+  ]
+}

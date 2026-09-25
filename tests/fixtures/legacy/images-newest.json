@@ -1,0 +1,151 @@
+{
+ "schema_version": 1,
+ "id": "20260918T125026-c51325f9",
+ "target": "pilot-crapi-chatbot",
+ "reference": "crapi/crapi-chatbot@sha256:36d274d54182a8baddba7ede17282035bb43ab9cb9cf87927e1fe7109901e0aa",
+ "created_at": "2026-09-18T12:50:26.812954+00:00",
+ "state": "completed",
+ "findings": [
+  {
+   "id": "11dfee3c27789a82f4cb2ca5",
+   "package": "Authlib",
+   "version": "1.6.4",
+   "advisory_id": "CVE-2026-27962",
+   "severity": "CRITICAL",
+   "fixed_version": "1.6.9",
+   "title": "authlib: Authlib: Authentication bypass due to JWK Header Injection vulnerability",
+   "target": "Python",
+   "type": "python-pkg",
+   "state": "image_advisory_match",
+   "source": "GitHub Security Advisory pip",
+   "cwe_ids": [
+    "CWE-347"
+   ],
+   "owasp_top10_2025": [
+    {
+     "code": "A04",
+     "name": "A04:2025 – Cryptographic Failures"
+    }
+   ],
+   "verified": false,
+   "verification_note": "Trivy image qatlamidagi paket-versiya darajasida statik moslik; image ishga tushirilmagan, amaliy ta’sir tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart."
+  },
+  {
+   "id": "08dbe8d3b9520f46f73810b0",
+   "package": "chromadb",
+   "version": "1.1.0",
+   "advisory_id": "CVE-2026-45829",
+   "severity": "CRITICAL",
+   "fixed_version": "",
+   "title": "chromadb: ChromaDB Python Project: Arbitrary code execution via pre-authentication code injection",
+   "target": "Python",
+   "type": "python-pkg",
+   "state": "image_advisory_match",
+   "source": "GitHub Security Advisory pip",
+   "cwe_ids": [
+    "CWE-502",
+    "CWE-94"
+   ],
+   "owasp_top10_2025": [
+    {
+     "code": "A05",
+     "name": "A05:2025 – Injection"
+    },
+    {
+     "code": "A08",
+     "name": "A08:2025 – Software or Data Integrity Failures"
+    }
+   ],
+   "verified": false,
+   "verification_note": "Trivy image qatlamidagi paket-versiya darajasida statik moslik; image ishga tushirilmagan, amaliy ta’sir tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart."
+  },
+  {
+   "id": "d650f6b5ca3bc50426edb7a5",
+   "package": "chromadb",
+   "version": "1.1.0",
+   "advisory_id": "CVE-2026-45833",
+   "severity": "CRITICAL",
+   "fixed_version": "",
+   "title": "chromadb: ChromaDB: Arbitrary Code Execution via Code Injection",
+   "target": "Python",
+   "type": "python-pkg",
+   "state": "image_advisory_match",
+   "source": "GitHub Security Advisory pip",
+   "cwe_ids": [
+    "CWE-94"
+   ],
+   "owasp_top10_2025": [
+    {
+     "code": "A05",
+     "name": "A05:2025 – Injection"
+    }
+   ],
+   "verified": false,
+   "verification_note": "Trivy image qatlamidagi paket-versiya darajasida statik moslik; image ishga tushirilmagan, amaliy ta’sir tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart."
+  }
+ ],
+ "count": 7424,
+ "size_limit": "2GB",
+ "size_limit_raised": true,
+ "scope": "Public Docker Hub image, linux/amd64, 2GB gacha (standart 1 GB chegarasi operator tomonidan ushbu tekshiruv uchun oshirilgan). OS va aniqlangan til paketlari. Jarayon ishga tushirilmaydi.",
+ "limits": "Image topilmasi amaliy hujum tasdig‘i emas. Image digest ishlayotgan deploy va source commit bilan alohida bog‘lanadi. Qamrovga kirmagan paketlar bo‘lishi mumkin.",
+ "data_policy": "Public registry image va zaiflik bazalari yuklanadi. Lokal kod va Docker login ma’lumotlari yuborilmaydi.",
+ "progress": "Image tahlili tugadi; amaliy ta’sirini mutaxassis tekshiradi",
+ "tool": {
+  "name": "Trivy",
+  "version": "0.74.0",
+  "binary_sha256": "0ed07c205ca9ecc1065dc57b9f9f77adc79393bb469d9d1de9ec90c8c94ffc2f"
+ },
+ "database_refresh": {
+  "refreshed": [],
+  "failed": [],
+  "current": [
+   "db",
+   "java-db"
+  ]
+ },
+ "size_check": "enforced",
+ "time_budget_minutes": 20,
+ "coverage": [
+  {
+   "Target": "docker.io/crapi/crapi-chatbot@sha256:36d274d54182a8baddba7ede17282035bb43ab9cb9cf87927e1fe7109901e0aa (debian 13.1)",
+   "Class": "os-pkgs",
+   "Type": "debian",
+   "packages": 188
+  },
+  {
+   "Target": "Python",
+   "Class": "lang-pkgs",
+   "Type": "python-pkg",
+   "packages": 181
+  }
+ ],
+ "os": {
+  "Family": "debian",
+  "Name": "13.1"
+ },
+ "image_id": "sha256:6f61cccf8a5d3279540079d345bbc0222069867784426d1a60a0b2d03465e95e",
+ "repo_digests": [
+  "crapi/crapi-chatbot@sha256:36d274d54182a8baddba7ede17282035bb43ab9cb9cf87927e1fe7109901e0aa"
+ ],
+ "severity_counts": {
+  "CRITICAL": 34,
+  "HIGH": 1014,
+  "MEDIUM": 4572,
+  "LOW": 1332,
+  "UNKNOWN": 472
+ },
+ "verification_summary": {
+  "total": 7424,
+  "confirmed_by_evidence": 0,
+  "manual_review_required": 7424,
+  "note": "confirmed_by_evidence: nishonning haqiqiy javobi/holati bilan bevosita kuzatilgan. manual_review_required: statik yoki bazaviy moslik — mutaxassis tomonidan qo‘lda tasdiqlanishi shart."
+ },
+ "database": {
+  "Version": 2,
+  "UpdatedAt": "2026-09-18T01:11:25.279659641Z",
+  "NextUpdate": "2026-09-19T01:11:25.27965919Z",
+  "DownloadedAt": "2026-09-18T07:13:57.501408Z"
+ },
+ "finished_at": "2026-09-18T13:04:03.465830+00:00"
+}

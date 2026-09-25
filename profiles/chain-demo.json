@@ -1,0 +1,8 @@
+{
+  "id": "chain-demo",
+  "name": "Zanjir demo · sun'iy namuna",
+  "root": "samples/chain-demo",
+  "compose": "docker-compose.yml",
+  "env_file": null,
+  "bindings": []
+}

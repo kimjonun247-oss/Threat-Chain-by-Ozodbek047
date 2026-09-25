@@ -1,0 +1,238 @@
+{
+ "schema_version": 1,
+ "id": "20260913T022146-2d530bc8",
+ "target": "crapi-full",
+ "created_at": "2026-09-13T02:21:46.804431+00:00",
+ "state": "partial",
+ "online": true,
+ "count": 263,
+ "findings": [
+  {
+   "id": "64fc8ff65e99cfa88bffb886",
+   "family": "dependency",
+   "package": {
+    "ecosystem": "PyPI",
+    "name": "fastmcp",
+    "version": "2.10.2"
+   },
+   "advisory_id": "CVE-2026-32871",
+   "aliases": [
+    "CVE-2026-32871",
+    "GHSA-vv7q-7jx5-f767",
+    "PYSEC-2026-338"
+   ],
+   "severity": "CRITICAL",
+   "priority": "P1",
+   "priority_reason": "Manba og‘irlik bahosi; tizimga amaliy ta’sir hali baholanmagan",
+   "known_exploited": false,
+   "state": "advisory_match",
+   "summary": "FastMCP OpenAPI Provider has an SSRF & Path Traversal Vulnerability",
+   "fixed_versions": [
+    "3.2.0"
+   ],
+   "references": [
+    "https://osv.dev/vulnerability/GHSA-vv7q-7jx5-f767",
+    "https://osv.dev/vulnerability/PYSEC-2026-338"
+   ],
+   "occurrences": [
+    {
+     "ecosystem": "PyPI",
+     "name": "fastmcp",
+     "version": "2.10.2",
+     "manifest": "services/chatbot/requirements.txt",
+     "locator": "line:21",
+     "scope": "declared",
+     "evidence_kind": "declared_exact_version",
+     "id": "94294a7feac0a915bf96a259"
+    }
+   ],
+   "remediation": "Manbada ko‘rsatilgan tuzatilgan versiya shoxini tekshiring, yangilang va funksional sinov hamda qayta skan bajaring."
+  },
+  {
+   "id": "cfb65f8be48cfbcfc1319ea3",
+   "family": "dependency",
+   "package": {
+    "ecosystem": "npm",
+    "name": "form-data",
+    "version": "3.0.3"
+   },
+   "advisory_id": "CVE-2025-7783",
+   "aliases": [
+    "CVE-2025-7783",
+    "GHSA-fjxv-7rqg-78g4"
+   ],
+   "severity": "CRITICAL",
+   "priority": "P1",
+   "priority_reason": "Manba og‘irlik bahosi; tizimga amaliy ta’sir hali baholanmagan",
+   "known_exploited": false,
+   "state": "advisory_match",
+   "summary": "form-data uses unsafe random function in form-data for choosing boundary",
+   "fixed_versions": [
+    "2.5.4",
+    "3.0.4",
+    "4.0.4"
+   ],
+   "references": [
+    "https://osv.dev/vulnerability/GHSA-fjxv-7rqg-78g4"
+   ],
+   "occurrences": [
+    {
+     "ecosystem": "npm",
+     "name": "form-data",
+     "version": "3.0.3",
+     "manifest": "services/web/package-lock.json",
+     "locator": "node_modules/jsdom/node_modules/form-data",
+     "scope": "runtime_or_optional",
+     "evidence_kind": "lockfile_version",
+     "id": "d29c0bca259c5fcace224fee"
+    }
+   ],
+   "remediation": "Manbada ko‘rsatilgan tuzatilgan versiya shoxini tekshiring, yangilang va funksional sinov hamda qayta skan bajaring."
+  },
+  {
+   "id": "3851a86bbf1d4620245533d5",
+   "family": "dependency",
+   "package": {
+    "ecosystem": "npm",
+    "name": "form-data",
+    "version": "4.0.2"
+   },
+   "advisory_id": "CVE-2025-7783",
+   "aliases": [
+    "CVE-2025-7783",
+    "GHSA-fjxv-7rqg-78g4"
+   ],
+   "severity": "CRITICAL",
+   "priority": "P1",
+   "priority_reason": "Manba og‘irlik bahosi; tizimga amaliy ta’sir hali baholanmagan",
+   "known_exploited": false,
+   "state": "advisory_match",
+   "summary": "form-data uses unsafe random function in form-data for choosing boundary",
+   "fixed_versions": [
+    "2.5.4",
+    "3.0.4",
+    "4.0.4"
+   ],
+   "references": [
+    "https://osv.dev/vulnerability/GHSA-fjxv-7rqg-78g4"
+   ],
+   "occurrences": [
+    {
+     "ecosystem": "npm",
+     "name": "form-data",
+     "version": "4.0.2",
+     "manifest": "services/web/package-lock.json",
+     "locator": "node_modules/form-data",
+     "scope": "runtime_or_optional",
+     "evidence_kind": "lockfile_version",
+     "id": "cee94744b4937c36118499f9"
+    }
+   ],
+   "remediation": "Manbada ko‘rsatilgan tuzatilgan versiya shoxini tekshiring, yangilang va funksional sinov hamda qayta skan bajaring."
+  }
+ ],
+ "limits": "OSV paket/versiya mosligi amaliy hujum tasdig‘i emas. Qamrov, conditional/dev paketlar va ishlayotgan tizimga moslik qo‘lda tekshiriladi.",
+ "data_policy": "Online rejimda OSV ga faqat paket nomi, ecosystem va versiya yuboriladi. Kod, fayl yo‘li, token yuborilmaydi.",
+ "progress": "Tekshiruv tugadi; qamrovdagi cheklovlarni ko‘ring",
+ "inventory_sha256": "44865575766e76c1dc6e1bee8372a6d36f631188197b291301392d11c91a08be",
+ "coverage": {
+  "schema_version": 1,
+  "manifests": [
+   {
+    "path": "services/chatbot/requirements-dev.txt",
+    "sha256": "9e03777a7e4a9d86c7d11cadce1ec496ea5ef90803c5b96ad25fceaecb155d9c",
+    "bytes": 6,
+    "state": "partial",
+    "packages": 0
+   },
+   {
+    "path": "services/chatbot/requirements.txt",
+    "sha256": "bced7af8dcc0cbe9473b75e86fb540b1aa68e44a37495fc8bc48c47325b828c6",
+    "bytes": 449,
+    "state": "partial",
+    "packages": 20
+   },
+   {
+    "path": "services/community/go.mod",
+    "sha256": "26eb71498a9df1c3451db20c465dc7121087405ceada65efa11545318d3aeac9",
+    "bytes": 976,
+    "state": "parsed",
+    "packages": 19
+   },
+   {
+    "path": "services/gateway-service/go.mod",
+    "sha256": "488b032c1130f160c0abd0e1cf70ecadddab9216995b63bb824718016556a5d7",
+    "bytes": 228,
+    "state": "parsed",
+    "packages": 3
+   },
+   {
+    "path": "services/identity/build.gradle.kts",
+    "sha256": "aff24988756aac240601f2874fcdc0239084db31cd0d9fa727db5354f97085cf",
+    "bytes": 3477,
+    "state": "unsupported"
+   },
+   {
+    "path": "services/web/package-lock.json",
+    "sha256": "990419f30cfd8f8709b03a133e0f9a12d9fdd2879caa03c0f32c0cf242fd9e90",
+    "bytes": 1626708,
+    "state": "parsed",
+    "packages": 1846
+   },
+   {
+    "path": "services/workshop/requirements.txt",
+    "sha256": "c3bbb55ad5a15155920c7f9053c340014bd3749d1eb560fbcc3d2220d6cd4443",
+    "bytes": 546,
+    "state": "partial",
+    "packages": 24
+   }
+  ],
+  "gaps": [
+   {
+    "path": "services/chatbot/requirements-dev.txt",
+    "line": 1,
+    "reason": "python_not_exact_pin_or_unsupported_directive"
+   },
+   {
+    "path": "services/chatbot/requirements.txt",
+    "line": 19,
+    "reason": "python_not_exact_pin_or_unsupported_directive"
+   },
+   {
+    "path": "services/chatbot/requirements.txt",
+    "line": 22,
+    "reason": "python_not_exact_pin_or_unsupported_directive"
+   }
+  ],
+  "sha256": "44865575766e76c1dc6e1bee8372a6d36f631188197b291301392d11c91a08be",
+  "unique_packages": 1649,
+  "occurrences": 1912,
+  "excluded_directories": 1,
+  "scope": "npm lock v1–v3, Python == pins, Go require. Go/Python tranzitiv bog‘liqliklari va ishlayotgan muhitning to‘liq inventari kafolatlanmaydi. Repository kodi bajarilmadi."
+ },
+ "query_errors": [],
+ "feeds": {
+  "osv": {
+   "checked_packages": 1649,
+   "requested_packages": 1649,
+   "responses": 342,
+   "oldest_retrieved_at": "2026-09-13T02:21:48.846450+00:00",
+   "cache_ttl_hours": 24
+  },
+  "kev": {
+   "state": "available",
+   "catalog_version": "2026.09.11",
+   "date_released": "2026-09-11T19:32:16.8993Z",
+   "retrieved_at": "2026-09-13T02:22:53.478878+00:00",
+   "cache": "network",
+   "url": "https://raw.githubusercontent.com/cisagov/kev-data/main/known_exploited_vulnerabilities.json"
+  }
+ },
+ "priority_counts": {
+  "P1": 17,
+  "P2": 118,
+  "P3": 116,
+  "REVIEW": 12
+ },
+ "finished_at": "2026-09-13T02:22:53.627395+00:00"
+}

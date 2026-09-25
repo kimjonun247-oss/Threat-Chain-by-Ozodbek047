@@ -1,0 +1,40 @@
+rules:
+  - id: zanjir.python.shell-execution
+    languages: [python]
+    severity: WARNING
+    message: Shell orqali buyruq bajarilishi; kiruvchi qiymat manbasini tekshiring.
+    pattern-either:
+      - pattern: subprocess.$FUNC(..., shell=True, ...)
+      - pattern: os.system(...)
+  - id: zanjir.python.eval
+    languages: [python]
+    severity: WARNING
+    message: Dinamik kod bajarilishi; foydalanuvchi qiymati yetib kelishini tekshiring.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: exec(...)
+  - id: zanjir.python.tls-verification-disabled
+    languages: [python]
+    severity: WARNING
+    message: HTTPS sertifikatini tekshirish ochirilgan.
+    pattern: requests.$METHOD(..., verify=False, ...)
+  - id: zanjir.javascript.eval
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Dinamik kod bajarilishi; foydalanuvchi qiymati yetib kelishini tekshiring.
+    pattern: eval(...)
+  - id: zanjir.javascript.shell-execution
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Shell orqali buyruq bajarilishi; kiruvchi qiymat manbasini tekshiring.
+    pattern: child_process.exec(...)
+  - id: zanjir.go.tls-verification-disabled
+    languages: [go]
+    severity: WARNING
+    message: TLS sertifikatini tekshirish ochirilgan.
+    pattern: 'tls.Config{..., InsecureSkipVerify: true, ...}'
+  - id: zanjir.java.process-execution
+    languages: [java]
+    severity: WARNING
+    message: Tashqi buyruq bajarilishi; kiruvchi qiymat manbasini tekshiring.
+    pattern: Runtime.getRuntime().exec(...)

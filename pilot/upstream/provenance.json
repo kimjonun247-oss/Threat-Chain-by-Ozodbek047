@@ -1,0 +1,16 @@
+{
+  "repository": "https://github.com/OWASP/crAPI",
+  "commit": "700f03d12a392d9e408260b4beae72ed02a4a1a4",
+  "branch": "main",
+  "commit_date": "2025-09-22T14:58:30Z",
+  "archive_sha256": "a698a97d1d6eb1117ea8d6c7fa66e7e943851de06fe7268500fd8498ca3c4dc5",
+  "retrieved_at": "2026-09-09",
+  "execution": "source-only; no repository code executed",
+  "files": {
+    "docker-compose.yml": "dbcc43442d2c2a4cc572f232a714d522f0b9433cf69e8cc854e4c2e07c6b013f",
+    ".env": "7770e557099ec5cefb268e5cd38e360582a6b76a0bbe7bf39767a7339e35a22f",
+    "keys/jwks.json": "45729121905a42591c12a056d0082298ab9bc4dc995ee61ce8886e47650fa4b4",
+    "LICENSE.md": "c98881e3c37ee7331ff667bc0ae59415e5405ea18974c50fa44cd0308623415c"
+  },
+  "note": "Unmodified deployment inputs for prebuilt Docker images. Image/source commit correspondence is not verified."
+}

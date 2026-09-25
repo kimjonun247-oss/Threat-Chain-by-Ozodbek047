@@ -1,0 +1,95 @@
+{
+ "id": "20260914T042711-d725396c",
+ "target": "pilot-crapi",
+ "url": "http://127.0.0.1:18888",
+ "authorization": {
+  "owner": "redacted",
+  "recorded_at": "existing_local_lab"
+ },
+ "created_at": "2026-09-14T04:27:11.138263+00:00",
+ "state": "failed",
+ "count": 0,
+ "findings": [],
+ "limits": "Cheklangan GET profili: kirishsiz javoblar, ochiq konfiguratsiya/fayl naqshlari va HTTP himoya sarlavhalari. Autentifikatsiya, biznes mantiqi, ekspluatatsiya va barcha CVE qamrovi yo‘q. Redirect kuzatilmaydi; sirlar hisobotga kiritilmaydi. Topilma yo‘qligi xavfsizlik kafolati emas.",
+ "scope": "Exact registered origin and base path; GET, 2 req/s, 32 requests, 64 KiB/response, 180 s.",
+ "progress": "Jarayon yakunlandi; holat va qamrovni ko‘ring.",
+ "profile_sha256": "f8760f3533110c9536ec8be2a7426b8143c04dd6a5852e774da96eab9d87a7e7",
+ "resolved_ip": "127.0.0.1",
+ "templates": {
+  "dir-listing": {
+   "file": "dir-listing.yaml",
+   "title": "Directory listing enabled",
+   "severity": "INFO",
+   "sha256": "616275a73fd26c454f3cd3f4304641975b7609dedf61c5255ebae42f4650706c",
+   "origin": "https://raw.githubusercontent.com/projectdiscovery/nuclei-templates/823ebcccf653310cb8df3264592027b437095943/http/miscellaneous/dir-listing.yaml"
+  },
+  "git-config": {
+   "file": "git-config.yaml",
+   "title": "Git Configuration - Detect",
+   "severity": "MEDIUM",
+   "sha256": "bd8bdfa0b5ed5bf4d3712edb793adfd0987d9282e51c6f7d673bf14b9e4dd524",
+   "origin": "https://raw.githubusercontent.com/projectdiscovery/nuclei-templates/823ebcccf653310cb8df3264592027b437095943/http/exposures/configs/git-config.yaml"
+  },
+  "zanjir-compose": {
+   "file": "zanjir-compose.yaml",
+   "title": "Ochiq Docker Compose konfiguratsiyasi",
+   "severity": "MEDIUM",
+   "sha256": "5dba48e5393d42e710a1d515d31419ad048be3fd22dfd0a1f9b5ac9e93866502",
+   "origin": "Zanjir local rule v1"
+  },
+  "zanjir-env": {
+   "file": "zanjir-env.yaml",
+   "title": "Ochiq muhit konfiguratsiyasi (.env)",
+   "severity": "HIGH",
+   "sha256": "887b944d4c76e970d77e7f4c70679a989e38fc5f30a920f7e02317fdc0a7d094",
+   "origin": "Zanjir local rule v1"
+  },
+  "zanjir-openapi": {
+   "file": "zanjir-openapi.yaml",
+   "title": "Ochiq API sxemasi (kirish siyosatini tekshiring)",
+   "severity": "INFO",
+   "sha256": "a8f222041c0035fb796f751234c56f76f80852706feed3cf2fe8b4d830402f4f",
+   "origin": "Zanjir local rule v1"
+  },
+  "zanjir-sql-backup": {
+   "file": "zanjir-sql-backup.yaml",
+   "title": "Ochiq SQL zaxira fayli",
+   "severity": "HIGH",
+   "sha256": "31ad6ef9176b4dd987a37a57f100cfea93907ae655a739fb6c0ddf777741471d",
+   "origin": "Zanjir local rule v1"
+  }
+ },
+ "error_type": "ConnectionRefusedError",
+ "message": "Tekshiruv to‘liq tugamadi. Nishon ishlashi, TLS sertifikati va Nuclei o‘rnatilishini tekshiring.",
+ "requests": 1,
+ "evidence": [],
+ "errors": [
+  {
+   "path": "/",
+   "type": "ConnectionRefusedError"
+  }
+ ],
+ "blocked_requests": 0,
+ "coverage": {
+  "attempted_paths": [],
+  "unvisited_paths": [
+   "/",
+   "/.env",
+   "/.env.production",
+   "/.git/config",
+   "/backup.sql",
+   "/compose.yaml",
+   "/docker-compose.yml",
+   "/dump.sql",
+   "/openapi.json",
+   "/swagger.json",
+   "/v3/api-docs",
+   "/zanjir-missing-aef7595acde841c6814723ff5b046b53"
+  ],
+  "restricted_responses": 0,
+  "redirects": 0,
+  "truncated_responses": 0
+ },
+ "severity_counts": {},
+ "finished_at": "2026-09-14T04:27:13.237883+00:00"
+}

@@ -1,0 +1,35 @@
+# ThreatChain CI/CD Quality Gate — GitLab CI namunasi.
+#
+# Tekshiriladigan loyihaning `.gitlab-ci.yml` fayliga qo'shiladi.
+# Gate mantiqi va nima "gate-relevant" hisoblanishi: zanjir/ci_gate.py.
+
+stages: [security]
+
+threatchain:
+  stage: security
+  image: python:3.13
+  variables:
+    THREATCHAIN_REPO: https://gitlab.example.com/your-org/threatchain.git
+  before_script:
+    - git clone --depth 1 "$THREATCHAIN_REPO" /opt/threatchain
+    - pip install --upgrade pip certifi
+    - cd /opt/threatchain && python setup_tools.py && python setup_nuclei.py && python setup_semgrep_rules.py
+  script:
+    - cd /opt/threatchain
+    - python check_dependencies.py --register ci-project --repo "$CI_PROJECT_DIR" --name "$CI_PROJECT_NAME"
+    - python app.py --register-project ci-deploy --repo "$CI_PROJECT_DIR" --compose docker-compose.yml --name "$CI_PROJECT_NAME"
+    # Yangi loyiha: barcha gate-relevant topilma sanaladi.
+    - python ci_gate.py --target ci-project --repository-target ci-deploy --allow 0 --sarif-out "$CI_PROJECT_DIR/threatchain.sarif"
+    # Mavjud loyiha uchun yuqoridagi qator o'rniga (faqat yangi HIGH/CRITICAL,
+    # odam yopganlarini sanamaydi; asos topilmasa 2 kod bilan to'xtaydi):
+    # - python ci_gate.py --target ci-project --repository-target ci-deploy
+    #     --baseline last-green --fail-on new-high --respect-triage
+    #     --sarif-out "$CI_PROJECT_DIR/threatchain.sarif"
+  artifacts:
+    when: always
+    paths:
+      - threatchain.sarif
+    expire_in: 30 days
+  # Birinchi ishga tushirishda mavjud qarzni o'lchang va --allow ni shu songa
+  # qo'ying, so'ng uni bosqichma-bosqich 0 ga tushiring. Chiqish kodi:
+  # 0 = gate o'tdi, 1 = gate to'xtatdi, 2 = skan bajarilmadi.

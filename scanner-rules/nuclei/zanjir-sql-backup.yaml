@@ -1,0 +1,27 @@
+id: zanjir-sql-backup
+info:
+  name: Ochiq SQL zaxira fayli
+  author: zanjir
+  severity: high
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/backup.sql"
+      - "{{BaseURL}}/dump.sql"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200, 206]
+      - type: regex
+        part: body
+        regex:
+          - '(?mi)^-- (MySQL dump|PostgreSQL database dump)'
+      - type: regex
+        part: body
+        regex:
+          - '(?mi)^(CREATE TABLE|DROP TABLE|INSERT INTO|SET )'
+      - type: word
+        part: body
+        words: ['<html', '<body']
+        negative: true
+

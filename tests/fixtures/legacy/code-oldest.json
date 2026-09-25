@@ -1,0 +1,67 @@
+{
+ "id": "20260910T145235-1be779a8",
+ "target": "crapi-full",
+ "created_at": "2026-09-10T14:52:35.924803+00:00",
+ "state": "partial",
+ "count": 10,
+ "findings": [
+  {
+   "tool": "gitleaks",
+   "rule_id": "private-key",
+   "path": "services/chatbot/certs/server.key",
+   "line": 1,
+   "message": "Maxfiy qiymatga o‘xshash matn topildi. Bu demo qiymatmi yoki amaldagi sir ekanini tekshiring.",
+   "state": "unverified_static",
+   "secret_value": "hidden"
+  },
+  {
+   "tool": "gitleaks",
+   "rule_id": "private-key",
+   "path": "services/community/certs/server.key",
+   "line": 1,
+   "message": "Maxfiy qiymatga o‘xshash matn topildi. Bu demo qiymatmi yoki amaldagi sir ekanini tekshiring.",
+   "state": "unverified_static",
+   "secret_value": "hidden"
+  },
+  {
+   "tool": "gitleaks",
+   "rule_id": "private-key",
+   "path": "services/gateway-service/server.key",
+   "line": 1,
+   "message": "Maxfiy qiymatga o‘xshash matn topildi. Bu demo qiymatmi yoki amaldagi sir ekanini tekshiring.",
+   "state": "unverified_static",
+   "secret_value": "hidden"
+  }
+ ],
+ "tools": {
+  "semgrep": {
+   "state": "failed",
+   "count": 0,
+   "message": "Tekshiruv tugallanmadi. O‘rnatish, qoidalar yoki bajarish cheklovini tekshiring.",
+   "error_type": "ValueError"
+  },
+  "gitleaks": {
+   "state": "completed",
+   "version": "8.30.1",
+   "count": 10,
+   "errors": 0,
+   "rule_set": "Gitleaks ichki qoidalari",
+   "rules_sha256": "39a393b8200ddaf822e57ed18e3c932487c7a9449996e1a5197f601db7b787af"
+  }
+ },
+ "verification": "unverified_static",
+ "limits": "Topilmalar qo‘lda tekshiriladi. Maxfiy qiymat va kod parchasi hisobotga kiritilmaydi. Bu amaliy hujum tasdig‘i emas.",
+ "coverage": {
+  "files": 493,
+  "bytes": 1654192,
+  "snapshot_sha256": "db5fafa979715b7a70f4b63822cbdafbd759783016a26dd6ecffff0bedbd43a3",
+  "skipped": {
+   "excluded": 1,
+   "links": 0,
+   "binary": 17,
+   "large": 1
+  },
+  "scope": "Joriy matn fayllari; Git tarixi, vendor/node_modules, binar va 1 MB dan katta fayllar kiritilmagan."
+ },
+ "finished_at": "2026-09-10T14:52:49.891691+00:00"
+}

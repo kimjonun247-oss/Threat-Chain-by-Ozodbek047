@@ -1,0 +1,403 @@
+{
+ "id": "20260917T065009-af067fd4",
+ "target": "pilot-crapi",
+ "url": "http://127.0.0.1:18888",
+ "authorization": {
+  "owner": "redacted",
+  "recorded_at": "existing_local_lab"
+ },
+ "created_at": "2026-09-17T06:50:09.554196+00:00",
+ "state": "partial",
+ "count": 6,
+ "findings": [
+  {
+   "id": "229aaa27dc7ff9d4962fa017",
+   "rule_id": "http-transport",
+   "title": "Nishon HTTP orqali ochilgan",
+   "severity": "LOW",
+   "path": "/",
+   "tool": "ThreatChain HTTP",
+   "state": "needs_review",
+   "evidence": "Ulanish TLS ishlatmaydi.",
+   "remediation": "Tashqi foydalanuvchilar uchun HTTPS ni majburiy qiling; lokal laboratoriya holatini alohida baholang.",
+   "cwe_ids": [
+    "CWE-319"
+   ],
+   "owasp_top10_2025": [
+    {
+     "code": "A04",
+     "name": "A04:2025 – Cryptographic Failures"
+    }
+   ],
+   "verified": true,
+   "verification_note": "Nishonning haqiqiy HTTP javobida bevosita kuzatilgan; amaliy xavf darajasi va biznes ta’siri baribir mutaxassis tomonidan baholanishi kerak."
+  },
+  {
+   "id": "17ae136cb86b5a0c3424d780",
+   "rule_id": "x-content-type-options",
+   "title": "Brauzer content-type himoyasi yo‘q",
+   "severity": "LOW",
+   "path": "/",
+   "tool": "ThreatChain HTTP",
+   "state": "needs_review",
+   "evidence": "Kutilgan himoya qiymati kuzatilmadi; HTTP 206",
+   "remediation": "X-Content-Type-Options: nosniff sozlang.",
+   "cwe_ids": [
+    "CWE-16"
+   ],
+   "owasp_top10_2025": [
+    {
+     "code": "A02",
+     "name": "A02:2025 – Security Misconfiguration"
+    }
+   ],
+   "verified": true,
+   "verification_note": "Nishonning haqiqiy HTTP javobida bevosita kuzatilgan; amaliy xavf darajasi va biznes ta’siri baribir mutaxassis tomonidan baholanishi kerak."
+  },
+  {
+   "id": "1a9bde47b75628d6afbf992d",
+   "rule_id": "csp-missing",
+   "title": "HTML javobida CSP yo‘q",
+   "severity": "LOW",
+   "path": "/",
+   "tool": "ThreatChain HTTP",
+   "state": "needs_review",
+   "evidence": "Content-Security-Policy kuzatilmadi.",
+   "remediation": "Ilovaga mos CSP yarating, avval report-only rejimida sinang.",
+   "cwe_ids": [
+    "CWE-1021"
+   ],
+   "owasp_top10_2025": [
+    {
+     "code": "A06",
+     "name": "A06:2025 – Insecure Design"
+    }
+   ],
+   "verified": true,
+   "verification_note": "Nishonning haqiqiy HTTP javobida bevosita kuzatilgan; amaliy xavf darajasi va biznes ta’siri baribir mutaxassis tomonidan baholanishi kerak."
+  }
+ ],
+ "limits": "Cheklangan GET profili: kirishsiz javoblar, ochiq konfiguratsiya/fayl naqshlari, HTTP himoya sarlavhalari, CORS Origin aks ettirilishi, cookie bayroqlari va server xatosi orqali texnik ma’lumot sizishi tekshiriladi. Bir sahifadagi bir nechta Set-Cookie javobidan faqat oxirgisi tahlil qilinadi. Autentifikatsiya, biznes mantiqi, in’ektsiya (SQLi/XSS) sinovlari, ekspluatatsiya va barcha CVE qamrovi yo‘q. Redirect kuzatilmaydi; sirlar hisobotga kiritilmaydi. Topilma yo‘qligi xavfsizlik kafolati emas.",
+ "scope": "Exact registered origin and base path; GET, 2 req/s, 32 requests, 64 KiB/response, 180 s.",
+ "progress": "Jarayon yakunlandi; holat va qamrovni ko‘ring.",
+ "profile_sha256": "f8760f3533110c9536ec8be2a7426b8143c04dd6a5852e774da96eab9d87a7e7",
+ "resolved_ip": "127.0.0.1",
+ "templates": {
+  "dir-listing": {
+   "file": "dir-listing.yaml",
+   "title": "Directory listing enabled",
+   "severity": "INFO",
+   "sha256": "616275a73fd26c454f3cd3f4304641975b7609dedf61c5255ebae42f4650706c",
+   "origin": "https://raw.githubusercontent.com/projectdiscovery/nuclei-templates/823ebcccf653310cb8df3264592027b437095943/http/miscellaneous/dir-listing.yaml"
+  },
+  "git-config": {
+   "file": "git-config.yaml",
+   "title": "Git Configuration - Detect",
+   "severity": "MEDIUM",
+   "sha256": "bd8bdfa0b5ed5bf4d3712edb793adfd0987d9282e51c6f7d673bf14b9e4dd524",
+   "origin": "https://raw.githubusercontent.com/projectdiscovery/nuclei-templates/823ebcccf653310cb8df3264592027b437095943/http/exposures/configs/git-config.yaml"
+  },
+  "zanjir-compose": {
+   "file": "zanjir-compose.yaml",
+   "title": "Ochiq Docker Compose konfiguratsiyasi",
+   "severity": "MEDIUM",
+   "sha256": "5dba48e5393d42e710a1d515d31419ad048be3fd22dfd0a1f9b5ac9e93866502",
+   "origin": "Zanjir local rule v1"
+  },
+  "zanjir-env": {
+   "file": "zanjir-env.yaml",
+   "title": "Ochiq muhit konfiguratsiyasi (.env)",
+   "severity": "HIGH",
+   "sha256": "887b944d4c76e970d77e7f4c70679a989e38fc5f30a920f7e02317fdc0a7d094",
+   "origin": "Zanjir local rule v1"
+  },
+  "zanjir-openapi": {
+   "file": "zanjir-openapi.yaml",
+   "title": "Ochiq API sxemasi (kirish siyosatini tekshiring)",
+   "severity": "INFO",
+   "sha256": "a8f222041c0035fb796f751234c56f76f80852706feed3cf2fe8b4d830402f4f",
+   "origin": "Zanjir local rule v1"
+  },
+  "zanjir-sql-backup": {
+   "file": "zanjir-sql-backup.yaml",
+   "title": "Ochiq SQL zaxira fayli",
+   "severity": "HIGH",
+   "sha256": "31ad6ef9176b4dd987a37a57f100cfea93907ae655a739fb6c0ddf777741471d",
+   "origin": "Zanjir local rule v1"
+  }
+ },
+ "crawled_pages": [
+  "/",
+  "/images/favicon.ico",
+  "/images/logo192.png",
+  "/manifest.json",
+  "/static/js/main.8c78208c.js",
+  "/static/css/main.dd33429d.css"
+ ],
+ "tool": {
+  "name": "Nuclei",
+  "version": "3.11.1",
+  "binary_sha256": "f427ae885dcd60be25cf27c34a416ef18a803b29e153d5568057d7b6012a454d",
+  "state": "completed",
+  "templates": 6,
+  "suppressed_soft404": 0
+ },
+ "requests": 18,
+ "evidence": [
+  {
+   "path": "/",
+   "status": 206,
+   "bytes_read": 1207,
+   "truncated": false,
+   "unsupported_encoding": false,
+   "body_sha256": "46c21f4b42605030856b300e256b383ccde46e8e33411a020707500ceff0a4e2",
+   "observed_at": "2026-09-17T06:50:09.578805+00:00",
+   "content_range": {
+    "start": 0,
+    "end": 1206,
+    "total": 1207
+   },
+   "nuclei_status": 200
+  },
+  {
+   "path": "/images/favicon.ico",
+   "status": 206,
+   "bytes_read": 3150,
+   "truncated": false,
+   "unsupported_encoding": false,
+   "body_sha256": "ffc65885a2121141440d345ef5927c4c2917d95b5b2913b7fa8467c95e15120b",
+   "observed_at": "2026-09-17T06:50:10.080246+00:00",
+   "content_range": {
+    "start": 0,
+    "end": 3149,
+    "total": 3150
+   }
+  },
+  {
+   "path": "/images/logo192.png",
+   "status": 206,
+   "bytes_read": 5347,
+   "truncated": false,
+   "unsupported_encoding": false,
+   "body_sha256": "c386396ec70db3608075b5fbfaac4ab1ccaa86ba05a68ab393ec551eb66c3e00",
+   "observed_at": "2026-09-17T06:50:10.581224+00:00",
+   "content_range": {
+    "start": 0,
+    "end": 5346,
+    "total": 5347
+   }
+  },
+  {
+   "path": "/manifest.json",
+   "status": 206,
+   "bytes_read": 513,
+   "truncated": false,
+   "unsupported_encoding": false,
+   "body_sha256": "7182e1d443aea5a220fe177fb9df2287e472c096e38fe702b98bf14c2ff98f8b",
+   "observed_at": "2026-09-17T06:50:11.085937+00:00",
+   "content_range": {
+    "start": 0,
+    "end": 512,
+    "total": 513
+   }
+  },
+  {
+   "path": "/static/js/main.8c78208c.js",
+   "status": 206,
+   "bytes_read": 65536,
+   "truncated": true,
+   "unsupported_encoding": false,
+   "body_sha256": "7c260dfa8d1c7bd756178ed7e53b67edf5487a9c3dca99acd700ec716b64f205",
+   "observed_at": "2026-09-17T06:50:11.589279+00:00",
+   "content_range": {
+    "start": 0,
+    "end": 65535,
+    "total": 1655900
+   }
+  },
+  {
+   "path": "/static/css/main.dd33429d.css",
+   "status": 206,
+   "bytes_read": 65536,
+   "truncated": true,
+   "unsupported_encoding": false,
+   "body_sha256": "7e8adb55b4f37ccbe6f519570f740499106ab26b9259f7b009313beda76e368e",
+   "observed_at": "2026-09-17T06:50:12.096645+00:00",
+   "content_range": {
+    "start": 0,
+    "end": 65535,
+    "total": 92402
+   }
+  },
+  {
+   "path": "/",
+   "status": 206,
+   "bytes_read": 1207,
+   "truncated": false,
+   "unsupported_encoding": false,
+   "body_sha256": "46c21f4b42605030856b300e256b383ccde46e8e33411a020707500ceff0a4e2",
+   "observed_at": "2026-09-17T06:50:12.596799+00:00",
+   "content_range": {
+    "start": 0,
+    "end": 1206,
+    "total": 1207
+   },
+   "probe": "cors_origin_reflection"
+  },
+  {
+   "path": "/zanjir-missing-f70dee9005a54fb08ae400b42c8bc404",
+   "status": 404,
+   "bytes_read": 159,
+   "truncated": false,
+   "unsupported_encoding": false,
+   "body_sha256": "5a41c6b1c3d5061adbd15744312c919ee4a639abc0572a2927b06838bec1a6ed",
+   "observed_at": "2026-09-17T06:50:13.100368+00:00"
+  },
+  {
+   "path": "/openapi.json",
+   "status": 404,
+   "bytes_read": 159,
+   "truncated": false,
+   "unsupported_encoding": false,
+   "body_sha256": "5a41c6b1c3d5061adbd15744312c919ee4a639abc0572a2927b06838bec1a6ed",
+   "observed_at": "2026-09-17T06:50:13.603674+00:00",
+   "nuclei_status": 404
+  },
+  {
+   "path": "/swagger.json",
+   "status": 404,
+   "bytes_read": 159,
+   "truncated": false,
+   "unsupported_encoding": false,
+   "body_sha256": "5a41c6b1c3d5061adbd15744312c919ee4a639abc0572a2927b06838bec1a6ed",
+   "observed_at": "2026-09-17T06:50:14.104638+00:00",
+   "nuclei_status": 404
+  },
+  {
+   "path": "/v3/api-docs",
+   "status": 404,
+   "bytes_read": 159,
+   "truncated": false,
+   "unsupported_encoding": false,
+   "body_sha256": "5a41c6b1c3d5061adbd15744312c919ee4a639abc0572a2927b06838bec1a6ed",
+   "observed_at": "2026-09-17T06:50:14.608915+00:00",
+   "nuclei_status": 404
+  },
+  {
+   "path": "/backup.sql",
+   "status": 404,
+   "bytes_read": 159,
+   "truncated": false,
+   "unsupported_encoding": false,
+   "body_sha256": "5a41c6b1c3d5061adbd15744312c919ee4a639abc0572a2927b06838bec1a6ed",
+   "observed_at": "2026-09-17T06:50:15.112599+00:00",
+   "nuclei_status": 404
+  },
+  {
+   "path": "/dump.sql",
+   "status": 404,
+   "bytes_read": 159,
+   "truncated": false,
+   "unsupported_encoding": false,
+   "body_sha256": "5a41c6b1c3d5061adbd15744312c919ee4a639abc0572a2927b06838bec1a6ed",
+   "observed_at": "2026-09-17T06:50:15.617717+00:00",
+   "nuclei_status": 404
+  },
+  {
+   "path": "/.git/config",
+   "status": 404,
+   "bytes_read": 159,
+   "truncated": false,
+   "unsupported_encoding": false,
+   "body_sha256": "5a41c6b1c3d5061adbd15744312c919ee4a639abc0572a2927b06838bec1a6ed",
+   "observed_at": "2026-09-17T06:50:16.444887+00:00",
+   "nuclei_status": 404
+  },
+  {
+   "path": "/docker-compose.yml",
+   "status": 404,
+   "bytes_read": 159,
+   "truncated": false,
+   "unsupported_encoding": false,
+   "body_sha256": "5a41c6b1c3d5061adbd15744312c919ee4a639abc0572a2927b06838bec1a6ed",
+   "observed_at": "2026-09-17T06:50:16.949501+00:00",
+   "nuclei_status": 404
+  },
+  {
+   "path": "/compose.yaml",
+   "status": 404,
+   "bytes_read": 159,
+   "truncated": false,
+   "unsupported_encoding": false,
+   "body_sha256": "5a41c6b1c3d5061adbd15744312c919ee4a639abc0572a2927b06838bec1a6ed",
+   "observed_at": "2026-09-17T06:50:17.449841+00:00",
+   "nuclei_status": 404
+  },
+  {
+   "path": "/.env",
+   "status": 206,
+   "bytes_read": 201,
+   "truncated": false,
+   "unsupported_encoding": false,
+   "body_sha256": "7996111d87a20f9c3863f6b778f0d945d280330d53b186fa622f993891f1c48a",
+   "observed_at": "2026-09-17T06:50:17.952333+00:00",
+   "content_range": {
+    "start": 0,
+    "end": 200,
+    "total": 201
+   },
+   "nuclei_status": 200
+  },
+  {
+   "path": "/.env.production",
+   "status": 404,
+   "bytes_read": 159,
+   "truncated": false,
+   "unsupported_encoding": false,
+   "body_sha256": "5a41c6b1c3d5061adbd15744312c919ee4a639abc0572a2927b06838bec1a6ed",
+   "observed_at": "2026-09-17T06:50:18.456130+00:00",
+   "nuclei_status": 404
+  }
+ ],
+ "errors": [],
+ "blocked_requests": 0,
+ "coverage": {
+  "attempted_paths": [
+   "/",
+   "/images/favicon.ico",
+   "/images/logo192.png",
+   "/manifest.json",
+   "/static/js/main.8c78208c.js",
+   "/static/css/main.dd33429d.css",
+   "/",
+   "/zanjir-missing-f70dee9005a54fb08ae400b42c8bc404",
+   "/openapi.json",
+   "/swagger.json",
+   "/v3/api-docs",
+   "/backup.sql",
+   "/dump.sql",
+   "/.git/config",
+   "/docker-compose.yml",
+   "/compose.yaml",
+   "/.env",
+   "/.env.production"
+  ],
+  "unvisited_paths": [],
+  "restricted_responses": 0,
+  "redirects": 0,
+  "truncated_responses": 2,
+  "unsupported_encodings": 0,
+  "ambiguous_fallback_matches": 0
+ },
+ "severity_counts": {
+  "LOW": 5,
+  "HIGH": 1
+ },
+ "verification_summary": {
+  "total": 6,
+  "confirmed_by_evidence": 6,
+  "manual_review_required": 0,
+  "note": "confirmed_by_evidence: nishonning haqiqiy javobi/holati bilan bevosita kuzatilgan. manual_review_required: statik yoki bazaviy moslik — mutaxassis tomonidan qo‘lda tasdiqlanishi shart."
+ },
+ "finished_at": "2026-09-17T06:50:18.936984+00:00"
+}

@@ -1,0 +1,146 @@
+{
+ "id": "20260922T041122-6c3639a9",
+ "target": "chain-demo",
+ "created_at": "2026-09-22T04:11:22.599904+00:00",
+ "state": "completed",
+ "count": 6,
+ "findings": [
+  {
+   "tool": "semgrep",
+   "rule_id": "missing-user",
+   "path": "app/Dockerfile",
+   "line": 5,
+   "message": "By not specifying a USER, a program in the container may run as 'root'. This is a security hazard. If an attacker can control a process running as root, they may have control over the container. Ensure that the last USER in a Dockerfile is a USER other than 'root'.",
+   "severity": "ERROR",
+   "state": "unverified_static",
+   "secret_value": null,
+   "cwe_ids": [
+    "CWE-250"
+   ],
+   "owasp_top10_2025": [],
+   "verified": false,
+   "verification_note": "Statik kod naqshi mosligi; ma’lumot oqimi, ishga tushirish sharti va amaliy ta’siri tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart."
+  },
+  {
+   "tool": "semgrep",
+   "rule_id": "detected-stripe-api-key",
+   "path": "app/config.py",
+   "line": 7,
+   "message": "Stripe API Key detected",
+   "severity": "ERROR",
+   "state": "unverified_static",
+   "secret_value": null,
+   "cwe_ids": [
+    "CWE-798"
+   ],
+   "owasp_top10_2025": [
+    {
+     "code": "A07",
+     "name": "A07:2025 – Authentication Failures"
+    }
+   ],
+   "verified": false,
+   "verification_note": "Statik kod naqshi mosligi; ma’lumot oqimi, ishga tushirish sharti va amaliy ta’siri tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart."
+  },
+  {
+   "tool": "gitleaks",
+   "rule_id": "stripe-access-token",
+   "path": "app/config.py",
+   "line": 7,
+   "message": "Maxfiy qiymatga o‘xshash matn topildi. Bu demo qiymatmi yoki amaldagi sir ekanini tekshiring.",
+   "severity": null,
+   "state": "unverified_static",
+   "secret_value": "hidden",
+   "cwe_ids": [
+    "CWE-798"
+   ],
+   "owasp_top10_2025": [
+    {
+     "code": "A07",
+     "name": "A07:2025 – Authentication Failures"
+    }
+   ],
+   "verified": false,
+   "verification_note": "Statik kod naqshi mosligi; ma’lumot oqimi, ishga tushirish sharti va amaliy ta’siri tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart."
+  }
+ ],
+ "tools": {
+  "semgrep": {
+   "state": "completed",
+   "version": "1.177.0",
+   "count": 2,
+   "errors": 0,
+   "rule_set": "ThreatChain 7 lokal qoida + 1343 rasmiy semgrep-rules qoidasi (22 til)",
+   "rules_sha256": "039f79a2ff8f9b1faa15113c4bab42bf325128e5185793d2daeabf18f2cfdbf7",
+   "rule_pack": {
+    "source": "semgrep/semgrep-rules",
+    "commit": "40b8c63f75dc7c22c8a77482d73bfb864b146f7e",
+    "rules": 1343,
+    "files": 1327,
+    "languages": [
+     "bash",
+     "c",
+     "clojure",
+     "csharp",
+     "dockerfile",
+     "generic",
+     "go",
+     "html",
+     "java",
+     "javascript",
+     "json",
+     "kotlin",
+     "ocaml",
+     "php",
+     "python",
+     "ruby",
+     "rust",
+     "scala",
+     "solidity",
+     "terraform",
+     "typescript",
+     "yaml"
+    ]
+   },
+   "error_kinds": {},
+   "error_files": {}
+  },
+  "gitleaks": {
+   "state": "completed",
+   "version": "8.30.1",
+   "count": 1,
+   "errors": 0,
+   "rule_set": "Gitleaks ichki qoidalari",
+   "rules_sha256": "39a393b8200ddaf822e57ed18e3c932487c7a9449996e1a5197f601db7b787af"
+  },
+  "pmd": {
+   "state": "completed",
+   "version": "7.27.0",
+   "count": 3,
+   "errors": 0,
+   "rule_set": "PMD category/apex/security.xml (10 ta Apex xavfsizlik qoidasi)",
+   "rules_sha256": "dcfc549e11ff41ac8191c41156698f853476c16b44d9162ec901ba9ddf929b44"
+  }
+ },
+ "verification": "unverified_static",
+ "limits": "Topilmalar qo‘lda tekshiriladi. Maxfiy qiymat va kod parchasi hisobotga kiritilmaydi. Bu amaliy hujum tasdig‘i emas.",
+ "coverage": {
+  "files": 6,
+  "bytes": 4593,
+  "snapshot_sha256": "cc66a1aec2c5a441ce0b97407428db750031c4c9bcf020a9e61f9c4a1570cf2e",
+  "skipped": {
+   "excluded": 0,
+   "links": 0,
+   "binary": 0,
+   "large": 0
+  },
+  "scope": "Joriy matn fayllari; Git tarixi, vendor/node_modules, binar va 1 MB dan katta fayllar kiritilmagan."
+ },
+ "verification_summary": {
+  "total": 6,
+  "confirmed_by_evidence": 0,
+  "manual_review_required": 6,
+  "note": "confirmed_by_evidence: nishonning haqiqiy javobi/holati bilan bevosita kuzatilgan. manual_review_required: statik yoki bazaviy moslik — mutaxassis tomonidan qo‘lda tasdiqlanishi shart."
+ },
+ "finished_at": "2026-09-22T04:11:34.951856+00:00"
+}
