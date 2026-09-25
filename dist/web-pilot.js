@@ -3,7 +3,7 @@
   const e = escapeHTML;
   const jobs = {web:null, assessment:null};
   const prefixes = {web:'/api/web', assessment:'/api/assessments'};
-  const names = {code:'Semgrep + Gitleaks', repository:'Repository (Compose)', dependencies:'OSV + CISA KEV', web:'Nuclei + HTTP', images:'Trivy'};
+  const names = {code:'Semgrep + Gitleaks', repository:'Repository (Compose)', dependencies:'OSV + CISA KEV', web:'Nuclei + HTTP', images:'Trivy', iac:'Trivy config (IaC)'};
   const labels = {completed:'Tugagan', partial:'Qisman — qamrovni tekshiring', failed:'Tugallanmagan', cancelled:'Bekor qilingan', running:'Tekshirilmoqda', queued:'Navbatda', not_selected:'Tanlanmagan', no_supported_packages:'Qo‘llanadigan paket topilmadi', interrupted:'Boshqa jarayon yoki uzilgan skan'};
   const link = (prefix, id, sarif) => `<a href="${prefix}/reports/${encodeURIComponent(id)}/download">JSON hisobot ↓</a> · <a href="${prefix}/reports/${encodeURIComponent(id)}/markdown">O‘qiladigan hisobot ↓</a>${sarif?` · <a href="${prefix}/reports/${encodeURIComponent(id)}/sarif">SARIF (CI/CD) ↓</a>`:''}`;
   const owaspBadges = tags => (tags||[]).map(o=>`<span class="badge neutral" title="${e(o.name)}">${e(o.code)}</span>`).join(' ');
