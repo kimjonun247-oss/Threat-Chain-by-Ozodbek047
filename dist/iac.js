@@ -49,14 +49,10 @@
   async function follow(id) {
     job = id; $('iac-scan').disabled = true; $('iac-target').disabled = true; $('iac-cancel').hidden = false;
     try {
-      while (true) {
-        const row = await api('/api/iac/reports/' + id);
-        if (row.active_here === false) { row.state = 'external_or_interrupted'; row.progress = 'Bu job boshqa terminalda boshlangan; tugallanmagan natija.'; }
-        $('iac-progress').textContent = row.progress || labels[row.state] || '';
-        render(row);
-        if (!['queued','running'].includes(row.state)) break;
-        await new Promise(resolve => setTimeout(resolve, 1500));
-      }
+      const row = await pollReport('/api/iac/reports/' + id, s => { $('iac-progress').textContent = s.progress || labels[s.state] || ''; });
+      if (row.active_here === false) { row.state = 'external_or_interrupted'; row.progress = 'Bu job boshqa terminalda boshlangan; tugallanmagan natija.'; }
+      $('iac-progress').textContent = row.progress || labels[row.state] || '';
+      render(row);
       await history();
     } finally { job = null; $('iac-scan').disabled = false; $('iac-target').disabled = false; $('iac-cancel').hidden = true; }
   }

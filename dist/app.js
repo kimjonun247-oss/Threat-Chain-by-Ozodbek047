@@ -21,6 +21,21 @@ function whenShown(names, start) {
   document.addEventListener('view-shown', event => { if (names.includes(event.detail)) run(); });
   if (names.some(name => $(name + '-view') && !$(name + '-view').hidden)) run();
 }
+// Follow a running scan with as little load as possible on this server -- which
+// shares the CPU with the scanners it is reporting on: poll the small ?status=1
+// view, space the polls out (1 s growing to 5 s), pause while the tab is hidden,
+// and download the full report once, when the scan has finished.
+async function pollReport(url, onStatus) {
+  let wait = 1000;
+  for (;;) {
+    while (document.hidden) await new Promise(resolve => document.addEventListener('visibilitychange', resolve, {once: true}));
+    const status = await api(url + '?status=1');
+    if (onStatus) onStatus(status);
+    if (!['queued', 'running'].includes(status.state) || status.active_here === false) return api(url);
+    await new Promise(resolve => setTimeout(resolve, wait));
+    wait = Math.min(5000, Math.round(wait * 1.5));
+  }
+}
 async function request(path, body) {
   const response = await fetch(path, body === undefined ? {} : { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
   let data;

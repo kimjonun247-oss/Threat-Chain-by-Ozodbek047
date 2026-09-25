@@ -30,7 +30,7 @@ import uuid
 from pathlib import Path
 
 from .engine import ROOT
-from . import images, repo_store, run_index, scanners, taxonomy, triage
+from . import images, priority, repo_store, run_index, scanners, taxonomy, triage
 from . import findings as findings_mod
 from . import verification as verification_mod
 
@@ -164,9 +164,10 @@ def execute(rid, target, event):
             repo_store.write_json(folder / 'report.json', report)
             output = work / 'iac.json'
             with (folder / 'tool.log').open('wb') as log:
-                process = subprocess.Popen(command(work / 'source', output), cwd=work,
+                run_command, low = priority.gentle(command(work / 'source', output))
+                process = subprocess.Popen(run_command, cwd=work,
                                            env=scanners.environment(work), stdout=log,
-                                           stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+                                           stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, **low)
                 deadline = datetime.datetime.now().timestamp() + TIMEOUT
                 while process.poll() is None:
                     if event.wait(0.5):

@@ -65,14 +65,10 @@
   async function follow(kind,id) {
     jobs[kind]=id; $(kind+'-scan').disabled=true; $(kind+'-cancel').hidden=false;
     try {
-      while(true) {
-        const r=await api(prefixes[kind]+'/reports/'+id);
-        if(r.active_here===false) {r.state='interrupted';r.progress='Oldingi server yoki boshqa terminaldagi jarayon. Uning holatini tekshiring.';}
-        $(kind+'-progress').textContent=r.progress||labels[r.state]||r.state;
-        render(kind,r);
-        if(!['queued','running'].includes(r.state))break;
-        await new Promise(resolve=>setTimeout(resolve,1200));
-      }
+      const r=await pollReport(prefixes[kind]+'/reports/'+id,s=>{$(kind+'-progress').textContent=s.progress||labels[s.state]||s.state;});
+      if(r.active_here===false) {r.state='interrupted';r.progress='Oldingi server yoki boshqa terminaldagi jarayon. Uning holatini tekshiring.';}
+      $(kind+'-progress').textContent=r.progress||labels[r.state]||r.state;
+      render(kind,r);
       await history(kind);
     } finally {jobs[kind]=null;$(kind+'-scan').disabled=false;$(kind+'-cancel').hidden=true;}
   }

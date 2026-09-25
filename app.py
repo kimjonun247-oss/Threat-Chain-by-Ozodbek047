@@ -6,6 +6,7 @@ import datetime
 import gzip
 import hashlib
 import json
+import os
 import mimetypes
 import threading
 from pathlib import Path
@@ -52,7 +53,7 @@ STARTED_AT = datetime.datetime.now(datetime.timezone.utc).isoformat()
 # and therefore its URL. No build step is involved -- the rewrite happens here.
 ASSET_NAMES = ('index.html', 'app.js', 'shell.js', 'dashboard.js', 'findings.js', 'project.js', 'scanners.js',
                'dependencies.js', 'pilot-dashboard.js', 'web-pilot.js', 'iac.js', 'portfolio.js',
-               'style.css', 'dependencies.css', 'favicon.svg')
+               'style.css', 'dependencies.css', 'favicon.svg', 'bundle.js', 'bundle.css')
 ASSET_TYPES = {".js": "text/javascript", ".css": "text/css", ".html": "text/html", ".svg": "image/svg+xml"}
 _ASSETS = {}
 _ASSETS_LOCK = threading.Lock()
@@ -60,21 +61,56 @@ COMPRESSIBLE = ('text/', 'application/json', 'image/svg+xml', 'text/markdown')
 MIN_COMPRESS = 1024
 
 
+# One script and one stylesheet instead of eleven and two: the files are served
+# concatenated in the page's own order (all eleven are 'use strict' and share one
+# global scope already, so behaviour is unchanged). THREATCHAIN_DEBUG_ASSETS=1
+# serves them one by one again for debugging in the browser.
+BUNDLES = {'bundle.js': ('app.js', 'shell.js', 'dashboard.js', 'findings.js', 'project.js', 'scanners.js',
+                         'dependencies.js', 'pilot-dashboard.js', 'web-pilot.js', 'iac.js', 'portfolio.js'),
+           'bundle.css': ('style.css', 'dependencies.css')}
+ASSET_TYPES['.js'] = "text/javascript"
+
+
+def bundling():
+    return os.environ.get('THREATCHAIN_DEBUG_ASSETS', '').strip().lower() not in {'1', 'true', 'yes', 'on'}
+
+
 def asset(name):
     """(body, etag, gzip_body) for one file of dist/, rebuilt only when it changes."""
-    path = ROOT / "dist" / name
-    stat = path.stat()
-    key = (stat.st_mtime_ns, stat.st_size)
+    if name in BUNDLES:
+        key = tuple(asset(part)[1] for part in BUNDLES[name])
+        path = None
+    else:
+        path = ROOT / "dist" / name
+        stat = path.stat()
+        key = (stat.st_mtime_ns, stat.st_size)
     if name == 'index.html':
         # The page embeds the other files' hashes, so it depends on all of them.
-        key = key + tuple(asset(other)[1] for other in ASSET_NAMES if other != 'index.html')
+        key = key + (bundling(),) + tuple(asset(other)[1] for other in ASSET_NAMES if other != 'index.html')
     with _ASSETS_LOCK:
         hit = _ASSETS.get(name)
     if hit and hit[0] == key:
         return hit[1]
-    body = path.read_bytes()
+    if name in BUNDLES:
+        separator = b'\n;\n' if name.endswith('.js') else b'\n'
+        body = separator.join(b'/* ---- ' + part.encode() + b' ---- */\n' + asset(part)[0] for part in BUNDLES[name])
+    else:
+        body = path.read_bytes()
     if name == 'index.html':
         text = body.decode('utf-8')
+        if bundling():
+            import re as _re
+            for bundle, parts in BUNDLES.items():
+                tag = (f'<script src="/{bundle}?v={asset(bundle)[1]}" defer></script>' if bundle.endswith('.js')
+                       else f'<link rel="stylesheet" href="/{bundle}?v={asset(bundle)[1]}">')
+                pattern = ('<script src="/{}" defer></script>' if bundle.endswith('.js')
+                           else '<link rel="stylesheet" href="/{}">')
+                first = True
+                for part in parts:
+                    needle = pattern.format(part)
+                    text = text.replace(needle, tag if first else '', 1)
+                    first = False
+            text = _re.sub(r'\n[ \t]*\n', '\n', text)
         for other in ASSET_NAMES[1:]:
             text = text.replace(f'"/{other}"', f'"/{other}?v={asset(other)[1]}"')
         body = text.encode('utf-8')
@@ -82,6 +118,18 @@ def asset(name):
     with _ASSETS_LOCK:
         _ASSETS[name] = (key, value)
     return value
+
+
+STATUS_KEYS = ('id', 'target', 'state', 'progress', 'count', 'active_here', 'message', 'created_at', 'finished_at')
+
+
+def status_view(report):
+    """The part of a report a progress poll needs; stages without their reports."""
+    view = {key: report[key] for key in STATUS_KEYS if key in report}
+    if isinstance(report.get('stages'), list):
+        view['stages'] = [{key: stage.get(key) for key in ('kind', 'target', 'state', 'count')}
+                          for stage in report['stages'] if isinstance(stage, dict)]
+    return view
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -130,6 +178,8 @@ class Handler(BaseHTTPRequestHandler):
     def send(self, status, data, mime="application/json; charset=utf-8", attachment=None,
              cache="no-store", etag=None, gzipped=None):
         self._responded = True
+        if getattr(self, '_status_only', False) and status == 200 and isinstance(data, dict) and 'state' in data:
+            data = status_view(data)
         body = json.dumps(data, ensure_ascii=False).encode("utf-8") if isinstance(data, (dict, list)) else data
         encoded = None
         if self.accepts_gzip() and mime.startswith(COMPRESSIBLE):
@@ -178,6 +228,10 @@ class Handler(BaseHTTPRequestHandler):
         return True
 
     def _get(self):
+        # ?status=1 on any report URL answers with the few fields a progress
+        # poll needs. The page used to re-download the whole report -- up to
+        # ~150 KB with findings -- every 1.2-1.5 s for the length of a scan.
+        self._status_only = parse_qs(urlsplit(self.path).query).get('status') == ['1']
         if not self.local_request():
             return
         path = urlsplit(self.path).path

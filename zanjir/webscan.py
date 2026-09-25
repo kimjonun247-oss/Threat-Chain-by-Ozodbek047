@@ -4,6 +4,7 @@ Nuclei talks to an ephemeral loopback gateway. Only reviewed template paths are
 forwarded. Response bodies remain in memory; the report contains hashes, not secrets.
 """
 import collections
+import email.utils
 import datetime
 import hashlib
 import http.client
@@ -24,7 +25,7 @@ import uuid
 from urllib.parse import urlsplit, urljoin
 
 from .engine import ROOT
-from . import repo_store, scanners, taxonomy, run_index, findings as findings_mod, triage
+from . import priority, repo_store, scanners, taxonomy, run_index, findings as findings_mod, triage
 from . import verification as verification_mod
 from vendor import yaml
 
@@ -53,6 +54,20 @@ MAX_CRAWL_DEPTH = 2
 TIMEOUT = 8
 DEADLINE = 180
 CORS_PROBE_ORIGIN = 'https://zanjir-cors-probe.invalid'
+STOP_MESSAGES = {
+    'rate_limited': 'Nishon so‘rovlarni cheklashni so‘radi (429). Nishonni himoya qilish uchun skan to‘xtatildi; '
+                    'kechikishni oshirib (rate_delay) keyinroq qayta urinib ko‘ring.',
+    'server_busy': 'Nishon band ekanini bildirdi (503). Nishonni himoya qilish uchun skan to‘xtatildi; '
+                   'yuk kamroq vaqtda qayta urinib ko‘ring.',
+    'target_unreachable': 'Nishonga ketma-ket ulanib bo‘lmadi. Uni urishda davom etmaslik uchun skan to‘xtatildi.'}
+# Target impact controls (see Collector._react).
+THROTTLE_STATUSES = (429, 503)
+MAX_THROTTLES = 2               # a second "slow down" answer ends the scan
+MAX_RETRY_AFTER = 30.0          # longer waits are not waited out: the scan stops instead
+MAX_CONSECUTIVE_FAILURES = 3    # connection errors/timeouts in a row: stop, do not hammer
+BASELINE_SAMPLES = 3            # first responses define the target's normal latency
+SLOW_FACTOR = 3.0
+SLOW_FLOOR = 1.0                # seconds; below this a slower answer is not "struggling"
 LIMITS = ('Cheklangan GET profili: kirishsiz javoblar, ochiq konfiguratsiya/fayl naqshlari, HTTP himoya sarlavhalari, '
           'CORS Origin aks ettirilishi, cookie bayroqlari va server xatosi orqali texnik ma’lumot sizishi tekshiriladi. '
           'Bir sahifadagi bir nechta Set-Cookie javobidan faqat oxirgisi tahlil qilinadi. '
@@ -93,6 +108,20 @@ def auth_for(profile):
             {'mode': 'environment', 'credentials_present': True, 'variable': variable,
              'note': ('Authorization sarlavhasi faqat shu jarayonning muhitidan olindi. Qiymat hech qayerda '
                       'saqlanmaydi va hisobotda faqat o\u2018zgaruvchi nomi ko\u2018rinadi.')})
+
+
+def retry_after(value):
+    """Seconds from a Retry-After header (delta or HTTP date), or None if absent,
+    unreadable or longer than MAX_RETRY_AFTER -- then the scan stops instead."""
+    if not value:
+        return None
+    value = str(value).strip()
+    try:
+        seconds = float(value) if re.fullmatch(r'\d{1,6}(\.\d+)?', value) else \
+            (email.utils.parsedate_to_datetime(value) - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return max(0.0, seconds) if seconds <= MAX_RETRY_AFTER else None
 
 
 def rate_delay(profile):
@@ -297,11 +326,89 @@ class Collector:
         self.errors = []
         self.requests = 0
         self.blocked = 0
+        self.wire = None
+        self.connections = 0
+        self.failures = 0
+        self.latencies = []
+        self.baseline = None
+        self.throttles = []
+        self.slowdowns = []
+        self.stopped = None
+
+    def impact(self):
+        """What the scan cost the target -- kept in the report next to the findings."""
+        return {'requests': self.requests, 'connections': self.connections, 'max_parallel_requests': 1,
+                'initial_delay_seconds': rate_delay(self.profile), 'final_delay_seconds': self.delay,
+                'slowdowns': self.slowdowns, 'throttle_responses': self.throttles, 'stopped': self.stopped,
+                'max_body_bytes': MAX_BODY, 'method': 'GET'}
 
     def allow(self, path):
         """Let the bounded same-origin crawler register a newly discovered path."""
         with self.lock:
             self.paths.add(path)
+
+    # ---- target impact controls -------------------------------------------
+    # Measured against a counting target (2026-09-25): every request opened its
+    # own TCP (and, on https, TLS) connection -- 17 handshakes for 17 requests --
+    # a 503 with Retry-After was answered with 13 more requests, and a server
+    # that slowed to 1.5 s per response was not given more room. Now the scan
+    # reuses one connection, obeys Retry-After, backs off when the target slows
+    # down and stops when it keeps failing. Requests stay strictly sequential.
+
+    def _open(self):
+        wire = socket.create_connection((self.ip, self.port), timeout=TIMEOUT)
+        if self.context:
+            wire = self.context.wrap_socket(wire, server_hostname=self.parts.hostname)
+            if self.tls is None:
+                self.tls = tls_state(wire)
+        self.connections += 1
+        return wire
+
+    def _drop(self):
+        if self.wire is not None:
+            try:
+                self.wire.close()
+            except OSError:
+                pass
+        self.wire = None
+
+    def close(self):
+        with self.lock:
+            self._drop()
+
+    def _slow_down(self, reason):
+        self.delay = min(MAX_RATE_DELAY, max(self.delay * 2, 1.0))
+        self.slowdowns.append({'reason': reason, 'delay_seconds': self.delay})
+
+    def _stop(self, reason, path):
+        self.stopped = reason
+        self.errors.append({'path': path, 'type': reason})
+        self.cancel.set()
+
+    def _react(self, path, status, headers, elapsed):
+        """Adapt to how the target is coping, after every answered request."""
+        self.failures = 0
+        if status in THROTTLE_STATUSES:
+            wait = retry_after(headers.get('retry-after'))
+            self.throttles.append({'path': path, 'status': status, 'retry_after': wait})
+            if len(self.throttles) >= MAX_THROTTLES or (status == 429 and wait is None):
+                return self._stop('rate_limited' if status == 429 else 'server_busy', path)
+            self._slow_down('http_' + str(status))
+            if wait is not None:
+                self.next_request = max(self.next_request, time.monotonic() + wait)
+            return None
+        self.latencies.append(elapsed)
+        if self.baseline is None:
+            if len(self.latencies) >= BASELINE_SAMPLES:
+                self.baseline = sorted(self.latencies[:BASELINE_SAMPLES])[BASELINE_SAMPLES // 2]
+            return None
+        if elapsed > max(SLOW_FLOOR, SLOW_FACTOR * self.baseline):
+            # Back off once per new level of slowness, then treat that level as
+            # the target's normal: a server that is steadily slow gets more room,
+            # not an ever-growing delay that runs the scan into its deadline.
+            self._slow_down('slow_response')
+            self.baseline = elapsed
+        return None
 
     def fetch(self, path, extra_headers=None):
         variant = tuple(sorted((extra_headers or {}).items()))
@@ -316,87 +423,112 @@ class Collector:
                 raise ValueError('Jarayon to‘xtatilgan yoki so‘rov/vaqt chegarasiga yetdi.')
             if self.cancel.wait(max(0, self.next_request - time.monotonic())):
                 raise ValueError('Jarayon bekor qilingan.')
-            self.next_request = time.monotonic() + self.delay
+            if time.monotonic() - self.started > DEADLINE:
+                raise ValueError('Jarayon vaqt chegarasiga yetdi.')
             self.requests += 1
             upstream_path = self.parts.path + path if path != '/' else (self.parts.path or '/')
-            conn = http.client.HTTPConnection(self.parts.hostname, self.port, timeout=TIMEOUT)
-            wire = None
-            response = None
-            watchdog = None
+            reused = self.wire is not None
+            sent_at = time.monotonic()
             try:
-                wire = socket.create_connection((self.ip, self.port), timeout=TIMEOUT)
-                if self.context:
-                    wire = self.context.wrap_socket(wire, server_hostname=self.parts.hostname)
-                    if self.tls is None:
-                        self.tls = tls_state(wire)
-                def abort_slow_response():
-                    try:
-                        wire.shutdown(socket.SHUT_RDWR)
-                    except OSError:
-                        pass
-                # Header parsing also needs a total deadline against slow trickle responses.
-                watchdog = threading.Timer(min(TIMEOUT, max(0.01, self.started + DEADLINE - time.monotonic())), abort_slow_response)
-                watchdog.daemon = True
-                watchdog.start()
-                conn.sock = wire
-                request_headers = {'Host': self.parts.netloc, 'User-Agent': USER_AGENT,
-                                    'Accept-Encoding': 'identity', 'Range': f'bytes=0-{MAX_BODY - 1}', 'Connection': 'close'}
-                # The operator's own credential for this target, read from the
-                # process environment at request time. It is never stored and
-                # never written into a report -- only the variable's name is.
-                request_headers.update(self.auth_headers)
-                if extra_headers:
-                    request_headers.update(extra_headers)
-                conn.request('GET', upstream_path, headers=request_headers)
-                # Keep the socket object alive until our bounded read ends. getresponse()
-                # closes HTTP/1.0 sockets early (the response file still owns its handle).
-                response = http.client.HTTPResponse(wire)
-                response.begin()
-                # Read incrementally with a total deadline, not an unbounded trickle timeout.
-                body = bytearray()
-                stop = min(self.started + DEADLINE, time.monotonic() + TIMEOUT)
-                while len(body) <= MAX_BODY:
-                    remaining = stop - time.monotonic()
-                    if remaining <= 0 or self.cancel.is_set():
-                        raise TimeoutError('Response deadline')
-                    wire.settimeout(min(TIMEOUT, remaining))
-                    chunk = response.read1(min(8192, MAX_BODY + 1 - len(body)))
-                    if not chunk:
-                        break
-                    body.extend(chunk)
-                byte_range = response_range(response)
-                # A requested prefix may contain the entire small resource (RFC 9110
-                # 14.1.2). A 206 status alone does not prove a truncated body.
-                full_range = byte_range is not None and byte_range['start'] == 0 and byte_range['end'] + 1 == byte_range['total'] == len(body)
-                truncated = len(body) > MAX_BODY or bool(response.length) or (response.status == 206 and not full_range)
-                raw = bytes(body[:MAX_BODY])
-                headers = {k.lower(): v for k, v in response.getheaders()}
-                row = {'path': path, 'status': response.status, 'bytes_read': len(raw), 'truncated': truncated,
-                       'unsupported_encoding': headers.get('content-encoding', '').lower() not in {'', 'identity'},
-                       'body_sha256': hashlib.sha256(raw).hexdigest(), 'observed_at': now()}
-                if byte_range is not None:
-                    row['content_range'] = byte_range
-                if variant:
-                    row['probe'] = 'cors_origin_reflection'
-                self.evidence.append(row)
-                result = (response.status, headers, raw)
-                self.cache[cache_key] = result
-                if response.status == 429:
-                    self.cancel.set()
-                    self.errors.append({'path': path, 'type': 'rate_limited'})
-                return result
+                try:
+                    result = self._exchange(path, upstream_path, extra_headers, variant)
+                except (http.client.RemoteDisconnected, ConnectionResetError, BrokenPipeError) as error:
+                    # An idle kept-alive connection may have been closed by the
+                    # server in between; one fresh connection, same GET, once.
+                    if not reused or getattr(error, 'response_started', False):
+                        raise
+                    self._drop()
+                    sent_at = time.monotonic()
+                    result = self._exchange(path, upstream_path, extra_headers, variant)
             except (OSError, http.client.HTTPException, ValueError) as error:
+                self._drop()
                 # Never export response content, headers, or exception strings containing secrets.
                 self.errors.append({'path': path, 'type': type(error).__name__})
+                self.failures += 1
+                if self.failures >= MAX_CONSECUTIVE_FAILURES:
+                    self._stop('target_unreachable', path)
+                else:
+                    self._slow_down('request_failed')
                 raise
             finally:
-                if watchdog is not None:
-                    watchdog.cancel()
-                if response is not None:
-                    response.close()
-                conn.close()
-                if wire is not None:
-                    wire.close()
+                self.next_request = time.monotonic() + self.delay
+            self._react(path, result[0], result[1], time.monotonic() - sent_at)
+            self.cache[cache_key] = result
+            return result
+
+    def _exchange(self, path, upstream_path, extra_headers, variant):
+        """One GET over the kept-alive connection; closes it when it cannot be reused."""
+        if self.wire is None:
+            self.wire = self._open()
+        wire = self.wire
+        conn = http.client.HTTPConnection(self.parts.hostname, self.port, timeout=TIMEOUT)
+        response = None
+        watchdog = None
+        keep = False
+        try:
+            def abort_slow_response():
+                try:
+                    wire.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+            # Header parsing also needs a total deadline against slow trickle responses.
+            watchdog = threading.Timer(min(TIMEOUT, max(0.01, self.started + DEADLINE - time.monotonic())), abort_slow_response)
+            watchdog.daemon = True
+            watchdog.start()
+            wire.settimeout(TIMEOUT)
+            conn.sock = wire
+            request_headers = {'Host': self.parts.netloc, 'User-Agent': USER_AGENT,
+                               'Accept-Encoding': 'identity', 'Range': f'bytes=0-{MAX_BODY - 1}', 'Connection': 'keep-alive'}
+            # The operator's own credential for this target, read from the
+            # process environment at request time. It is never stored and
+            # never written into a report -- only the variable's name is.
+            request_headers.update(self.auth_headers)
+            if extra_headers:
+                request_headers.update(extra_headers)
+            conn.request('GET', upstream_path, headers=request_headers)
+            response = http.client.HTTPResponse(wire)
+            response.begin()
+            # Read incrementally with a total deadline, not an unbounded trickle timeout.
+            body = bytearray()
+            stop = min(self.started + DEADLINE, time.monotonic() + TIMEOUT)
+            while len(body) <= MAX_BODY:
+                remaining = stop - time.monotonic()
+                if remaining <= 0 or self.cancel.is_set():
+                    raise TimeoutError('Response deadline')
+                wire.settimeout(min(TIMEOUT, remaining))
+                chunk = response.read1(min(8192, MAX_BODY + 1 - len(body)))
+                if not chunk:
+                    break
+                body.extend(chunk)
+            byte_range = response_range(response)
+            # A requested prefix may contain the entire small resource (RFC 9110
+            # 14.1.2). A 206 status alone does not prove a truncated body.
+            full_range = byte_range is not None and byte_range['start'] == 0 and byte_range['end'] + 1 == byte_range['total'] == len(body)
+            truncated = len(body) > MAX_BODY or bool(response.length) or (response.status == 206 and not full_range)
+            raw = bytes(body[:MAX_BODY])
+            headers = {k.lower(): v for k, v in response.getheaders()}
+            row = {'path': path, 'status': response.status, 'bytes_read': len(raw), 'truncated': truncated,
+                   'unsupported_encoding': headers.get('content-encoding', '').lower() not in {'', 'identity'},
+                   'body_sha256': hashlib.sha256(raw).hexdigest(), 'observed_at': now()}
+            if byte_range is not None:
+                row['content_range'] = byte_range
+            if variant:
+                row['probe'] = 'cors_origin_reflection'
+            self.evidence.append(row)
+            # Reuse only a connection whose response was read to its end.
+            keep = not response.will_close and not truncated and response.isclosed()
+            return response.status, headers, raw
+        except (http.client.RemoteDisconnected, ConnectionResetError, BrokenPipeError) as error:
+            error.response_started = response is not None and response.status is not None and response.status != http.client._UNKNOWN
+            raise
+        finally:
+            if watchdog is not None:
+                watchdog.cancel()
+            if response is not None:
+                response.close()
+            conn.sock = None          # the connection object must not close the shared socket
+            if not keep:
+                self._drop()
 
 
 def finding(rule, title, severity, path, evidence, fix, tool='ThreatChain HTTP', verified=True):
@@ -704,7 +836,8 @@ def run_nuclei(collector, templates, folder, cancel, missing_hash):
             for template in templates.values():
                 command += ['-t', str(RULES / template['file'])]
             # Raw output can contain extractors. Keep it in process memory only.
-            process = subprocess.Popen(command, cwd=work, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            run_command, low = priority.gentle(command)
+            process = subprocess.Popen(run_command, cwd=work, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **low)
             started = time.monotonic()
             try:
                 while True:
@@ -773,13 +906,17 @@ def execute(profile, rid, event):
         report['tool'] = tool
         report['state'] = 'completed'
     except (OSError, ValueError, KeyError, TypeError, http.client.HTTPException, subprocess.SubprocessError) as error:
-        report['state'] = 'cancelled' if event.is_set() else 'partial' if report['findings'] else 'failed'
+        stopped = collector.stopped if collector else None
+        report['state'] = ('partial' if report['findings'] else 'failed') if stopped else \
+            'cancelled' if event.is_set() else 'partial' if report['findings'] else 'failed'
         report['error_type'] = type(error).__name__
         report['message'] = 'Tekshiruv to‘liq tugamadi. Nishon ishlashi, TLS sertifikati va Nuclei o‘rnatilishini tekshiring.'
         if isinstance(error, ConnectionRefusedError):
             report['message'] = 'Tanlangan saytga ulanish rad etildi. Lokal crAPI uchun Docker Desktop va PILOT-START.cmd orqali xizmatlarni ishga tushiring.'
         elif isinstance(error, ssl.SSLCertVerificationError):
             report['message'] = 'Nishon TLS sertifikati tasdiqlanmadi. Sertifikat zanjiri va domenini tuzating; tekshiruv o‘chirilmaydi.'
+        elif stopped:
+            report['message'] = STOP_MESSAGES.get(stopped, 'Nishonni himoya qilish uchun skan to‘xtatildi.')
         elif type(error) is ValueError and str(error):
             # This module's own refusals (scope, DNS, template profile) are
             # ValueErrors with an operator-facing sentence. Replacing it with the
@@ -788,6 +925,8 @@ def execute(profile, rid, event):
             report['message'] = 'Tekshiruv to‘xtatildi: ' + str(error)[:300]
     finally:
         if collector:
+            collector.close()
+            report['impact'] = collector.impact()
             report['requests'] = collector.requests
             report['evidence'] = collector.evidence
             report['errors'] = collector.errors

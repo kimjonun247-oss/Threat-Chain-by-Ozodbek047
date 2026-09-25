@@ -42,7 +42,7 @@
   }
   async function follow(id){
     job=id;$('dep-scan').disabled=true;$('dep-target').disabled=true;$('dep-cancel').hidden=false;
-    try{while(true){const row=await api('/api/dependencies/reports/'+id);if(row.active_here===false){row.state='external_or_interrupted';row.progress='Bu job boshqa terminalda yoki oldingi serverda boshlangan. O‘sha terminalni tekshiring; tugallanmagan natija.';}$('dep-progress').textContent=row.progress||labels[row.state];render(row);if(!['queued','running'].includes(row.state))break;await new Promise(resolve=>setTimeout(resolve,1500));}await loadHistory();}
+    try{const row=await pollReport('/api/dependencies/reports/'+id,s=>{$('dep-progress').textContent=s.progress||labels[s.state];});if(row.active_here===false){row.state='external_or_interrupted';row.progress='Bu job boshqa terminalda yoki oldingi serverda boshlangan. O‘sha terminalni tekshiring; tugallanmagan natija.';}$('dep-progress').textContent=row.progress||labels[row.state];render(row);await loadHistory();}
     finally{job=null;$('dep-scan').disabled=false;$('dep-target').disabled=false;$('dep-cancel').hidden=true;}
   }
   async function init(){

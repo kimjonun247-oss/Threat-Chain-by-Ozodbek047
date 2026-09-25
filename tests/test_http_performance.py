@@ -10,6 +10,7 @@ import http.client
 import json
 import re
 import shutil
+import sys
 import tempfile
 import threading
 import unittest
@@ -151,3 +152,59 @@ class LazyViewTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class BundleAndPollingTests(Server):
+    def test_page_loads_one_script_and_one_stylesheet(self):
+        _, body, _ = self.get('/')
+        scripts = re.findall(rb'<script src="([^"]+)"', body)
+        styles = re.findall(rb'<link rel="stylesheet" href="([^"]+)"', body)
+        self.assertEqual(len(scripts), 1)
+        self.assertEqual(len(styles), 1)
+        self.assertTrue(scripts[0].startswith(b'/bundle.js?v='))
+
+    def test_bundle_is_the_files_in_page_order(self):
+        _, bundle, _ = self.get('/bundle.js')
+        positions = [bundle.index(b'/* ---- ' + name.encode() + b' ---- */') for name in app.BUNDLES['bundle.js']]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn((Path(app.ROOT) / 'dist' / 'findings.js').read_bytes(), bundle)
+
+    def test_debug_mode_serves_files_one_by_one(self):
+        with patch.dict('os.environ', {'THREATCHAIN_DEBUG_ASSETS': '1'}):
+            _, body, _ = self.get('/')
+        self.assertGreater(len(re.findall(rb'<script src=', body)), 5)
+
+    def test_status_view_is_small_and_keeps_what_a_poll_needs(self):
+        report = {'id': 'r', 'state': 'running', 'progress': 'Semgrep', 'count': 3,
+                  'findings': [{'x': 'y' * 1000}] * 50,
+                  'stages': [{'kind': 'code', 'target': 't', 'state': 'running', 'count': 3, 'report': {'big': 1}}]}
+        view = app.status_view(report)
+        self.assertEqual(view['state'], 'running')
+        self.assertNotIn('findings', view)
+        self.assertEqual(view['stages'], [{'kind': 'code', 'target': 't', 'state': 'running', 'count': 3}])
+
+    def test_status_query_on_a_real_report_route(self):
+        response, body, _ = self.get('/api/portfolio?status=1')
+        self.assertIn('projects', json.loads(body))        # not a report: untouched
+
+    def test_follow_loops_use_the_light_poll(self):
+        dist = Path(app.ROOT) / 'dist'
+        for name in ('scanners.js', 'dependencies.js', 'iac.js', 'pilot-dashboard.js', 'web-pilot.js'):
+            with self.subTest(name=name):
+                text = (dist / name).read_text(encoding='utf-8')
+                self.assertIn('pollReport(', text)
+                self.assertNotRegex(text, r'setTimeout\(resolve, ?1[25]00\)')
+
+
+class PriorityTests(unittest.TestCase):
+    def test_scanners_run_below_normal_priority_unless_disabled(self):
+        from zanjir import priority
+        with patch.dict('os.environ', {priority.VARIABLE: ''}):
+            command, extra = priority.gentle(['semgrep', 'scan'])
+        self.assertEqual(command[-2:], ['semgrep', 'scan'])
+        if sys.platform == 'win32':
+            self.assertIn('creationflags', extra)
+        elif shutil.which('nice'):
+            self.assertIn('nice', ' '.join(command[:-2]))
+        with patch.dict('os.environ', {priority.VARIABLE: '1'}):
+            self.assertEqual(priority.gentle(['semgrep'])[0], ['semgrep'])

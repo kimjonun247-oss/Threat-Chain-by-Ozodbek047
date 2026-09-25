@@ -76,12 +76,9 @@
   async function follow(id){
     running=true;$('code-scan').disabled=true;$('code-target').disabled=true;
     try{
-      while(true){
-        const report=await api('/api/scanners/reports/'+id);render(report);
-        $('code-progress').textContent=labels[report.state]||report.state;
-        if(!['queued','running'].includes(report.state))break;
-        await new Promise(resolve=>setTimeout(resolve,1500));
-      }
+      const report=await pollReport('/api/scanners/reports/'+id,s=>{$('code-progress').textContent=labels[s.state]||s.state;});
+      render(report);
+      $('code-progress').textContent=labels[report.state]||report.state;
       await loadHistory();
     }finally{running=false;$('code-scan').disabled=false;$('code-target').disabled=false;}
   }

@@ -32,7 +32,7 @@
   }
   async function follow(id) {
     job=id;$('image-scan').disabled=true;$('image-target').disabled=true;$('image-cancel').hidden=false;
-    try { while(true) {const row=await api('/api/images/reports/'+id);if(row.active_here===false){row.state='external_or_interrupted';row.progress='Bu job boshqa terminalda yoki oldingi serverda boshlangan. O‘sha terminalni tekshiring; tugallanmagan natija.';}$('image-progress').textContent=row.progress||labels[row.state];render(row);if(!['queued','running'].includes(row.state))break;await new Promise(resolve=>setTimeout(resolve,1500));}await history();}
+    try { const row=await pollReport('/api/images/reports/'+id,s=>{$('image-progress').textContent=s.progress||labels[s.state];});if(row.active_here===false){row.state='external_or_interrupted';row.progress='Bu job boshqa terminalda yoki oldingi serverda boshlangan. O‘sha terminalni tekshiring; tugallanmagan natija.';}$('image-progress').textContent=row.progress||labels[row.state];render(row);await history();}
     finally{job=null;$('image-scan').disabled=false;$('image-target').disabled=false;$('image-cancel').hidden=true;}
   }
   $('image-scan').addEventListener('click',async()=>{try{const row=await api('/api/images/scan',{target:$('image-target').value,online:true});await follow(row.id);}catch(error){showError(error);}});

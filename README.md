@@ -4,7 +4,7 @@
 
 Kod, kutubxonalar, container image, ruxsatli sayt/API va joylashtirish dalillarini bir joyda tekshirish. Pentester topilmani baholaydi, tuzatishni rejalashtiradi va qayta skan bilan solishtiradi. Bu bir kompyuter, bir foydalanuvchi uchun pilot; barcha CVE va barcha hujumlarni aniqlash kafolati emas.
 
-**Yakuniy holat (2026-09-25, 0.7.0 + tuzatishlar):** 714 test o'tadi, `verify_platform.py` 9/9
+**Yakuniy holat (2026-09-25, 0.7.0 + tuzatishlar):** 728 test o'tadi, `verify_platform.py` 9/9
 qadamdan o'tadi (Linux; macOS'da 8/8), 7 ta skaner bosqichi, 11 ta zanjir qoidasi (RP-001…011) + 3 ta cross-skaner
 zanjiri (SX-001…003). Python bog'liqliklari: **0 ta**.
 
@@ -17,10 +17,12 @@ O'lchov: Chromium, bir xil ma'lumotlar, bosh sahifani ochish.
 
 | Ko'rsatkich | Oldin | Keyin |
 |---|---|---|
-| Birinchi ochilishdagi so'rovlar | 51 | 22 |
+| Birinchi ochilishdagi so'rovlar | 51 | 10 (1 JS bundle + 1 CSS + API) |
 | Shundan API chaqiruvlari | 38 | 6 |
-| Uzatilgan hajm (kesh bo'sh) | 515 KB | 90 KB |
+| Uzatilgan hajm (kesh bo'sh) | 515 KB | ~77 KB |
 | Qayta ochishda hajm | 515 KB | ~20 KB (statik fayllar keshdan) |
+| DOMContentLoaded / birinchi chizish | 226 / 260 ms | 70 / 120 ms (qayta: 51 / 80 ms) |
+| Skanni kuzatish (33 s kod skani) | ~22 marta to'liq hisobot | 10 ta kichik `?status=1` + 1 to'liq |
 | `/api/dashboard` (server vaqti) | 150–200 ms (parallel yukda 0,6–1,4 s) | ~19 ms |
 | `/api/portfolio` | 57 ms | ~8 ms |
 
@@ -30,11 +32,38 @@ Nima qilindi:
 - **Statik fayllar:** `index.html` har bir faylga kontent xeshi bilan murojaat qiladi (`/app.js?v=<xesh>`),
   ular `immutable` keshlanadi; sahifa va versiyasiz URL `ETag` bilan tekshiriladi (o'zgarmasa 304).
   Qurish (build) bosqichi yo'q — almashtirish server ichida bajariladi. CSP o'zgarmadi.
+- **Bitta bundle:** 11 ta JS va 2 ta CSS server tomonida sahifa tartibida birlashtirib beriladi
+  (hammasi `'use strict'` va bitta global doirada — xulq o'zgarmaydi); `THREATCHAIN_DEBUG_ASSETS=1`
+  bilan fayllar alohida beriladi (brauzerda nosozlik izlash uchun).
+- **Skanni kuzatish:** `pollReport()` faqat `?status=1` (holat, progress) so'raydi, oraliq 1 s dan 5 s gacha
+  o'sadi, yorliq yashirin bo'lsa to'xtaydi; to'liq hisobot bir marta, skan tugagach olinadi.
 - **HTTP:** gzip (faqat mijoz so'rasa va hajm kichrayganda), HTTP/1.1 keep-alive; tanasi o'qilmagan
   rad etilgan POST ulanishni yopadi. API javoblari avvalgidek `no-store`.
 - **Server hisobi:** profil ro'yxatlari fayl imzosi (nom, hajm, mtime) bilan keshlanadi — yozuv
   `write_json()` orqali bo'lgani uchun o'zgarish darhol ko'rinadi; portfel nishonlar ro'yxatini bir marta
   quradi; holat ko'rinishi qoida paketi SHA-256 tekshiruvini qayta ishlatadi (skan har doim to'liq tekshiradi).
+
+## Skan qilinadigan tizimlarga ta'sir (impact) — 2026-09-25
+
+So'rovlarni sanaydigan nishon bilan o'lchandi (bitta web skan, 17 ta yo'l):
+
+| Holat | Oldin | Keyin |
+|---|---|---|
+| Oddiy server | 17 so'rov, **17 TCP/TLS ulanish** | 17 so'rov, **1 ulanish** (keep-alive); skan 16 s → 9 s |
+| Server 503 + `Retry-After: 3` qaytaradi | `Retry-After` e'tiborsiz, **13 ta qo'shimcha so'rov** | `Retry-After` kutiladi, ikkinchi rad javobidan keyin skan to'xtaydi: jami 6 so'rov |
+| Server sekinlashadi (1,5 s/javob) | tezlik o'zgarmaydi | kechikish bir marta ikkilanadi, yangi daraja me'yor deb olinadi, skan tugaydi |
+| Ulanib bo'lmaydi | har so'rov urinadi | 3 ta ketma-ket xatodan keyin to'xtaydi (circuit breaker) |
+
+O'zgarmagan chegaralar: faqat GET, bir vaqtda bitta so'rov, javobdan ko'pi bilan 64 KB (`Range`), so'rovlar
+orasida kamida 0,5 s (nishon bo'yicha oshiriladi), 48 so'rov va 180 s umumiy chegara, Nuclei ham shu
+kolektor orqali (takror yo'l keshdan). Har bir web hisobotida `impact` bo'limi bor: so'rovlar, ulanishlar,
+boshlang'ich/yakuniy kechikish, sekinlashuvlar, rad javoblari va to'xtash sababi.
+
+Boshqa tizimlar: OSV — batch so'rov + 24 soat kesh; NVD — rasmiy 5 so'rov/30 s chegarasi; git — sayoz
+(`--depth 1`, teglarsiz) vaqtinchalik klon; Trivy bazasi keraksiz yangilanmaydi.
+**Skaner ishlayotgan kompyuter:** Semgrep, Gitleaks, Trivy va Nuclei past ustuvorlikda ishlaydi
+(`nice 10`, Linux'da `ionice` idle sinfi; Windows'da BELOW_NORMAL) — natija o'zgarmaydi, faqat
+operatorning boshqa ishiga xalal bermaydi. Ajratilgan skan serverida `THREATCHAIN_NORMAL_PRIORITY=1`.
 
 ## Vositalar aniqligi — alohida sinov (2026-09-25)
 

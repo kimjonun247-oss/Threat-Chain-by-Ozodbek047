@@ -17,7 +17,7 @@ import uuid
 from vendor import yaml
 
 from .engine import ROOT
-from . import repo_store, code_targets, taxonomy, custom_rules, run_index, baseline, findings as findings_mod, triage, verification as verification_mod
+from . import priority, repo_store, code_targets, taxonomy, custom_rules, run_index, baseline, findings as findings_mod, triage, verification as verification_mod
 
 TOOLS=ROOT/'.tools'
 RUNS=ROOT/'scanner-runs'
@@ -389,7 +389,8 @@ def history_secrets(source,current,env,work):
     history_env={**env,'GIT_CONFIG_COUNT':'1','GIT_CONFIG_KEY_0':'safe.directory','GIT_CONFIG_VALUE_0':str(source),
                  'GIT_TERMINAL_PROMPT':'0'}
     try:
-        process=subprocess.run(command,cwd=work,env=history_env,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=240)
+        run_command,low=priority.gentle(command)
+        process=subprocess.run(run_command,cwd=work,env=history_env,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=240,**low)
         if process.returncode not in (0,1):raise ValueError('gitleaks git kodi '+str(process.returncode))
         rows=json.loads(process.stdout or '[]')
         if not isinstance(rows,list):raise ValueError('gitleaks git natijasi noto‘g‘ri')
@@ -726,7 +727,8 @@ def execute(target,rid):
                     # The official pack raises the rule count from 7 to ~1300, so the
                     # scan legitimately takes minutes rather than seconds.
                     limit=900 if (tool=='semgrep' and manifest) else 240
-                    process=subprocess.run(command,cwd=work,env=env,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=limit)
+                    run_command,low=priority.gentle(command)
+                    process=subprocess.run(run_command,cwd=work,env=env,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=limit,**low)
                     # Semgrep scan (without --error): findings exit 0. Gitleaks: findings exit 1.
                     allowed=(0,) if tool in ('semgrep','pmd') else (0,1)
                     if process.returncode not in allowed:raise ValueError('Skaner xato bilan tugadi (kod '+str(process.returncode)+').')

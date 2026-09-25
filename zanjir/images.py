@@ -12,7 +12,7 @@ import sys
 import threading
 import uuid
 from .engine import ROOT
-from . import repo_store, scanners, taxonomy, run_index, findings as findings_mod, triage
+from . import priority, repo_store, scanners, taxonomy, run_index, findings as findings_mod, triage
 from . import verification as verification_mod
 
 RUNS = ROOT / 'image-runs'
@@ -572,8 +572,9 @@ def execute(rid):
         save()
         # Logs may contain registry metadata. Keep them local, never in API exports.
         with (folder / 'tool.log').open('wb') as log:
-            process = subprocess.Popen(command(report['reference'], folder, skip, check_size, limit), cwd=folder, env=env,
-                                       stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+            run_command, low = priority.gentle(command(report['reference'], folder, skip, check_size, limit))
+            process = subprocess.Popen(run_command, cwd=folder, env=env,
+                                       stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, **low)
             deadline = datetime.datetime.now().timestamp() + time_budget_minutes(limit) * 60 + 60
             while process.poll() is None:
                 if CANCEL[rid].wait(0.5):
