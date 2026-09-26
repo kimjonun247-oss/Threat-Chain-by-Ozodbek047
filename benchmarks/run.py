@@ -341,6 +341,7 @@ def main():
     parser.add_argument('--only', nargs='+', choices=sorted(CHECKS))
     parser.add_argument('--output', help='natijani JSON faylga yozish')
     parser.add_argument('--keep', action='store_true', help='vaqtinchalik papkalarni o‘chirmaslik')
+    parser.add_argument('--summary', help='Markdown jadvalni shu faylga qo‘shish (CI: $GITHUB_STEP_SUMMARY)')
     args = parser.parse_args()
     names = args.only or ({'offline': OFFLINE, 'online': ONLINE, 'all': OFFLINE + ONLINE}[args.group])
     print(f'Ma’lumotlar papkasi (vaqtinchalik): {DATA}', flush=True)
@@ -361,6 +362,13 @@ def main():
     summary = {k: sum(r['status'] == k for r in RESULTS) for k in ('PASS', 'FAIL', 'SKIP')}
     print(f"\nNatija: {summary['PASS']} o‘tdi, {summary['FAIL']} yiqildi, {summary['SKIP']} o‘tkazildi "
           f"· {round(time.monotonic() - started)} s", flush=True)
+    if args.summary:
+        icons = {'PASS': '✅', 'FAIL': '❌', 'SKIP': '⏭️'}
+        lines = ['### ThreatChain benchmarklari', '', '| | Tekshiruv | Natija |', '|---|---|---|']
+        lines += [f"| {icons[r['status']]} | `{r['check']}` | {str(r['detail']).replace('|', '/')} |" for r in RESULTS]
+        lines += ['', f"**{summary['PASS']} o‘tdi · {summary['FAIL']} yiqildi · {summary['SKIP']} o‘tkazildi**", '']
+        with open(args.summary, 'a', encoding='utf-8') as handle:
+            handle.write('\n'.join(lines) + '\n')
     if args.output:
         Path(args.output).write_text(json.dumps({'summary': summary, 'results': RESULTS}, ensure_ascii=False, indent=2),
                                      encoding='utf-8')

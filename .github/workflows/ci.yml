@@ -1,0 +1,138 @@
+# ThreatChain CI — har bir push va pull request'da.
+#
+#   lint        Python fayllari kompilyatsiya bo'ladi, dashboard JS sintaksisi to'g'ri.
+#   unit        Unit testlar uchala OS da (tashqi vositasiz qismlar; vosita kerak bo'lgan
+#               testlar vosita yo'q joyda SKIP bo'ladi).
+#   platform    Rasmiy relizlardan vositalar o'rnatiladi va verify_platform.py uchala OS da
+#               haqiqiy Semgrep/Gitleaks/Trivy/Nuclei bilan ishlaydi.
+#   benchmarks  benchmarks/run.py --group all: aniqlik, noto'g'ri signal, CI gate qarori va
+#               nishonga ta'sir expected.json bilan solishtiriladi; jadval job xulosasida.
+#
+# Vosita yuklamalari keshlanadi (kalit — o'rnatuvchi skriptlarning xeshi), shuning uchun
+# odatiy ishga tushirishda qayta yuklanmaydi.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUTF8: '1'
+  # CI runner faqat skan uchun: skanerlarni past ustuvorlikda ishga tushirish shart emas.
+  THREATCHAIN_NORMAL_PRIORITY: '1'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Python kompilyatsiyasi
+        run: python -m compileall -q zanjir tests benchmarks *.py
+      - name: Dashboard JS sintaksisi
+        run: for f in dist/*.js; do node --check "$f"; done
+
+  unit:
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ['3.11', '3.13']
+        exclude:
+          - os: windows-latest
+            python: '3.11'
+          - os: macos-latest
+            python: '3.11'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Unit testlar
+        run: python -m unittest discover -s tests
+
+  platform:
+    needs: unit
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-java@v4          # PMD (Apex) uchun
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Vositalar keshi
+        uses: actions/cache@v4
+        with:
+          path: |
+            .tools
+            scanner-rules/semgrep-registry
+            scanner-rules/semgrep-merged.yml
+          key: tools-${{ runner.os }}-${{ hashFiles('setup_*.py') }}
+      - name: Vositalarni o'rnatish
+        run: python setup_all.py
+      - name: Platforma tekshiruvi
+        run: python verify_platform.py
+      - name: Natijani saqlash
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-${{ matrix.os }}
+          path: validation-runs/platform-*.json
+
+  benchmarks:
+    needs: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Vositalar keshi
+        uses: actions/cache@v4
+        with:
+          path: |
+            .tools
+            scanner-rules/semgrep-registry
+            scanner-rules/semgrep-merged.yml
+          key: tools-${{ runner.os }}-${{ hashFiles('setup_*.py') }}
+      - name: Vositalarni o'rnatish
+        run: python setup_all.py
+      - name: Benchmarklar (offline + online)
+        run: python benchmarks/run.py --group all --output benchmark-results.json --summary "$GITHUB_STEP_SUMMARY"
+      - name: Natijani saqlash
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark-results.json
