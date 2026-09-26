@@ -113,6 +113,13 @@
         <label>URL<input name="url" required placeholder="https://staging.example.test"></label>
         <label>Ruxsat bergan mas’ul<input name="owner" required maxlength="120" placeholder="Ism va lavozim"></label>
         <label>So‘rovlar orasidagi kechikish (soniya)<input name="rate_delay" type="number" min="0.5" max="30" step="0.5" placeholder="0.5"></label>
+        <fieldset class="window-fields"><legend>Ruxsat oynasi (ixtiyoriy)</legend>
+          <label>Kunlar<input name="window_days" placeholder="mon,tue,wed,thu,fri"></label>
+          <label>Boshlanish<input name="window_start" type="time"></label>
+          <label>Tugash<input name="window_end" type="time"></label>
+          <label>Vaqt zonasi<input name="window_tz" placeholder="+05:00" maxlength="40"></label>
+          <label>Kunlik so‘rov limiti<input name="daily_budget" type="number" min="1" max="100000" step="1" placeholder="cheklanmagan"></label>
+        </fieldset>
         <label><input name="authenticated" type="checkbox"> Nishon autentifikatsiya talab qiladi</label>
         <label><input name="replace" type="checkbox"> Mavjud bo‘lsa yangilash (ruxsat qaytadan qayd etiladi)</label>
         <p class="hint-text">Faqat ruxsat berilgan nishon. Token muhit o‘zgaruvchisida: <code>THREATCHAIN_WEB_AUTH_&lt;ID&gt;</code>.</p>
@@ -189,11 +196,21 @@
         event.preventDefault();
         const form = new FormData(event.target);
         const delay = parseFloat(form.get('rate_delay'));
+        const budget = parseInt(form.get('daily_budget'), 10);
+        const start = form.get('window_start'), end = form.get('window_end');
+        const window = start && end ? {
+          start, end, timezone: form.get('window_tz').trim() || 'UTC',
+          ...(form.get('window_days').trim() ? {days: form.get('window_days').split(',').map(d => d.trim()).filter(Boolean)} : {})
+        } : null;
         submit(box, '/api/registry/web', {
           id: form.get('id').trim(), url: form.get('url').trim(), owner: form.get('owner').trim(),
           authenticated: form.get('authenticated') === 'on', replace: form.get('replace') === 'on',
-          ...(Number.isFinite(delay) ? {rate_delay: delay} : {})
+          ...(Number.isFinite(delay) ? {rate_delay: delay} : {}),
+          ...(window ? {scan_window: window} : {}),
+          ...(Number.isFinite(budget) ? {daily_request_budget: budget} : {})
         }, r => `Nishon ro‘yxatga olindi: ${r.id} · ${r.url}`
+             + (r.scan_window ? ` · oyna ${r.scan_window.days.join(',')} ${r.scan_window.start}–${r.scan_window.end} (${r.scan_window.timezone})` : '')
+             + (r.daily_request_budget ? ` · kuniga ≤${r.daily_request_budget} so‘rov` : '')
              + (r.auth_variable ? ` — ${r.auth_variable} o‘zgaruvchisini o‘rnating` : ''));
       });
       box.querySelector('#reg-remove').addEventListener('submit', event => {

@@ -14,7 +14,18 @@ def main():
     p.add_argument('--authorized', action='store_true')
     p.add_argument('--allow-private', action='store_true')
     p.add_argument('--interactive', action='store_true')
+    p.add_argument('--replace', action='store_true', help='mavjud ro‘yxatni yangilash (ruxsat qaytadan qayd etiladi)')
+    p.add_argument('--window-days', help='ruxsat oynasi kunlari, masalan: mon,tue,wed,thu,fri')
+    p.add_argument('--window-start', help='oyna boshlanishi HH:MM (masalan 22:00)')
+    p.add_argument('--window-end', help='oyna tugashi HH:MM (masalan 06:00; tun yarmidan o‘tishi mumkin)')
+    p.add_argument('--timezone', default='UTC', help='UTC ofseti, masalan +05:00')
+    p.add_argument('--daily-budget', type=int, help='nishonga kuniga yuboriladigan so‘rovlar chegarasi')
     args = p.parse_args()
+    window = None
+    if args.window_start or args.window_end:
+        window = {'start': args.window_start or '', 'end': args.window_end or '', 'timezone': args.timezone}
+        if args.window_days:
+            window['days'] = args.window_days
     if args.interactive:
         print('Faqat o‘zingizga tegishli yoki tekshirishga ruxsat berilgan sayt/API.\nEnter: mavjud lokal crAPI laboratoriyasi.',file=sys.stderr)
         url = input('URL: ').strip()
@@ -30,8 +41,10 @@ def main():
     elif args.register:
         if not args.url or not args.owner or not args.authorized:
             p.error('--url, --owner va --authorized kerak.')
-        webscan.register(args.register, args.url, args.owner, args.allow_private)
-        print('Nishon ro‘yxatga olindi.',file=sys.stderr)
+        row = webscan.register(args.register, args.url, args.owner, args.allow_private,
+                               scan_window=window, daily_request_budget=args.daily_budget, replace=args.replace)
+        print('Nishon ro‘yxatga olindi' + (f" · oyna {row['scan_window']}" if row.get('scan_window') else '') +
+              (f" · kuniga ≤{row['daily_request_budget']} so‘rov" if row.get('daily_request_budget') else '') + '.', file=sys.stderr)
         return
     report = webscan.start(args.target, background=False)
     print(json.dumps({k: report.get(k) for k in ('id', 'state', 'count', 'requests', 'coverage', 'message')}, ensure_ascii=False, indent=2))

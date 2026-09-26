@@ -502,11 +502,14 @@ class Handler(BaseHTTPRequestHandler):
                                                           payload.get('name') or None,
                                                           auth=payload.get('auth') or 'none',
                                                           replace=payload.get('replace') is True))
-                if path == '/api/registry/web' and {'id', 'url', 'owner'} <= set(payload) <= {'id', 'url', 'owner', 'authenticated', 'rate_delay', 'replace'}:
+                if path == '/api/registry/web' and {'id', 'url', 'owner'} <= set(payload) <= {
+                        'id', 'url', 'owner', 'authenticated', 'rate_delay', 'replace', 'scan_window', 'daily_request_budget'}:
                     return self.send(200, webscan.register(payload['id'], payload['url'], payload['owner'],
                                                            authenticated=bool(payload.get('authenticated')),
                                                            rate_delay_seconds=payload.get('rate_delay'),
-                                                           replace=payload.get('replace') is True))
+                                                           replace=payload.get('replace') is True,
+                                                           scan_window=payload.get('scan_window'),
+                                                           daily_request_budget=payload.get('daily_request_budget')))
                 if path == '/api/registry/remove' and set(payload) == {'kind', 'id'}:
                     # Removes the registration only. Reports stay (they are evidence)
                     # and no file of the project itself is ever touched.

@@ -54,6 +54,14 @@ So'rovlarni sanaydigan nishon bilan o'lchandi (bitta web skan, 17 ta yo'l):
 | Server sekinlashadi (1,5 s/javob) | tezlik o'zgarmaydi | kechikish bir marta ikkilanadi, yangi daraja me'yor deb olinadi, skan tugaydi |
 | Ulanib bo'lmaydi | har so'rov urinadi | 3 ta ketma-ket xatodan keyin to'xtaydi (circuit breaker) |
 
+**Ruxsat oynasi va kunlik limit (har nishon uchun, ixtiyoriy):** ro'yxatga olishda `scan_window`
+(kunlar, `HH:MM–HH:MM`, UTC ofseti; tun yarmidan o'tishi mumkin) va `daily_request_budget` yoziladi —
+ruxsat bergan mas'ul bilan birga. Oynadan tashqarida yoki limit tugaganda skan boshlanmaydi (keyingi oyna/limit
+yangilanish vaqti aytiladi); skan davomida oyna yopilsa yoki limit tugasa, kolektor keyingi so'rovni yubormaydi
+(`window_closed` / `daily_budget`). Limit nishonning vaqt zonasidagi yarim tundan hisoblanadi va shu kungi barcha
+skanlar (`impact.requests`) yig'indisi bilan solishtiriladi. CLI: `check_web.py --register ID --url ... --owner ...
+--authorized --window-days mon-fri --window-start 22:00 --window-end 06:00 --timezone +05:00 --daily-budget 300`.
+
 O'zgarmagan chegaralar: faqat GET, bir vaqtda bitta so'rov, javobdan ko'pi bilan 64 KB (`Range`), so'rovlar
 orasida kamida 0,5 s (nishon bo'yicha oshiriladi), 48 so'rov va 180 s umumiy chegara, Nuclei ham shu
 kolektor orqali (takror yo'l keshdan). Har bir web hisobotida `impact` bo'limi bor: so'rovlar, ulanishlar,

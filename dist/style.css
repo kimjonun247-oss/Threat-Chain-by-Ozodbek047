@@ -432,3 +432,9 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.92em;backgroun
 .coverage-note .ic{flex:0 0 auto;margin-top:2px}
 .empty .ic{color:var(--muted);vertical-align:-3px;margin-right:6px}
 .primary .ic,.secondary .ic{margin-right:6px;vertical-align:-4px}
+
+/* Web target permission window: a compact grid inside the registration form. */
+.window-fields{border:1px solid var(--line,#d0d7de);border-radius:6px;padding:8px 10px;margin:6px 0;
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px 10px;min-width:0}
+.window-fields legend{padding:0 4px;font-size:.9em}
+.window-fields input{width:100%;box-sizing:border-box}

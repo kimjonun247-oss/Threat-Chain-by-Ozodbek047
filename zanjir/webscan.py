@@ -27,6 +27,7 @@ from urllib.parse import urlsplit, urljoin
 from .engine import ROOT, DATA
 from . import priority, repo_store, scanners, taxonomy, run_index, findings as findings_mod, triage
 from . import verification as verification_mod
+from . import scan_window as scan_window_mod
 from vendor import yaml
 
 RUNS = DATA / 'web-runs'
@@ -59,7 +60,9 @@ STOP_MESSAGES = {
                     'kechikishni oshirib (rate_delay) keyinroq qayta urinib ko‘ring.',
     'server_busy': 'Nishon band ekanini bildirdi (503). Nishonni himoya qilish uchun skan to‘xtatildi; '
                    'yuk kamroq vaqtda qayta urinib ko‘ring.',
-    'target_unreachable': 'Nishonga ketma-ket ulanib bo‘lmadi. Uni urishda davom etmaslik uchun skan to‘xtatildi.'}
+    'target_unreachable': 'Nishonga ketma-ket ulanib bo‘lmadi. Uni urishda davom etmaslik uchun skan to‘xtatildi.',
+    'daily_budget': 'Nishonning kunlik so‘rov limiti tugadi. Skan to‘xtatildi; limit ertaga yangilanadi.',
+    'window_closed': 'Ruxsat etilgan skan oynasi yopildi. Skan to‘xtatildi; keyingi oynada davom ettiring.'}
 # Target impact controls (see Collector._react).
 THROTTLE_STATUSES = (429, 503)
 MAX_THROTTLES = 2               # a second "slow down" answer ends the scan
@@ -182,7 +185,8 @@ def canonical_url(value):
     return f'{parts.scheme}://{authority}{path}'
 
 
-def register(target, url, owner, allow_private=False, authenticated=False, rate_delay_seconds=None, replace=False):
+def register(target, url, owner, allow_private=False, authenticated=False, rate_delay_seconds=None, replace=False,
+             scan_window=None, daily_request_budget=None):
     if not isinstance(target, str) or not repo_store.PROFILE_ID.fullmatch(target) or target.startswith('pilot-'):
         raise ValueError('2–40 belgili loyiha ID kerak; pilot- nomlari band.')
     if not isinstance(owner, str) or not 1 <= len(owner.strip()) <= 120 or type(allow_private) is not bool:
@@ -193,6 +197,14 @@ def register(target, url, owner, allow_private=False, authenticated=False, rate_
            'allow_private': allow_private, 'authorized_at': now(),
            'authenticated': authenticated,
            'rate_delay': rate_delay({'rate_delay': rate_delay_seconds})}
+    # When the owner allows scanning and how much load a day: recorded with the
+    # authorisation itself, and enforced before and during every scan.
+    window = scan_window_mod.parse_window(scan_window)
+    budget = scan_window_mod.parse_budget(daily_request_budget)
+    if window:
+        row['scan_window'] = window
+    if budget:
+        row['daily_request_budget'] = budget
     if authenticated:
         # The variable name is stored so the operator can see what to export;
         # the value itself never is.
@@ -334,6 +346,9 @@ class Collector:
         self.throttles = []
         self.slowdowns = []
         self.stopped = None
+        # Set by execute() from the target's permission (scan_window module).
+        self.request_budget = None
+        self.window_closes = None
 
     def impact(self):
         """What the scan cost the target -- kept in the report next to the findings."""
@@ -419,6 +434,11 @@ class Collector:
             if path not in self.paths:
                 self.blocked += 1
                 raise ValueError('Yo‘l profilga kirmaydi.')
+            if self.request_budget is not None and self.requests >= self.request_budget and not self.cancel.is_set():
+                self._stop('daily_budget', path)
+            if self.window_closes is not None and not self.cancel.is_set() and \
+                    datetime.datetime.now(datetime.timezone.utc) >= self.window_closes:
+                self._stop('window_closed', path)
             if self.cancel.is_set() or time.monotonic() - self.started > DEADLINE or self.requests >= MAX_REQUESTS:
                 raise ValueError('Jarayon to‘xtatilgan yoki so‘rov/vaqt chegarasiga yetdi.')
             if self.cancel.wait(max(0, self.next_request - time.monotonic())):
@@ -882,6 +902,11 @@ def execute(profile, rid, event):
         templates, paths, profile_hash = rule_profile()
         missing = '/zanjir-missing-' + uuid.uuid4().hex
         collector = Collector(profile, paths | {missing}, event)
+        allowed = report.get('permission') or {}
+        if allowed.get('remaining_today') is not None:
+            collector.request_budget = allowed['remaining_today']
+        if allowed.get('closes_at'):
+            collector.window_closes = datetime.datetime.fromisoformat(allowed['closes_at'])
         report['profile_sha256'] = profile_hash
         report['resolved_ip'] = collector.ip
         report['authentication'] = collector.auth_meta
@@ -960,8 +985,68 @@ def execute(profile, rid, event):
     return report
 
 
+def requests_today(target, window=None, now=None):
+    """Requests this target received from ThreatChain since midnight in the window's zone."""
+    since = scan_window_mod.day_start(window, now)
+    total = 0
+    for row in run_index.rows(RUNS, ('id', 'target', 'created_at'), read, limit=10 ** 6):
+        if row.get('target') != target:
+            continue
+        try:
+            created = datetime.datetime.fromisoformat(str(row.get('created_at')))
+        except ValueError:
+            continue
+        if created < since:
+            break                                   # rows are newest first
+        try:
+            report = read(row['id'])
+        except (OSError, ValueError):
+            continue
+        total += int((report.get('impact') or {}).get('requests') or report.get('requests') or 0)
+    return total
+
+
+def permission(profile, now=None):
+    """Whether `profile` may be scanned now, and with how many requests left today.
+
+    Raises ValueError with the reason (window closed, budget spent) so the
+    refusal reaches the operator -- and the scheduler, which waits for the
+    window instead of failing.
+    """
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    # Normalised again: a profile file edited by hand gets the same checks.
+    window = scan_window_mod.parse_window(profile.get('scan_window'))
+    budget = scan_window_mod.parse_budget(profile.get('daily_request_budget'))
+    state = scan_window_mod.status(window, now)
+    result = {'window': window, 'window_text': scan_window_mod.describe(window),
+              'closes_at': state['closes_at'].isoformat() if state['closes_at'] else None,
+              'opens_at': state['opens_at'].isoformat() if state['opens_at'] else None,
+              'daily_request_budget': budget}
+    if not state['open']:
+        when = state['opens_at'].isoformat(timespec='minutes') if state['opens_at'] else 'noma’lum'
+        raise PermissionWindowError(f'Ruxsat oynasidan tashqarida ({result["window_text"]}). Keyingi oyna: {when}.',
+                                    state['opens_at'])
+    if budget:
+        used = requests_today(profile['id'], window, now)
+        result.update(used_today=used, remaining_today=max(0, budget - used))
+        if used >= budget:
+            tomorrow = scan_window_mod.day_start(window, now) + datetime.timedelta(days=1)
+            raise PermissionWindowError(f'Kunlik so‘rov limiti tugadi ({used}/{budget}). Limit {tomorrow.isoformat(timespec="minutes")} da yangilanadi.',
+                                        tomorrow)
+    return result
+
+
+class PermissionWindowError(ValueError):
+    """Not now; `retry_at` says when the target may be scanned again (or None)."""
+
+    def __init__(self, message, retry_at):
+        super().__init__(message)
+        self.retry_at = retry_at
+
+
 def start(target, background=True):
     profile = target_for(target)
+    allowed = permission(profile)
     if not LOCK.acquire(blocking=False):
         raise ValueError('Boshqa web tekshiruvi davom etmoqda.')
     rid = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S') + '-' + uuid.uuid4().hex[:8]
@@ -970,7 +1055,8 @@ def start(target, background=True):
         repo_store.write_json(RUNS / rid / 'report.json', {'id': rid, 'target': target, 'url': profile['url'],
                              'authorization': {'owner': profile['owner'], 'recorded_at': profile['authorized_at']},
                              'created_at': now(), 'state': 'queued', 'count': 0, 'findings': [], 'limits': LIMITS,
-                             'scope': 'Exact registered origin and base path; GET, 2 req/s, 32 requests, 64 KiB/response, 180 s.'})
+                             'scope': 'Exact registered origin and base path; GET, 2 req/s, 32 requests, 64 KiB/response, 180 s.',
+                             'permission': allowed})
         CANCEL[rid] = event
         if background:
             threading.Thread(target=execute, args=(profile, rid, event), daemon=True).start()
