@@ -275,7 +275,7 @@ def source_for(target):
     try:
         yield path,provenance
     finally:
-        shutil.rmtree(path.parent,ignore_errors=True)
+        remote_source.remove(path.parent)
 
 
 def environment(work,temp=None):

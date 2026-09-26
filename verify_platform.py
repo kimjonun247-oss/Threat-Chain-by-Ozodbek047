@@ -195,7 +195,7 @@ def remote_targets():
         if not (path / 'README').is_file():
             raise AssertionError('klon bo‘sh')
     finally:
-        shutil_mod.rmtree(path.parent, ignore_errors=True)
+        remote_source.remove(path.parent)
     if path.exists():
         raise AssertionError('klon o‘chirilmadi')
 

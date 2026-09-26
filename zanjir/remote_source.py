@@ -22,9 +22,11 @@ Four rules, each of them a deliberate limit rather than an omission:
      local path pretending to be a URL, or a scheme git would treat as a command
      is refused, and the reason is stated.
 """
+import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -133,17 +135,17 @@ def clone(url, ref='', into=None):
         done = subprocess.run(command, capture_output=True, text=True, encoding='utf-8',
                               errors='replace', timeout=CLONE_TIMEOUT, env=env, cwd=str(folder))
     except subprocess.TimeoutExpired:
-        shutil.rmtree(folder, ignore_errors=True)
+        remove(folder)
         raise ValueError(f'Klonlash {CLONE_TIMEOUT} soniyada tugamadi.') from None
     except OSError as error:
-        shutil.rmtree(folder, ignore_errors=True)
+        remove(folder)
         raise ValueError(f'Klonlash bajarilmadi: {error}') from None
     if done.returncode != 0:
-        shutil.rmtree(folder, ignore_errors=True)
+        remove(folder)
         raise ValueError('Klonlash bajarilmadi: ' + redact(done.stderr or done.stdout)[-300:])
     size = directory_bytes(target)
     if size > MAX_BYTES:
-        shutil.rmtree(folder, ignore_errors=True)
+        remove(folder)
         raise ValueError(f'Repozitoriy {MAX_BYTES // 1024 ** 2} MB chegarasidan oshdi.')
     commit = resolve(target, env)
     return target, {
@@ -153,6 +155,30 @@ def clone(url, ref='', into=None):
         'note': ('Vaqtinchalik nusxa: skan tugagach o‘chiriladi. Commit yozib olindi — keyingi '
                  'hisobot aynan shu holat bilan solishtiriladi, branch nomi bilan emas.'),
     }
+
+
+def remove(folder):
+    """Delete a temporary clone, including git's read-only files.
+
+    On Windows git marks .git/objects/pack/*.pack and *.idx read-only, and
+    shutil.rmtree(ignore_errors=True) then silently left the whole clone behind
+    after every remote scan -- the platform check on a Windows runner found it.
+    Clearing the read-only bit and retrying removes it on every OS.
+    """
+    import stat
+
+    def clear_and_retry(function, path, _):
+        try:
+            os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+            function(path)
+        except OSError:
+            pass
+
+    folder = Path(folder)
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(folder, onexc=clear_and_retry)
+    else:
+        shutil.rmtree(folder, onerror=clear_and_retry)
 
 
 def resolve(target, env):

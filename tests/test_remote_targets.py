@@ -274,5 +274,24 @@ class SecretLeakGuardTests(unittest.TestCase):
                 self.assertIn(path.name, allowed, f'{path.name}: kutilmagan kirish ma’lumoti o‘quvchisi')
 
 
+class CloneRemovalTests(unittest.TestCase):
+    def test_a_clone_with_read_only_pack_files_is_fully_removed(self):
+        # git marks pack files read-only; on Windows rmtree(ignore_errors=True) left them all.
+        import stat
+        from zanjir import remote_source
+        folder = Path(tempfile.mkdtemp())
+        pack = folder / 'repo' / '.git' / 'objects' / 'pack'
+        pack.mkdir(parents=True)
+        for name in ('pack-1.pack', 'pack-1.idx'):
+            (pack / name).write_bytes(b'x')
+            os.chmod(pack / name, stat.S_IREAD)
+        remote_source.remove(folder)
+        self.assertFalse(folder.exists())
+
+    def test_removing_an_absent_clone_is_not_an_error(self):
+        from zanjir import remote_source
+        remote_source.remove(Path(tempfile.gettempdir()) / 'threatchain-no-such-clone-folder')
+
+
 if __name__ == '__main__':
     unittest.main()
