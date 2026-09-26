@@ -16,11 +16,11 @@ import uuid
 
 from vendor import yaml
 
-from .engine import ROOT
+from .engine import ROOT, DATA
 from . import priority, repo_store, code_targets, taxonomy, custom_rules, run_index, baseline, findings as findings_mod, triage, verification as verification_mod
 
 TOOLS=ROOT/'.tools'
-RUNS=ROOT/'scanner-runs'
+RUNS=DATA/'scanner-runs'
 RULES=ROOT/'scanner-rules'
 # Vendored tools are bundled per platform: a Windows build (gitleaks.exe, a
 # Scripts/ venv) and a POSIX build (a plain binary, a bin/ venv) live side by

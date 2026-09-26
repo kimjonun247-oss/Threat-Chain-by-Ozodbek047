@@ -7,14 +7,14 @@ import re
 import uuid
 import time
 from pathlib import Path
-from .engine import ROOT, canonical, digest
+from .engine import ROOT, canonical, digest, DATA
 from .repository import scan_repository, safe_read
 
-REPO_RUNS=ROOT/'repository-runs'
+REPO_RUNS=DATA/'repository-runs'
 # Profiles that ship with the application: their root is a path inside this
 # folder, checked for containment rather than against a registered_root.
 ALLOWED_PROFILES={'crapi','chain-demo'}
-LOCAL_PROFILES=ROOT/'profiles'/'local'
+LOCAL_PROFILES=DATA/'profiles'/'local'
 PROFILE_ID=re.compile(r'^[a-z][a-z0-9_-]{1,39}$')
 REPORT_ID=re.compile(r'^\d{8}T\d{6}-[0-9a-f]{8}$')
 

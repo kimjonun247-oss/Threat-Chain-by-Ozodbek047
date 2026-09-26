@@ -5,11 +5,11 @@ import json
 from pathlib import Path
 import threading
 import uuid
-from .engine import ROOT
+from .engine import ROOT, DATA
 from . import inventory, advisories, scanners, repo_store, run_index, triage
 from . import verification as verification_mod
 
-RUNS=ROOT/'dependency-runs'
+RUNS=DATA/'dependency-runs'
 LOCK=threading.Lock()
 REVIEW_LOCK=threading.Lock()
 CANCEL={}

@@ -4,11 +4,11 @@ import hashlib
 import json
 import threading
 import uuid
-from .engine import ROOT
+from .engine import ROOT, DATA
 from . import scanners, dependencies, iac, images, webscan, repo_store, chains, portfolio, sarif_export, run_index, triage
 from . import verification as verification_mod
 
-RUNS = ROOT / 'assessment-runs'
+RUNS = DATA / 'assessment-runs'
 LOCK = threading.Lock()
 CANCEL = {}
 # The selection a caller must supply, as one source of truth. Every CLI that

@@ -265,9 +265,12 @@ class SecretLeakGuardTests(unittest.TestCase):
         from zanjir.engine import ROOT
         import re
         allowed = {'images.py', 'webscan.py', 'settings.py', 'threatfeeds.py', 'remote_source.py'}
+        # Plain configuration switches that never hold a secret; named one by one
+        # so a new credential variable still has to go through a helper above.
+        settings_only = r'(?!(?:DATA_DIR|USE_PROXY|NORMAL_PRIORITY|DEBUG_ASSETS)\b)'
         for path in sorted((ROOT / 'zanjir').glob('*.py')):
             body = path.read_text(encoding='utf-8')
-            if re.search(r"os\.environ(?:\.get)?\s*[\(\[]\s*['\"]?(THREATCHAIN_|TRIVY_|NVD_)", body):
+            if re.search(r"os\.environ(?:\.get)?\s*[\(\[]\s*['\"]?(THREATCHAIN_" + settings_only + r"|TRIVY_|NVD_)", body):
                 self.assertIn(path.name, allowed, f'{path.name}: kutilmagan kirish ma’lumoti o‘quvchisi')
 
 

@@ -24,13 +24,13 @@ import time
 import uuid
 from urllib.parse import urlsplit, urljoin
 
-from .engine import ROOT
+from .engine import ROOT, DATA
 from . import priority, repo_store, scanners, taxonomy, run_index, findings as findings_mod, triage
 from . import verification as verification_mod
 from vendor import yaml
 
-RUNS = ROOT / 'web-runs'
-PROFILES = ROOT / 'profiles/web'
+RUNS = DATA / 'web-runs'
+PROFILES = DATA / 'profiles/web'
 RULES = ROOT / 'scanner-rules/nuclei'
 # Windows keeps the original .tools/nuclei/nuclei.exe; every other platform
 # uses the vendored posix/ build installed by setup_nuclei.py.

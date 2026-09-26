@@ -29,12 +29,12 @@ import threading
 import uuid
 from pathlib import Path
 
-from .engine import ROOT
+from .engine import ROOT, DATA
 from . import images, priority, repo_store, run_index, scanners, taxonomy, triage
 from . import findings as findings_mod
 from . import verification as verification_mod
 
-RUNS = ROOT / 'iac-runs'
+RUNS = DATA / 'iac-runs'
 LOCK = threading.Lock()
 CANCEL = {}
 TIMEOUT = 600

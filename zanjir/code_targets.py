@@ -1,10 +1,10 @@
 """CLI-only source project registration, independent of deployment format."""
 import json
 from pathlib import Path
-from .engine import ROOT
+from .engine import ROOT, DATA
 from . import repo_store
 
-PROFILES=ROOT/'profiles/code'
+PROFILES=DATA/'profiles/code'
 
 
 def profiles():

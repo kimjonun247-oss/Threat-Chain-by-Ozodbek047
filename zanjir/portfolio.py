@@ -31,10 +31,10 @@ import datetime
 import json
 import re
 
-from .engine import ROOT
+from .engine import ROOT, DATA
 from . import repo_store, code_targets, scanners, dependencies, iac, images, webscan
 
-PROFILES = ROOT / 'profiles/portfolio'
+PROFILES = DATA / 'profiles/portfolio'
 ID = re.compile(r'^[a-z0-9][a-z0-9._-]{2,64}$')
 INTERPOLATION = re.compile(r'\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*')
 STAGES = ('code', 'repository', 'dependencies', 'iac', 'images', 'web')

@@ -33,10 +33,10 @@ import threading
 import time
 import uuid
 
-from .engine import ROOT
+from .engine import ROOT, DATA
 from . import repo_store
 
-TRIAGE = ROOT / 'profiles/triage'
+TRIAGE = DATA / 'profiles/triage'
 SCOPE = re.compile(r'^[a-z0-9_][a-z0-9._-]{1,80}$')
 LOCK = threading.Lock()
 # attach() runs on every report read, and the grouping it needs is built from

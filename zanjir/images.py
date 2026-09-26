@@ -11,12 +11,12 @@ import subprocess
 import sys
 import threading
 import uuid
-from .engine import ROOT
+from .engine import ROOT, DATA
 from . import priority, repo_store, scanners, taxonomy, run_index, findings as findings_mod, triage
 from . import verification as verification_mod
 
-RUNS = ROOT / 'image-runs'
-PROFILES = ROOT / 'profiles/images'
+RUNS = DATA / 'image-runs'
+PROFILES = DATA / 'profiles/images'
 CACHE = ROOT / '.tools/trivy/cache'
 # Windows keeps the original .tools/trivy/trivy.exe; every other platform uses
 # the vendored posix/ build installed by setup_tools.py.

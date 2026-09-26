@@ -18,9 +18,9 @@ import os
 import stat
 import sys
 
-from .engine import ROOT
+from .engine import ROOT, DATA
 
-PATH = ROOT / 'profiles/settings.json'
+PATH = DATA / 'profiles/settings.json'
 MAX_KEY = 120
 
 
