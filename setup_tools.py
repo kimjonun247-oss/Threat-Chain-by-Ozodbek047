@@ -15,7 +15,6 @@ from zanjir.repo_store import write_json
 
 from zanjir import nettrust
 
-_SSL_CONTEXT = nettrust.ssl_context()
 
 VERSION='0.74.0'
 BASE='https://github.com/aquasecurity/trivy/releases/download/v'+VERSION+'/'
@@ -32,7 +31,7 @@ else:
 
 
 def download(url,limit):
-    opener=urllib.request.build_opener(nettrust.proxy_handler(),urllib.request.HTTPSHandler(context=_SSL_CONTEXT))
+    opener=urllib.request.build_opener(nettrust.proxy_handler(),urllib.request.HTTPSHandler(context=nettrust.ssl_context()))
     with opener.open(urllib.request.Request(url,headers={'User-Agent':'Zanjir-setup/0.4'}),timeout=90) as response:
         raw=response.read(limit+1)
     if len(raw)>limit:raise ValueError('Yuklama hajmi chegaradan oshdi.')

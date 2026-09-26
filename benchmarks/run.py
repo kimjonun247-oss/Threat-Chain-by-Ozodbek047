@@ -96,7 +96,8 @@ def bench_sast():
     root = copy_corpus('sast')
     code_targets.register('bench-sast', root)
     report = scanners.start('bench-sast', background=False)
-    files = sorted(p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file())
+    files = sorted(p.relative_to(root).as_posix() for p in root.rglob('*')
+                   if p.is_file() and '__pycache__' not in p.parts)   # compileall / imports leave .pyc
     positives = [f for f in files if not f.startswith('safe/')]
     found = {f['path'] for f in report['findings']}
     gate = {h['subject'] for h in ci_gate.gate_relevant({'stages': [{'kind': 'code', 'report': report}]})}

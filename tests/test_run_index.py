@@ -8,11 +8,13 @@ import json
 import os
 import shutil
 import tempfile
+import sqlite3
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
-from zanjir import run_index
+from zanjir import repo_store, run_index
 
 FIELDS = ('id', 'target', 'created_at', 'state', 'count')
 
@@ -88,12 +90,90 @@ class FreshnessTests(Base):
         self.assertEqual([r['id'] for r in self.rows()], ['20260101T000002'])
 
 
+class WriteThroughTests(Base):
+    def test_a_report_rewritten_by_write_json_is_re_read_even_in_a_long_listing(self):
+        self.write('20260101T000001', state='running', count=0)
+        self.rows()
+        self.reads.clear()
+        repo_store.write_json(self.runs / '20260101T000001' / 'report.json',
+                              {'id': '20260101T000001', 'target': 'app', 'created_at': '20260101T000001',
+                               'state': 'completed', 'count': 42})
+        # Even a listing too long for the per-row check sees the new state.
+        with mock.patch.object(run_index, 'VERIFY_LIMIT', 0):
+            row = self.rows()[0]
+        self.assertEqual((row['state'], row['count']), ('completed', 42))
+        self.assertEqual(self.reads, ['20260101T000001'])     # read once, through the module's read()
+
+    def test_a_non_report_file_written_next_to_flat_reports_is_never_listed(self):
+        def read_flat(rid):
+            if not rid.startswith('2026'):
+                raise ValueError('hisobot emas')
+            return json.loads((self.runs / (rid + '.json')).read_text(encoding='utf-8'))
+        repo_store.write_json(self.runs / '20260101T000001.json', {'id': '20260101T000001', 'created_at': 'x'})
+        run_index.rows(self.runs, FIELDS, read_flat, flat=True)
+        repo_store.write_json(self.runs / 'reviews.json', {'id': 'reviews', 'created_at': 'z'})
+        rows = run_index.rows(self.runs, FIELDS, read_flat, flat=True)
+        self.assertEqual([r['id'] for r in rows], ['20260101T000001'])
+
+    def test_a_listing_is_one_query_not_a_stat_per_report(self):
+        for i in range(40):
+            self.write(f'2026{i // 28 + 1:02d}{i % 28 + 1:02d}T000000')
+        self.rows()
+        checked = []
+        real = run_index.Path.stat
+
+        def counting(path, *args, **kwargs):
+            if path.name == 'report.json':
+                checked.append(path.parent.name)
+            return real(path, *args, **kwargs)
+
+        with mock.patch.object(run_index.Path, 'stat', counting):
+            rows = self.rows(limit=5)
+        self.assertEqual([r['id'] for r in rows], sorted(checked, reverse=True))
+        self.assertEqual(len(checked), 5)          # only the rows returned are re-checked
+
+
 class RepairTests(Base):
-    def test_a_deleted_cache_is_rebuilt_silently(self):
+    def test_a_deleted_index_is_rebuilt_silently(self):
         self.write('20260101T000001')
         self.rows()
-        (self.runs / run_index.CACHE_NAME).unlink()
+        (self.runs / run_index.DB_NAME).unlink()
         self.assertEqual(len(self.rows()), 1)
+        self.assertTrue((self.runs / run_index.DB_NAME).is_file())
+
+    def test_a_damaged_index_file_is_replaced_not_trusted(self):
+        self.write('20260101T000001', count=7)
+        self.rows()
+        (self.runs / run_index.DB_NAME).write_bytes(b'this is not a database' * 100)
+        self.assertEqual(self.rows()[0]['count'], 7)
+        self.assertEqual([r['id'] for r in self.rows()], ['20260101T000001'])
+
+    def test_a_forged_index_row_with_a_stale_stamp_is_not_believed(self):
+        self.write('20260101T000001', count=7)
+        self.rows()
+        connection = sqlite3.connect(str(self.runs / run_index.DB_NAME))
+        connection.execute("UPDATE runs SET row=?", (json.dumps({'id': '20260101T000001', 'count': 999}),))
+        connection.execute("UPDATE runs SET mtime_ns=1")
+        connection.commit()
+        connection.close()
+        self.assertEqual(self.rows()[0]['count'], 7)
+
+    def test_an_index_edited_while_nothing_ran_is_re_checked_by_a_new_process(self):
+        # A long listing skips the per-row check; the once-per-process full check covers it.
+        self.write('20260101T000001', count=7)
+        self.rows()
+        connection = sqlite3.connect(str(self.runs / run_index.DB_NAME))
+        connection.execute("UPDATE runs SET row=?, mtime_ns=1", (json.dumps({'id': '20260101T000001', 'count': 999}),))
+        connection.commit()
+        connection.close()
+        run_index._VERIFIED.clear()            # what a restart looks like
+        with mock.patch.object(run_index, 'VERIFY_LIMIT', 0):
+            self.assertEqual(self.rows()[0]['count'], 7)
+
+    def test_without_a_usable_sqlite_the_json_cache_answers(self):
+        self.write('20260101T000001', count=7)
+        with mock.patch.object(run_index, '_rows_sqlite', side_effect=OSError('read-only')):
+            self.assertEqual(self.rows()[0]['count'], 7)
         self.assertTrue((self.runs / run_index.CACHE_NAME).is_file())
 
     def test_a_corrupted_cache_is_ignored_not_trusted(self):

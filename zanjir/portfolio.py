@@ -232,6 +232,10 @@ def derived(taken):
     "nothing to see" rather than "only one layer is checked".
     """
     registry = registered_targets()
+    # Looked up once: per id, this re-listed every profile and code target, which
+    # with 60 projects was 64 target listings in one dashboard request.
+    names = {t['id']: t['name'] for t in reversed(scanners.targets())}
+    names.update({p['id']: p['name'] for p in reversed(repo_store.list_profiles())})
     groups = {}
     for identifier in sorted(set().union(*registry.values())):
         if identifier in taken:
@@ -239,8 +243,7 @@ def derived(taken):
         stages = {stage: [identifier] for stage, ids in registry.items() if identifier in ids}
         if not stages:
             continue
-        name = next((p['name'] for p in repo_store.list_profiles() if p['id'] == identifier),
-                    next((t['name'] for t in scanners.targets() if t['id'] == identifier), identifier))
+        name = names.get(identifier, identifier)
         groups[identifier] = {'name': name, 'owner': '', 'bundled': False, 'derived': True, 'stages': stages,
                               'single_stage': len(stages) == 1}
     return groups
@@ -297,15 +300,31 @@ def stage_state(rows, targets):
             'incomplete_targets': incomplete, 'unscanned_targets': sorted(set(targets) - set(newest))}
 
 
+def by_target(rows):
+    """{stage: {target: [(position, row), ...]}} so a project reads only its own rows."""
+    grouped = {}
+    for stage, stage_rows in rows.items():
+        index = grouped[stage] = {}
+        for position, row in enumerate(stage_rows):
+            index.setdefault(row.get('target'), []).append((position, row))
+    return grouped
+
+
+def rows_for(grouped, stage, targets):
+    """The stage's rows for these targets, in the same newest-first order as the full list."""
+    picked = [item for target in dict.fromkeys(targets) for item in grouped[stage].get(target, ())]
+    return [row for _, row in sorted(picked, key=lambda item: item[0])]
+
+
 def overview():
-    rows = histories()
+    grouped = by_target(histories())
     known = registered_targets()
     result = []
     for identifier, meta in sorted(projects().items(), key=lambda item: item[1]['name'].lower()):
         stages = {}
         for stage in STAGES:
             targets = meta['stages'].get(stage) or []
-            stages[stage] = stage_state(rows[stage], targets) if targets else {
+            stages[stage] = stage_state(rows_for(grouped, stage, targets), targets) if targets else {
                 'targets': [], 'scanned': False, 'state': 'not_registered', 'count': None,
                 'last_scan': None, 'report_id': None, 'scanned_targets': 0}
         scanned = [s for s in stages.values() if s['scanned']]

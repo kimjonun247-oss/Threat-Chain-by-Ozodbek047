@@ -320,6 +320,7 @@ class WriteBoundaryTests(ApiTests):
             self.assertTrue(content_type.startswith('application/json'), path)
             self.assertIn('error', json.loads(body), path)
 
+    @unittest.skipUnless(scanners.semgrep_exe().is_file(), 'Semgrep o‘rnatilmagan (setup_scanners.py)')
     def test_b_a_valid_rule_validates_without_touching_disk(self):
         rule = ('rules:\n'
                 '  - id: namuna-qoida\n'

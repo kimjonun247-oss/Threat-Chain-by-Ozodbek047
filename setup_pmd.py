@@ -24,7 +24,6 @@ from zanjir.repo_store import write_json
 
 from zanjir import nettrust
 
-_SSL_CONTEXT = nettrust.ssl_context()
 
 VERSION = '7.27.0'
 ARCHIVE = f'pmd-dist-{VERSION}-bin.zip'
@@ -53,7 +52,7 @@ def install():
         print('Java topilmadi: PMD uchun Java 8+ kerak. Apex tekshiruvi o‘rnatilmadi.', file=sys.stderr)
         raise SystemExit(1)
     print(f'PMD {VERSION} rasmiy relizi yuklanmoqda ({ARCHIVE}).', flush=True)
-    opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=_SSL_CONTEXT))
+    opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=nettrust.ssl_context()))
     with opener.open(urllib.request.Request(URL, headers={'User-Agent': 'threatchain-setup'}), timeout=300) as response:
         raw = response.read(LIMIT + 1)
     if len(raw) > LIMIT:

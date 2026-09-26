@@ -1,0 +1,7 @@
+# Qoida shablonlari, manifestlar va namunalar SHA-256 bilan pinlangan (masalan webscan
+# Nuclei shablon xeshini tekshiradi). Windows'dagi git (core.autocrlf) ularni CRLF ga
+# o'girsa xesh mos kelmaydi va web skan "Template xeshi o'zgargan" bilan to'xtaydi.
+# Shuning uchun hech bir fayl o'girilmaydi: omborda qanday bo'lsa, diskda ham shunday.
+* -text
+# cmd.exe uchun skriptlar Windows'da CRLF bo'lishi kerak (label/goto LF bilan buziladi).
+*.cmd text eol=crlf

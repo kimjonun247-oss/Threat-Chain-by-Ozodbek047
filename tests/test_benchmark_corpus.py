@@ -18,7 +18,7 @@ EXPECTED = json.loads((BENCH / 'expected.json').read_text(encoding='utf-8'))
 
 class CorpusTests(unittest.TestCase):
     def test_sast_positive_count_matches_expected(self):
-        files = [p for p in (BENCH / 'corpus/sast').rglob('*') if p.is_file()]
+        files = [p for p in (BENCH / 'corpus/sast').rglob('*') if p.is_file() and '__pycache__' not in p.parts]
         positives = [p for p in files if 'safe' not in p.relative_to(BENCH / 'corpus/sast').parts]
         self.assertEqual(len(positives), EXPECTED['sast']['positives'])
         self.assertTrue(any('safe' in p.parts for p in files))

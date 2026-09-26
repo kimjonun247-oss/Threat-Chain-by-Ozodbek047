@@ -65,6 +65,33 @@ Boshqa tizimlar: OSV — batch so'rov + 24 soat kesh; NVD — rasmiy 5 so'rov/30
 (`nice 10`, Linux'da `ionice` idle sinfi; Windows'da BELOW_NORMAL) — natija o'zgarmaydi, faqat
 operatorning boshqa ishiga xalal bermaydi. Ajratilgan skan serverida `THREATCHAIN_NORMAL_PRIORITY=1`.
 
+## Sifat nazorati va katta tarix (2026-09-26)
+
+- **CI** (`.github/workflows/ci.yml`): har push/PR'da lint (Python kompilyatsiyasi + dashboard JS),
+  unit testlar Ubuntu/Windows/macOS da, uchala OS da haqiqiy vositalar bilan `verify_platform.py`,
+  va benchmarklar (natija jadvali job xulosasida).
+- **Benchmarklar** (`benchmarks/`, [README](benchmarks/README.md)): har skaner javobi ma'lum
+  to'plamda o'lchanadi va `expected.json` bilan solishtiriladi — topish kamaysa, noto'g'ri signal
+  paydo bo'lsa, gate qarori o'zgarsa yoki nishonga yuk ortsa, CI yiqiladi.
+- **Hisobot indeksi — SQLite** (Python stdlib, yangi bog'liqlik yo'q): har hisobot papkasida
+  `index.sqlite3`. Ro'yxat — bitta tartiblangan, cheklangan so'rov; `write_json()` hisobotni
+  yozayotganda indeksni ham yangilaydi; qaytarilgan har satr fayl imzosi bo'yicha tekshiriladi;
+  har jarayonda birinchi ro'yxatda hamma satr bir marta tekshiriladi. Indeks — kesh: faylni
+  o'chirish yoki buzilishi xavfsiz (qayta quriladi), SQLite ishlamasa eski JSON kesh javob beradi.
+  60 loyiha × 25 skan = 6000 hisobot (300 MB) ustida o'lchandi:
+
+  | So'rov | Avval | Keyin |
+  |---|---|---|
+  | `scanners.history(30)`, jarayon ishga tushgandan keyin birinchi | 776 ms | 15 ms |
+  | `images.history(hammasi)`, birinchi | 804 ms | 20 ms |
+  | boshqaruv paneli (`dashboard.overview`) | ~380 ms | 130–180 ms |
+  | portfolio | 150–180 ms | 44–72 ms |
+  | portfolio trendi | 130–145 ms | ~36 ms |
+  | topilmalar qidiruvi, birinchi | 893 ms | ~310 ms |
+
+- **`THREATCHAIN_DATA_DIR`**: hisobotlar, ro'yxatlar, triage va sozlamalarni boshqa papkaga
+  ko'chiradi (bir nechta izolyatsiyalangan o'rnatma, benchmark, zaxira).
+
 ## Vositalar aniqligi — alohida sinov (2026-09-25)
 
 | Vosita | Sinov | Natija |

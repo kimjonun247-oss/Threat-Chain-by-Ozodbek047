@@ -32,7 +32,6 @@ from zanjir.repo_store import write_json
 
 from zanjir import nettrust
 
-_SSL_CONTEXT = nettrust.ssl_context()
 
 GITLEAKS_VERSION = '8.30.1'
 SEMGREP_VERSION = '1.177.0'
@@ -50,7 +49,7 @@ def gitleaks_archive():
 
 
 def download(url, limit):
-    opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=_SSL_CONTEXT))
+    opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=nettrust.ssl_context()))
     with opener.open(urllib.request.Request(url, headers={'User-Agent': 'threatchain-setup'}), timeout=120) as response:
         raw = response.read(limit + 1)
     if len(raw) > limit:

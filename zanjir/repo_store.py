@@ -142,6 +142,9 @@ def write_json(path,value):
                 time.sleep(0.02 * (attempt + 1))
     finally:
         if temp.exists():temp.unlink()
+    # Keep the run index current without re-walking the folder (run_index.written).
+    from . import run_index
+    run_index.written(path,value)
 
 
 def read_json(path):

@@ -130,6 +130,10 @@ Skan tugaganda bitta qator qo'shiladi. `history()` faqat indeksni o'qiydi.
 **kesh**, manba emas — yo'q yoki buzilgan bo'lsa, kod avvalgidek papkani skanerlab qayta quradi.
 Hisobotning o'zi hech qachon indeksdan o'qilmaydi.
 
+**Yangilanish (2026-09-26).** JSON kesh 6000 hisobotda ham har ro'yxatda hamma faylni `stat` qilardi
+(dashboard so'rovida 19 ro'yxat, ~22 000 `stat`). Endi `index.sqlite3` (stdlib `sqlite3`) + `write_json()`
+orqali write-through; JSON kesh zaxira yo'l sifatida qoldi. Raqamlar README'da.
+
 ---
 
 ## Qadam 4 — Beshta modulda takrorlangan naqshni birlashtirish

@@ -37,7 +37,6 @@ from vendor import yaml
 
 from zanjir import nettrust
 
-_SSL_CONTEXT = nettrust.ssl_context()
 
 ROOT = Path(__file__).resolve().parent
 TARGET = ROOT / 'scanner-rules/semgrep-registry'
@@ -77,7 +76,7 @@ def download():
     """
     request = urllib.request.Request(ARCHIVE_URL, headers={'User-Agent': 'threatchain-setup'})
     try:
-        with urllib.request.urlopen(request, context=_SSL_CONTEXT, timeout=300) as response:
+        with urllib.request.urlopen(request, context=nettrust.ssl_context(), timeout=300) as response:
             raw = response.read(MAX_ARCHIVE + 1)
     except OSError as error:
         print(f'Arxiv yuklanmadi ({error}); pinlangan commit git orqali olinmoqda.', file=sys.stderr)
