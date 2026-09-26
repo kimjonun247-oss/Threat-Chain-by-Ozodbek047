@@ -832,8 +832,161 @@ def normalize_nuclei(raw, base, templates, collector, missing_hash):
                     'Mavjud bo‘lmagan yo‘l ham ayni mazmunni qaytardi. Aniq fayl ochiqligi tasdiqlanmagan. Mos qoidalar: ' + ', '.join(sorted(ambiguous)),
                     'Fallback javobini ko‘rib chiqing: namunaviy matnmi yoki haqiqiy maxfiy konfiguratsiyami? Haqiqiy sir bo‘lsa almashtiring.',
                     verified=False)
+        f['matched_rules'] = sorted(ambiguous)
         findings[f['id']] = f
     return list(findings.values()), suppressed
+
+
+# ---- confirmation pass -----------------------------------------------------------
+# One matching response is an observation, not a confirmation: a CORS header can
+# echo one allow-listed origin, a ".env" match can be text inside an HTML error
+# page, a listing can be a one-off. Each such finding gets at most two more GETs
+# -- same safety rules, same budget, same origin -- designed to tell the two
+# apart, and the outcome is recorded next to the finding:
+#   confirmed       the second, independent look shows the same thing and the
+#                   content has the structure the rule claims (it IS an env file,
+#                   a git config, SQL, a compose file, an API description);
+#   not_reproduced  it did not; the finding stays, marked for manual review;
+#   inconclusive    the extra request could not be made (budget, window, error).
+CONFIRM_BUDGET = 10
+ENV_LINE = re.compile(r'^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=')
+
+
+def looks_like_html(body):
+    return body.lstrip()[:15].lower().startswith((b'<!doctype', b'<html', b'<head', b'<body'))
+
+
+def env_file(body):
+    lines = [l for l in body.decode('utf-8', 'replace').splitlines() if l.strip() and not l.lstrip().startswith('#')]
+    hits = sum(bool(ENV_LINE.match(l)) for l in lines)
+    return not looks_like_html(body) and hits >= 1 and hits >= 0.6 * len(lines)
+
+
+def structured(body, kind):
+    text = body.decode('utf-8', 'replace')
+    if kind == 'env':
+        return env_file(body)
+    if kind == 'git':
+        return '[core]' in text and 'repositoryformatversion' in text
+    if kind == 'sql':
+        return not looks_like_html(body) and bool(re.search(r'(?im)^\s*(create table|insert into|drop table|copy .* from stdin)', text))
+    if kind in ('compose', 'openapi'):
+        try:
+            document = json.loads(text) if text.lstrip().startswith('{') else yaml.safe_load(text)
+        # The body is the target's, not ours: any parse failure means "not that file".
+        except (ValueError, yaml.YAMLError, RecursionError):
+            return False
+        if not isinstance(document, dict):
+            return False
+        if kind == 'compose':
+            return isinstance(document.get('services'), dict)
+        return bool(document.get('openapi') or document.get('swagger')) and isinstance(document.get('paths'), dict)
+    if kind == 'listing':
+        return bool(DIRECTORY_LISTING.search(body[:4096])) and body.lower().count(b'<a href') >= 1
+    return False
+
+
+STRUCTURE = {'zanjir-env': 'env', 'git-config': 'git', 'zanjir-sql-backup': 'sql', 'zanjir-compose': 'compose',
+             'zanjir-openapi': 'openapi', 'dir-listing': 'listing', 'http-dir-listing': 'listing'}
+
+
+def resolve_fallback(collector, item):
+    """The site answers every path with the same body, and that body matched a
+    sensitive-file rule. Either the fallback really is such a file (every URL
+    leaks it) or the rule matched text inside an ordinary page."""
+    probe = '/zanjir-confirm-' + uuid.uuid4().hex
+    collector.allow(probe)
+    status, _, body = collector.fetch(probe)
+    kinds = sorted({STRUCTURE[r] for r in item.get('matched_rules') or [] if r in STRUCTURE})
+    if status not in (200, 206):
+        return 'not_reproduced', f'yangi tasodifiy yo‘l {status} qaytardi — fallback barqaror emas'
+    matching = [kind for kind in kinds if structured(body, kind)]
+    if matching:
+        return 'confirmed', 'har qanday yo‘l ' + ', '.join(matching) + ' tuzilmali mazmun qaytaradi'
+    return 'dismissed', 'fallback oddiy sahifa (' + ('HTML' if looks_like_html(body) else 'config tuzilmasi yo‘q') + \
+        '); qoida matni sahifa ichida uchragan, fayl ochiqligi yo‘q'
+
+
+def confirm_findings(collector, findings):
+    """Re-check theoretical findings with a second, independent GET. Returns a summary.
+
+    A dismissed finding is removed from `findings` (in place) and returned in
+    summary['dismissed_findings'] with the reason, so it stays in the report.
+    """
+    summary = {'checked': 0, 'confirmed': 0, 'not_reproduced': 0, 'inconclusive': 0, 'dismissed': 0, 'requests': 0,
+               'dismissed_findings': []}
+    for item in list(findings):
+        rule = item.get('rule_id')
+        if rule == 'ambiguous-fallback' and summary['requests'] < CONFIRM_BUDGET:
+            summary['checked'] += 1
+            before = collector.requests
+            try:
+                outcome, method = resolve_fallback(collector, item)
+            except (ValueError, OSError, http.client.HTTPException, TimeoutError) as error:
+                outcome, method = 'inconclusive', f'qo‘shimcha so‘rov bajarilmadi ({type(error).__name__})'
+            summary['requests'] += collector.requests - before
+            summary[outcome] += 1
+            item['confirmation'] = {'state': outcome, 'method': method, 'at': now()}
+            if outcome == 'dismissed':
+                findings.remove(item)
+                summary['dismissed_findings'].append(item)
+            elif outcome == 'confirmed':
+                item.update(verified=True, severity='HIGH', title='Har qanday yo‘l sezgir fayl mazmunini qaytaradi',
+                            verification_note='Ikkinchi mustaqil GET bilan tasdiqlandi: ' + method + '.')
+            continue
+        if rule not in STRUCTURE and not rule.startswith('cors-'):
+            continue
+        if summary['requests'] >= CONFIRM_BUDGET:
+            outcome, method = 'inconclusive', 'tasdiqlash so‘rovlari chegarasi tugadi'
+        else:
+            summary['checked'] += 1
+            before = collector.requests
+            try:
+                outcome, method = confirm_one(collector, item)
+            except (ValueError, OSError, http.client.HTTPException, TimeoutError) as error:
+                outcome, method = 'inconclusive', f'qo‘shimcha so‘rov bajarilmadi ({type(error).__name__})'
+            summary['requests'] += collector.requests - before
+        summary[outcome] += 1
+        item['confirmation'] = {'state': outcome, 'method': method, 'at': now()}
+        if outcome == 'confirmed':
+            item['verified'] = True
+            item['verification_note'] = ('Ikkinchi mustaqil GET bilan tasdiqlandi: ' + method +
+                                         '. Amaliy xavf va biznes ta’siri baribir mutaxassis tomonidan baholanadi.')
+        elif outcome == 'not_reproduced':
+            item['verified'] = False
+            item['verification_note'] = 'Birinchi javob takrorlanmadi yoki mazmun kutilgan tuzilmaga mos emas: ' + method + '. Qo‘lda tekshiring.'
+    return summary
+
+
+def confirm_one(collector, item):
+    rule, path = item['rule_id'], item['path']
+    if rule.startswith('cors-'):
+        # A different, random origin: an allow-list that happened to include the
+        # first probe does not reflect this one; blind reflection does.
+        origin = 'https://zanjir-confirm-' + uuid.uuid4().hex[:10] + '.invalid'
+        _, headers, _ = collector.fetch('/', extra_headers={'Origin': origin})
+        acao = headers.get('access-control-allow-origin', '')
+        acac = headers.get('access-control-allow-credentials', '').strip().lower() == 'true'
+        if acac and (acao == origin or (acao == '*' and rule == 'cors-wildcard-credentials')):
+            return 'confirmed', 'boshqa tasodifiy Origin ham credentials bilan qabul qilindi'
+        return 'not_reproduced', 'ikkinchi tasodifiy Origin aks ettirilmadi (ehtimol ruxsat ro‘yxati)'
+    kind = STRUCTURE[rule]
+    status, _, body = collector.fetch(path, extra_headers={'Cache-Control': 'no-cache'})
+    first = collector.cache.get((path, ()))
+    if status not in (200, 206):
+        return 'not_reproduced', f'ikkinchi so‘rov {status} qaytardi'
+    if first and hashlib.sha256(first[2]).digest() != hashlib.sha256(body).digest() and kind != 'listing':
+        return 'not_reproduced', 'ikkinchi javob mazmuni birinchisidan farq qildi'
+    if not structured(body, kind):
+        return 'not_reproduced', {'env': 'KEY=VALUE qatorlari yo‘q (HTML yoki boshqa mazmun)', 'git': '[core] bo‘limi yo‘q',
+                                  'sql': 'SQL buyruqlari yo‘q', 'compose': '`services` bo‘limi yo‘q',
+                                  'openapi': '`openapi`/`paths` yo‘q', 'listing': 'papka indeksi emas'}[kind]
+    return 'confirmed', {'env': 'javob barqaror va KEY=VALUE ko‘rinishidagi haqiqiy .env fayli',
+                         'git': 'javob barqaror va haqiqiy git config ([core])',
+                         'sql': 'javob barqaror va SQL dump buyruqlarini o‘z ichiga oladi',
+                         'compose': 'javob barqaror va `services` bo‘limli Compose fayli',
+                         'openapi': 'javob barqaror va `paths` bo‘limli API tavsifi',
+                         'listing': 'qayta so‘rovda ham avtomatik papka indeksi'}[kind]
 
 
 def run_nuclei(collector, templates, folder, cancel, missing_hash):
@@ -929,6 +1082,10 @@ def execute(profile, rid, event):
         findings, tool = run_nuclei(collector, templates, folder, event, hashlib.sha256(missing_body).hexdigest())
         report['findings'] += findings
         report['tool'] = tool
+        report['progress'] = 'Topilmalar ikkinchi mustaqil GET bilan tasdiqlanmoqda.'
+        confirmation = confirm_findings(collector, report['findings'])
+        report['dismissed_findings'] = confirmation.pop('dismissed_findings')
+        report['confirmation_summary'] = confirmation
         report['state'] = 'completed'
     except (OSError, ValueError, KeyError, TypeError, http.client.HTTPException, subprocess.SubprocessError) as error:
         stopped = collector.stopped if collector else None
@@ -1083,13 +1240,20 @@ def markdown(report):
     lines = ['# Zanjir — web tekshiruvi', '', 'Nishon: ' + report['url'], 'Holat: ' + report['state'],
              'Hisobot: ' + report['id'], '', report['limits'], '',
              f"Tasdiqlash: {verification['confirmed_by_evidence']} dalil bilan tasdiqlangan / "
-             f"{verification['manual_review_required']} qo‘lda tekshirish talab qiladi (jami {verification['total']}).", '',
+             f"{verification['manual_review_required']} qo‘lda tekshirish talab qiladi (jami {verification['total']}).",
+             *([f"Ikkinchi GET bilan qayta tekshirildi: {c['checked']} · tasdiqlandi {c['confirmed']} · takrorlanmadi "
+                f"{c['not_reproduced']} · rad etildi {c['dismissed']} · noaniq {c['inconclusive']} ({c['requests']} so‘rov)."]
+               if (c := report.get('confirmation_summary')) else []), '',
              '| Vosita | Og‘irlik | Yo‘l | Topilma | CWE | OWASP Top 10 | Tasdiqlangan | Tuzatish |',
              '|---|---|---|---|---|---|---|---|']
     for f in report['findings']:
         owasp = ', '.join(o['code'] for o in f.get('owasp_top10_2025') or []) or '\u2014'
         lines.append('| ' + ' | '.join(cell(v) for v in (f['tool'], f['severity'], f['path'], f['title'],
                      ', '.join(f.get('cwe_ids') or []) or '\u2014', owasp,
-                     'Ha' if f.get('verified') else 'Yo\u2018q, qo\u2018lda tekshirish kerak', f['remediation'])) + ' |')
+                     ('Ha' if f.get('verified') else 'Yo\u2018q, qo\u2018lda tekshirish kerak') +
+                     (f" ({f['confirmation']['state']}: {f['confirmation']['method']})" if f.get('confirmation') else ''),
+                     f['remediation'])) + ' |')
+    for f in report.get('dismissed_findings') or []:
+        lines.append(f"- Rad etildi: {cell(f['title'])} — {cell(f['confirmation']['method'])}")
     lines += ['', 'Qamrov: ' + cell(json.dumps(report.get('coverage', {}), ensure_ascii=False))]
     return '\n'.join(lines) + '\n'

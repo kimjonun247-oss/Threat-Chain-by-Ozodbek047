@@ -86,7 +86,8 @@
     ],
     "fixed_exactly": [
       "http-transport"
-    ]
+    ],
+    "min_confirmed": 7
   },
   "impact": {
     "keepalive_max_connections": 1,

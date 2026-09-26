@@ -230,15 +230,23 @@ def web_scan(target_id, url):
 
 def bench_web():
     need(webscan.BINARY.is_file(), 'Nuclei o‘rnatilmagan')
-    got = {}
+    got, confirmation = {}, {}
     for mode in ('vuln', 'fixed'):
         with server('web_target.py', mode) as url:
-            got[mode] = {f['rule_id'] for f in web_scan('bench-web-' + mode, url)['findings']}
+            report = web_scan('bench-web-' + mode, url)
+            got[mode] = {f['rule_id'] for f in report['findings']}
+            confirmation[mode] = report.get('confirmation_summary') or {}
     spec = EXPECTED['web']
     missing = sorted(set(spec['vulnerable_must_find']) - got['vuln'])
-    ok = not missing and got['fixed'] == set(spec['fixed_exactly'])
-    record('web', ok, f'zaif sayt: yetishmagan {missing}; tuzatilgan sayt: {sorted(got["fixed"])}',
-           {'vulnerable': sorted(got['vuln']), 'fixed': sorted(got['fixed'])})
+    # Every theoretical finding on the vulnerable site is real, so the second
+    # look must confirm all of them -- a regression in a structure check shows here.
+    confirmed = confirmation['vuln'].get('confirmed', 0)
+    doubted = confirmation['vuln'].get('not_reproduced', 0) + confirmation['vuln'].get('inconclusive', 0)
+    ok = not missing and got['fixed'] == set(spec['fixed_exactly']) and \
+        confirmed >= spec['min_confirmed'] and doubted == 0
+    record('web', ok, f'zaif sayt: yetishmagan {missing}, ikkinchi GET tasdiqladi {confirmed} (shubhali {doubted}); '
+                      f'tuzatilgan sayt: {sorted(got["fixed"])}',
+           {'vulnerable': sorted(got['vuln']), 'fixed': sorted(got['fixed']), 'confirmation': confirmation['vuln']})
 
 
 def bench_impact():

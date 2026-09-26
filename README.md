@@ -76,6 +76,24 @@ Trivy bazasi keraksiz yangilanmaydi.
 (`nice 10`, Linux'da `ionice` idle sinfi; Windows'da BELOW_NORMAL) — natija o'zgarmaydi, faqat
 operatorning boshqa ishiga xalal bermaydi. Ajratilgan skan serverida `THREATCHAIN_NORMAL_PRIORITY=1`.
 
+## Nazariy topilmani ikkinchi GET bilan tasdiqlash (2026-09-26)
+
+Bitta mos javob — bu kuzatuv, tasdiq emas. Web skan oxirida har bir nazariy topilma xavfsiz qo'shimcha GET bilan
+(o'sha chegaralar, o'sha kunlik limit; jami ≤ 10 so'rov) qayta tekshiriladi va natija topilma yonida yoziladi:
+
+| Topilma | Ikkinchi qarash | Tasdiqlanadi, agar |
+|---|---|---|
+| CORS reflected origin | Boshqa, tasodifiy `Origin` | u ham credentials bilan aks ettirilsa (ruxsat ro'yxati emas, ko'r-ko'rona) |
+| `.env` | Keshsiz qayta GET + tuzilma | javob barqaror va haqiqatan `KEY=VALUE` fayli (HTML ichidagi iqtibos emas) |
+| SQL backup, git config, Compose, OpenAPI | Keshsiz qayta GET + tuzilma | `CREATE/INSERT`, `[core]`, `services`, `openapi`+`paths` bor |
+| Papka indeksi | Qayta GET | yana avtomatik indeks |
+| Bir xil fallback (SPA) | Yangi tasodifiy yo'l | fallback o'zi config fayli bo'lsa — HIGH; oddiy HTML bo'lsa — **rad etiladi** (sababi hisobotda) |
+
+Holatlar: `confirmed`, `not_reproduced` (qo'lda tekshirish), `inconclusive` (so'rov bajarilmadi), `dismissed`.
+Benchmark: zaif saytdagi 7 ta nazariy topilmaning hammasi 7 ta qo'shimcha so'rov bilan tasdiqlanadi (CI talab qiladi);
+aldovchi nishonlar (ruxsat ro'yxatli CORS, `.env` matnini iqtibos qilgan HTML, har safar o'zgaradigan javob, SPA
+fallback) `not_reproduced` yoki `dismissed` bo'ladi (`tests/test_web_confirm.py`).
+
 ## Jamoa rejimi: login, rollar, audit, TLS (2026-09-26)
 
 Standart holat o'zgarmaydi: server faqat `127.0.0.1` da, foydalanuvchi yo'q bo'lsa login so'ralmaydi. Jamoa uchun:
