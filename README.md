@@ -60,7 +60,10 @@ kolektor orqali (takror yo'l keshdan). Har bir web hisobotida `impact` bo'limi b
 boshlang'ich/yakuniy kechikish, sekinlashuvlar, rad javoblari va to'xtash sababi.
 
 Boshqa tizimlar: OSV — batch so'rov + 24 soat kesh; NVD — rasmiy 5 so'rov/30 s chegarasi; git — sayoz
-(`--depth 1`, teglarsiz) vaqtinchalik klon; Trivy bazasi keraksiz yangilanmaydi.
+(`--depth 1`, teglarsiz) va qisman (`--filter=blob:limit=1m`) vaqtinchalik klon — 1 MB dan katta fayllar
+serverdan umuman so'ralmaydi (kod skanerlari ularni baribir o'tkazib yuboradi), faqat lockfile/manifestlar
+hajmidan qat'i nazar yuklanadi; o'tkazilganlar hisobotda `source.partial_clone` va qamrovda ko'rinadi;
+Trivy bazasi keraksiz yangilanmaydi.
 **Skaner ishlayotgan kompyuter:** Semgrep, Gitleaks, Trivy va Nuclei past ustuvorlikda ishlaydi
 (`nice 10`, Linux'da `ionice` idle sinfi; Windows'da BELOW_NORMAL) — natija o'zgarmaydi, faqat
 operatorning boshqa ishiga xalal bermaydi. Ajratilgan skan serverida `THREATCHAIN_NORMAL_PRIORITY=1`.

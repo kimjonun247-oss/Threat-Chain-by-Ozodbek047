@@ -107,11 +107,28 @@ def directory_bytes(path):
     return total
 
 
+# Blobs this size or larger are not downloaded. The code scanners skip every
+# file over 1 MB anyway (scanners.MAX_FILE), so fetching them only loaded the
+# git server and the network: in repositories that keep media, datasets or
+# build outputs in git that was most of the clone. Dependency manifests are the
+# exception -- a package-lock.json or yarn.lock is often larger than 1 MB and
+# is read in full -- so those are fetched whatever their size.
+BLOB_LIMIT = 1024 * 1024 + 1
+
+
+def needed_whatever_size(path):
+    from . import inventory
+    name = path.rsplit('/', 1)[-1]
+    return name in inventory.SUPPORTED or name in inventory.TOML_SUPPORTED or name in inventory.UNSUPPORTED
+
+
 def clone(url, ref='', into=None):
     """Shallow-clone `url` and return (path, provenance). The caller removes it."""
-    import os
-    url = check_url(url)
-    ref = check_ref(ref)
+    return fetch(check_url(url), check_ref(ref), into)
+
+
+def fetch(url, ref='', into=None):
+    """clone() after validation; tests call it with a file:// URL clone() refuses."""
     # Resolved, because the scanners check that every file they copy stays
     # inside the source root: on macOS /var is a symlink to /private/var, so an
     # unresolved temp path makes that check fail on every remote scan.
@@ -122,27 +139,61 @@ def clone(url, ref='', into=None):
     # directory is inside the temp folder and goes away with it.
     hooks = folder / 'no-hooks'
     hooks.mkdir(exist_ok=True)
-    command = [git(), '-c', f'core.hooksPath={hooks}', 'clone', '--depth', '1',
-               '--no-tags', '--recurse-submodules=no', '--config', 'core.symlinks=false']
-    if ref:
-        command += ['--branch', ref]
-    command += ['--', url, str(target)]
     env = {k: v for k, v in os.environ.items()
            if k.upper() in {'PATH', 'HOME', 'USERPROFILE', 'SYSTEMROOT', 'WINDIR', 'COMSPEC',
                             'SSH_AUTH_SOCK', 'TMPDIR', 'TEMP', 'TMP'}}
     env.update(environment())
-    try:
-        done = subprocess.run(command, capture_output=True, text=True, encoding='utf-8',
-                              errors='replace', timeout=CLONE_TIMEOUT, env=env, cwd=str(folder))
-    except subprocess.TimeoutExpired:
-        remove(folder)
-        raise ValueError(f'Klonlash {CLONE_TIMEOUT} soniyada tugamadi.') from None
-    except OSError as error:
-        remove(folder)
-        raise ValueError(f'Klonlash bajarilmadi: {error}') from None
-    if done.returncode != 0:
-        remove(folder)
-        raise ValueError('Klonlash bajarilmadi: ' + redact(done.stderr or done.stdout)[-300:])
+
+    def run(arguments, what, **extra):
+        try:
+            done = subprocess.run([git(), '-c', f'core.hooksPath={hooks}', *arguments], capture_output=True,
+                                  text=True, encoding='utf-8', errors='replace', timeout=CLONE_TIMEOUT,
+                                  env={**env, **extra}, cwd=str(folder))
+        except subprocess.TimeoutExpired:
+            remove(folder)
+            raise ValueError(f'{what} {CLONE_TIMEOUT} soniyada tugamadi.') from None
+        except OSError as error:
+            remove(folder)
+            raise ValueError(f'{what} bajarilmadi: {error}') from None
+        if done.returncode != 0:
+            remove(folder)
+            raise ValueError(f'{what} bajarilmadi: ' + redact(done.stderr or done.stdout)[-300:])
+        return done.stdout
+
+    command = ['clone', '--depth', '1', '--no-tags', '--recurse-submodules=no', '--no-checkout',
+               f'--filter=blob:limit={BLOB_LIMIT}', '--config', 'core.symlinks=false']
+    if ref:
+        command += ['--branch', ref]
+    run(command + ['--', url, str(target)], 'Klonlash')
+
+    # Which blobs the server left out. --missing=print lists them without
+    # fetching; a server that ignores the filter simply leaves none missing.
+    missing = {line[1:].split()[0] for line in
+               run(['-C', str(target), 'rev-list', '--objects', '--missing=print', 'HEAD'], 'Klonni o‘qish').splitlines()
+               if line.startswith('?')}
+    wanted, skipped, fetched_large = [], [], []
+    for entry in run(['-C', str(target), 'ls-tree', '-r', '-z', '--full-tree', 'HEAD'], 'Klonni o‘qish').split('\0'):
+        if not entry:
+            continue
+        meta, _, path = entry.partition('\t')
+        kind, oid = meta.split()[1:3]
+        if kind != 'blob':
+            continue                        # submodules are not cloned
+        if oid not in missing:
+            wanted.append(path)
+        elif needed_whatever_size(path):
+            wanted.append(path)
+            fetched_large.append(path)
+        else:
+            skipped.append(path)
+    if wanted:
+        # Only the listed paths are checked out, so git never asks the server
+        # for the left-out blobs; the large manifests among them are fetched here.
+        listing = folder / 'checkout-paths'
+        listing.write_bytes(b'\0'.join(path.encode('utf-8') for path in wanted))
+        run(['-C', str(target), 'checkout', 'HEAD', f'--pathspec-from-file={listing}', '--pathspec-file-nul'],
+            'Fayllarni chiqarish', GIT_LITERAL_PATHSPECS='1')
+        listing.unlink()
     size = directory_bytes(target)
     if size > MAX_BYTES:
         remove(folder)
@@ -151,9 +202,15 @@ def clone(url, ref='', into=None):
     return target, {
         'source_type': 'remote_git', 'url': redact(url), 'ref': ref or '(standart branch)',
         'commit': commit, 'depth': 1, 'submodules': False, 'bytes': size,
+        'partial_clone': {'blob_limit_bytes': BLOB_LIMIT - 1,
+                          'large_files_not_downloaded': len(skipped),
+                          'examples': sorted(skipped)[:20],
+                          'large_manifests_downloaded': sorted(fetched_large)},
         'execution': 'faqat o‘qish; hook’lar o‘chirilgan, hech qanday kod bajarilmagan',
         'note': ('Vaqtinchalik nusxa: skan tugagach o‘chiriladi. Commit yozib olindi — keyingi '
-                 'hisobot aynan shu holat bilan solishtiriladi, branch nomi bilan emas.'),
+                 'hisobot aynan shu holat bilan solishtiriladi, branch nomi bilan emas. 1 MB dan '
+                 'katta fayllar yuklanmadi (kod skanerlari ularni baribir o‘tkazib yuboradi), '
+                 'bog‘liqlik manifestlari bundan mustasno.'),
     }
 
 

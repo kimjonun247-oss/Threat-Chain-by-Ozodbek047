@@ -293,5 +293,53 @@ class CloneRemovalTests(unittest.TestCase):
         remote_source.remove(Path(tempfile.gettempdir()) / 'threatchain-no-such-clone-folder')
 
 
+
+@unittest.skipUnless(shutil.which('git'), 'git o‘rnatilmagan')
+class PartialCloneTests(unittest.TestCase):
+    """Files the scanners would skip anyway are never downloaded from the server."""
+
+    @classmethod
+    def setUpClass(cls):
+        import subprocess
+        cls.origin = Path(tempfile.mkdtemp())
+        cls.addClassCleanup(remote_source.remove, cls.origin)
+        (cls.origin / 'app').mkdir()
+        (cls.origin / 'app' / 'main.py').write_text('print(1)\n', encoding='utf-8')
+        (cls.origin / 'media').mkdir()
+        (cls.origin / 'media' / 'video.bin').write_bytes(os.urandom(3 * 1024 * 1024))
+        packages = {f'node_modules/p{i}': {'version': '1.0.0', 'resolved': 'x' * 60} for i in range(20000)}
+        (cls.origin / 'package-lock.json').write_text(
+            json.dumps({'lockfileVersion': 3, 'packages': {'': {}, **packages}}), encoding='utf-8')
+        env = {**os.environ, 'GIT_AUTHOR_NAME': 't', 'GIT_AUTHOR_EMAIL': 't@t', 'GIT_COMMITTER_NAME': 't',
+               'GIT_COMMITTER_EMAIL': 't@t'}
+        for command in (['init', '-q'], ['add', '-A'], ['commit', '-qm', 'init'],
+                        ['config', 'uploadpack.allowFilter', 'true']):
+            subprocess.run(['git', '-C', str(cls.origin), *command], check=True, env=env, capture_output=True)
+        cls.path, cls.provenance = remote_source.fetch(cls.origin.as_uri())
+        cls.addClassCleanup(remote_source.remove, cls.path.parent)
+
+    def test_small_files_are_checked_out(self):
+        self.assertEqual((self.path / 'app' / 'main.py').read_text(encoding='utf-8'), 'print(1)\n')
+
+    def test_a_large_file_is_neither_checked_out_nor_downloaded(self):
+        import subprocess
+        self.assertFalse((self.path / 'media' / 'video.bin').exists())
+        missing = subprocess.run(['git', '-C', str(self.path), 'rev-list', '--objects', '--missing=print', 'HEAD'],
+                                 capture_output=True, text=True, check=True).stdout
+        self.assertEqual(sum(line.startswith('?') for line in missing.splitlines()), 1)
+        info = self.provenance['partial_clone']
+        self.assertEqual((info['large_files_not_downloaded'], info['examples']), (1, ['media/video.bin']))
+
+    def test_a_large_lockfile_is_still_downloaded_in_full(self):
+        lock = self.path / 'package-lock.json'
+        self.assertGreater(lock.stat().st_size, 1024 * 1024)
+        self.assertEqual(json.loads(lock.read_text(encoding='utf-8'))['lockfileVersion'], 3)
+        self.assertEqual(self.provenance['partial_clone']['large_manifests_downloaded'], ['package-lock.json'])
+
+    def test_clone_still_refuses_a_file_url(self):
+        with self.assertRaises(ValueError):
+            remote_source.clone(self.origin.as_uri())
+
+
 if __name__ == '__main__':
     unittest.main()

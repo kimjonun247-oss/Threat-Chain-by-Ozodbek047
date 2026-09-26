@@ -713,6 +713,9 @@ def execute(target,rid):
             if not work.is_relative_to(folder.resolve()):raise ValueError('Vaqtinchalik papka chegarasi noto‘g‘ri.')
             coverage=snapshot(source,work/'source')
             write(folder/'snapshot-manifest.json',coverage.pop('manifest'))
+            # Files a partial clone never downloaded are as unscanned as the large
+            # files the snapshot skipped, and are counted with them.
+            coverage['skipped']['large']+=(provenance.get('partial_clone') or {}).get('large_files_not_downloaded',0)
             report['coverage']=coverage
             manifest=registry_manifest()
             messages={**local_messages(),**registry_messages(manifest)}
