@@ -128,6 +128,13 @@ bergan sayt ustida sinab topilgan nuqsonlar. Tafsilot: [MUAMMOLAR.md](MUAMMOLAR.
 - **Nuclei `.env` va SQL dump shablonlari (v2):** faqat sirdan iborat `.env` va
   mysqldump sarlavhasisiz SQL eksporti endi topiladi. Nazorat sinovi (`validate_web.py`,
   jumladan soft-404 rejimi) o'zgarishsiz o'tadi.
+- **NuGet va Maven/Gradle (2026-09-26):** `packages.lock.json` (NuGet), `mvn dependency:tree` natijasi
+  (`dependency-tree.txt` — `[INFO]` bilan konsol chiqishi ham, yoki `-DoutputType=json` bilan `dependency-tree.json`)
+  va `gradle dependencies` natijasi (`gradle-dependencies.txt`) o'qiladi. Build vositasini operator ishga tushiradi —
+  ThreatChain hech qachon repository kodini bajarmaydi. Gradle'da `->` dan keyingi, ya'ni haqiqatan tanlangan versiya
+  olinadi; faqat `*Classpath` konfiguratsiyalari (annotationProcessor emas); `(c)`, `(n)`, `project :x` va Maven'ning
+  `omitted for conflict` qatorlari hisoblanmaydi. Yonida shunday fayl bo'lgan `pom.xml`/`build.gradle` bo'shliq
+  hisoblanmaydi; lock'siz `.csproj` esa buyruq bilan nomli bo'shliq bo'ladi.
 - **`yarn.lock` (v1 va Berry) va `pnpm-lock.yaml` (v5/v6/v9) o'qiladi** — avval "qo'llanmaydi"
   bo'shlig'i edi, ya'ni Yarn/pnpm loyihalarining npm paketlari umuman tekshirilmasdi.
   git/fayl/workspace manbalari taxmin qilinmaydi, nomli bo'shliq bo'ladi.

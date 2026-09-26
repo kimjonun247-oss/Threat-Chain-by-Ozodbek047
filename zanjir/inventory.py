@@ -22,17 +22,25 @@ except ModuleNotFoundError:           # Python 3.10 has no tomllib
 # has to be resolved by running a build tool stays out: this module never runs
 # repository code, so it would have to guess, and a guessed version produces
 # advisory matches that look like evidence but are not.
+# Build-tool output is accepted where the build tool itself resolved every
+# version: `mvn dependency:tree` (text or JSON) and `gradle dependencies`. The
+# operator runs the build tool; this module still never does.
+BUILD_TOOL_OUTPUT={'dependency-tree.txt','dependency-tree.json','gradle-dependencies.txt'}
 SUPPORTED={'package-lock.json','npm-shrinkwrap.json','yarn.lock','pnpm-lock.yaml','go.mod',
-           'Pipfile.lock','composer.lock','Gemfile.lock','gradle.lockfile'}
+           'Pipfile.lock','composer.lock','Gemfile.lock','gradle.lockfile','packages.lock.json'}|BUILD_TOOL_OUTPUT
 TOML_SUPPORTED={'poetry.lock','uv.lock','Cargo.lock'}
-UNSUPPORTED={'packages.lock.json','pom.xml',
-             'build.gradle','build.gradle.kts'}
+UNSUPPORTED={'pom.xml','build.gradle','build.gradle.kts'}
 # An unsupported manifest is a dead end unless the operator is told how to turn
 # it into one of the formats above.
 UNSUPPORTED_HINTS={
     'build.gradle':'gradle_lockfile_missing','build.gradle.kts':'gradle_lockfile_missing',
     'pom.xml':'maven_lockfile_missing',
-    'packages.lock.json':'nuget_lock_unsupported',
+}
+# A build script next to a file that states its resolved versions is covered.
+RESOLVED_BY={
+    'pom.xml':('dependency-tree.txt','dependency-tree.json'),
+    'build.gradle':('gradle.lockfile','gradle-dependencies.txt','dependency-tree.txt'),
+    'build.gradle.kts':('gradle.lockfile','gradle-dependencies.txt','dependency-tree.txt'),
 }
 
 
@@ -393,6 +401,123 @@ def parse_gradle_lockfile(text,path):
     return rows,gaps
 
 
+def parse_nuget_lock(text,path):
+    """packages.lock.json (NuGet, RestorePackagesWithLockFile): resolved per target framework."""
+    doc=json.loads(text);rows=[];gaps=[];seen=set()
+    if not isinstance(doc,dict) or doc.get('version') not in (1,2) or not isinstance(doc.get('dependencies'),dict):
+        raise ValueError('packages.lock.json formati noto‘g‘ri.')
+    for framework,entries in sorted(doc['dependencies'].items()):
+        if not isinstance(entries,dict):raise ValueError('packages.lock.json bo‘limi noto‘g‘ri.')
+        for name,entry in sorted(entries.items()):
+            if not isinstance(entry,dict):
+                gaps.append({'path':path,'reason':'nuget_entry_unresolved','locator':name});continue
+            # A project reference is this repository's own code, not a NuGet release.
+            if entry.get('type')=='Project':continue
+            version=entry.get('resolved')
+            if not isinstance(version,str):
+                gaps.append({'path':path,'reason':'nuget_entry_unresolved','locator':name});continue
+            if (name.lower(),version) in seen:continue      # the same package under several frameworks
+            seen.add((name.lower(),version))
+            try:rows.append(package('NuGet',name,version,path,framework+'/'+name,'locked','lockfile_version'))
+            except ValueError:gaps.append({'path':path,'reason':'nuget_entry_unresolved','locator':name})
+    return rows,gaps
+
+
+MAVEN_SCOPE={'test':'development','provided':'runtime','compile':'runtime','runtime':'runtime','system':'runtime','import':'runtime'}
+
+
+def maven_coordinate(text):
+    """`g:a:type[:classifier]:version:scope` -> (name, version, scope) or None."""
+    parts=text.split(':')
+    if len(parts)==5:group,artifact,_,version,scope=parts
+    elif len(parts)==6:group,artifact,_,_,version,scope=parts
+    else:return None
+    return group+':'+artifact,version,MAVEN_SCOPE.get(scope,'unknown')
+
+
+def parse_maven_tree_json(text,path):
+    """`mvn dependency:tree -DoutputType=json`: the project is the root, dependencies its children."""
+    doc=json.loads(text);rows=[];gaps=[];seen=set()
+    if not isinstance(doc,dict) or 'artifactId' not in doc:raise ValueError('dependency-tree.json formati noto‘g‘ri.')
+    stack=[(child,1) for child in reversed(doc.get('children') or [])]
+    while stack:
+        node,depth=stack.pop()
+        if not isinstance(node,dict):continue
+        stack.extend((child,depth+1) for child in reversed(node.get('children') or []))
+        group,artifact,version=node.get('groupId'),node.get('artifactId'),node.get('version')
+        if not all(isinstance(v,str) and v for v in (group,artifact,version)):
+            gaps.append({'path':path,'reason':'maven_tree_entry_unresolved'});continue
+        name=group+':'+artifact;scope=MAVEN_SCOPE.get(node.get('scope') or 'compile','unknown')
+        if (name,version,scope) in seen:continue
+        seen.add((name,version,scope))
+        try:rows.append(package('Maven',name,version,path,name,scope,'build_tool_resolution'))
+        except ValueError:gaps.append({'path':path,'reason':'maven_tree_entry_unresolved','locator':name})
+    return rows,gaps
+
+
+TREE_LINE=re.compile(r'^(?:\[INFO\] )?([| ]*)(\+-|\\-|\+---|\\---) (.*)$')
+
+
+def parse_dependency_tree(text,path):
+    """Text output of `mvn dependency:tree` or `gradle dependencies`, told apart by the tree marks.
+
+    Maven: `+- g:a:jar:1.0:compile`. Gradle: `+--- g:a:1.0 -> 1.2 (*)`, where the
+    version after `->` is the one the build actually resolved. Entries the tool
+    itself marks as not on the classpath -- Maven's `(... omitted for conflict)`,
+    Gradle's `(n)` not resolved and `(c)` constraint -- are left out, and
+    project references are this repository's own modules.
+    """
+    rows={};gaps=[];scope_now='runtime'
+    # A Gradle report lists every configuration, alphabetically: annotationProcessor
+    # comes before compileClasspath. Only *Classpath configurations are what the
+    # build compiles against or ships, so when the report has them, nothing
+    # outside them counts -- from the first line on.
+    gradle_filter=bool(re.search(r'(?m)^[A-Za-z][A-Za-z0-9]*Classpath(?: - .*)?$',text));wanted=not gradle_filter
+    for index,raw in enumerate(text.splitlines(),1):
+        line=raw.rstrip()
+        header=re.match(r'^([A-Za-z][A-Za-z0-9]*)(?: - .*)?$',line)
+        if header and header.group(1).endswith('Classpath'):
+            scope_now='development' if 'test' in header.group(1).lower() else 'runtime'
+            wanted=True
+            continue
+        if header and gradle_filter:
+            wanted=False                      # annotationProcessor, kapt, ...: not shipped
+            continue
+        match=TREE_LINE.match(line)
+        if not match:continue
+        if gradle_filter and not wanted:continue
+        marker,body=match.group(2),match.group(3).strip()
+        locator='line:'+str(index)
+        if marker in ('+-','\\-'):                                   # Maven
+            if body.startswith('('):continue                           # omitted duplicate/conflict
+            found=maven_coordinate(body.split()[0])
+            if not found:
+                gaps.append({'path':path,'line':index,'reason':'maven_tree_entry_unresolved'});continue
+            name,version,scope=found
+        else:                                                          # Gradle
+            if body.startswith('project ') or body.endswith(('(n)','(c)')) or 'FAILED' in body:continue
+            body=re.sub(r'\s+\([*c n]\)$','',body)
+            requested,_,resolved=body.partition(' -> ')
+            parts=requested.split(':')
+            if len(parts)<2:
+                gaps.append({'path':path,'line':index,'reason':'gradle_tree_entry_unresolved'});continue
+            name=parts[0]+':'+parts[1]
+            version=(resolved or (parts[2] if len(parts)>2 else '')).strip()
+            if not version or version.startswith('{') or ' ' in version:
+                gaps.append({'path':path,'line':index,'reason':'gradle_tree_entry_unresolved','locator':name});continue
+            scope=scope_now
+        # One row per package. testRuntimeClasspath repeats every runtime
+        # dependency; what ships is decided by the runtime appearance.
+        known=rows.get((name,version))
+        if known is not None:
+            if scope=='runtime':known['scope']='runtime'
+            continue
+        try:rows[(name,version)]=package('Maven',name,version,path,locator,scope,'build_tool_resolution')
+        except ValueError:gaps.append({'path':path,'line':index,'reason':'maven_tree_entry_unresolved','locator':name})
+    if not rows and not gaps:raise ValueError('Bog‘liqlik daraxti topilmadi.')
+    return list(rows.values()),gaps
+
+
 def parser_for(name,is_python):
     if is_python:return parse_requirements
     if name=='pyproject.toml':return parse_pyproject
@@ -401,6 +526,9 @@ def parser_for(name,is_python):
     if name=='Gemfile.lock':return parse_gemfile_lock
     if name=='composer.lock':return parse_composer_lock
     if name=='gradle.lockfile':return parse_gradle_lockfile
+    if name=='packages.lock.json':return parse_nuget_lock
+    if name=='dependency-tree.json':return parse_maven_tree_json
+    if name in ('dependency-tree.txt','gradle-dependencies.txt'):return parse_dependency_tree
     if name in ('poetry.lock','uv.lock'):
         return lambda text,path:parse_toml_packages(text,path,'PyPI')
     if name=='yarn.lock':return parse_yarn_lock
@@ -425,6 +553,11 @@ def collect(root):
             seen+=1
             if seen>100000:raise ValueError('Loyiha 100000 fayl chegarasidan oshdi.')
             is_python=bool(re.fullmatch(r'requirements(?:[-_.][A-Za-z0-9_.-]+)?\.txt',name))
+            if name.endswith(('.csproj','.fsproj','.vbproj')):
+                # NuGet resolves versions at restore time; only its lock file states them.
+                if not (Path(current)/'packages.lock.json').is_file():
+                    gaps.append({'path':(Path(current)/name).relative_to(root).as_posix(),'reason':'nuget_lockfile_missing'})
+                continue
             if name not in SUPPORTED|TOML_SUPPORTED|UNSUPPORTED|{'package.json','pyproject.toml'} and not is_python:continue
             file=Path(current)/name;relative=file.relative_to(root).as_posix()
             if linked(file):gaps.append({'path':relative,'reason':'linked_manifest_skipped'});continue
@@ -440,6 +573,8 @@ def collect(root):
             item={'path':relative,'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw),'state':'unsupported'}
             manifests.append(item)
             if name in UNSUPPORTED:
+                if any((file.parent/resolved).is_file() for resolved in RESOLVED_BY.get(name,())):
+                    item['state']='covered_by_resolved_output';continue
                 gaps.append({'path':relative,'reason':UNSUPPORTED_HINTS.get(name,'unsupported_manifest')});continue
             if name=='pyproject.toml' and tomllib is None:
                 gaps.append({'path':relative,'reason':'toml_lock_needs_python_311'});continue
@@ -458,9 +593,10 @@ def collect(root):
             'occurrences':len(rows),'excluded_directories':excluded,
             'scope':('npm lock v1–v3, yarn.lock (v1 va Berry), pnpm-lock.yaml (v5–v9), Python == pins va Pipfile/poetry/uv lock, Go require, '
                      'Gradle lockfile (Maven), Gemfile.lock (RubyGems), composer.lock (Packagist), '
-                     'Cargo.lock (crates.io). Faqat aniq versiya yozilgan formatlar o‘qiladi — versiyani '
-                     'hal qilish uchun build vositasini ishga tushirish kerak bo‘lgan fayllar (pom.xml, '
-                     'build.gradle) qamrovga kirmaydi va bo‘shliq sifatida ko‘rsatiladi. '
+                     'Cargo.lock (crates.io), packages.lock.json (NuGet), `mvn dependency:tree` natijasi '
+                     '(dependency-tree.txt/.json) va `gradle dependencies` natijasi (gradle-dependencies.txt). '
+                     'Faqat aniq versiya yozilgan formatlar o‘qiladi — pom.xml, build.gradle va .csproj yonida '
+                     'shunday fayl bo‘lmasa, ular bo‘shliq sifatida ko‘rsatiladi (buyruq bilan). '
                      'pyproject.toml dan faqat aniq pinlangan (`==`) qatorlar o‘qiladi; diapazon va '
                      'marker bilan yozilganlari bo‘shliq bo‘lib qoladi. '
                      'Tranzitiv bog‘liqliklar va ishlayotgan muhitning to‘liq inventari kafolatlanmaydi. '

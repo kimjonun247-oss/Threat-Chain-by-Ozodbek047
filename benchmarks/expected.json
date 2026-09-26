@@ -165,6 +165,37 @@
       "gaps": 0
     }
   ],
+  "jvm_dotnet": {
+    "_comment": "Real `mvn dependency:tree` (text + JSON) and `gradle dependencies` output generated 2026-09-26 with Maven 3 / Gradle 8, plus a NuGet packages.lock.json. The CVEs are the well-known ones for these pinned versions.",
+    "projects": {
+      "maven": {
+        "packages": 9,
+        "gaps": [],
+        "must_find": [
+          "CVE-2021-44228",
+          "CVE-2021-45046",
+          "CVE-2019-12384"
+        ]
+      },
+      "gradle": {
+        "packages": 15,
+        "gaps": [],
+        "must_find": [
+          "CVE-2021-44228",
+          "CVE-2023-2976"
+        ]
+      },
+      "nuget": {
+        "packages": 2,
+        "gaps": [
+          "nuget_lockfile_missing"
+        ],
+        "must_find": [
+          "CVE-2024-21907"
+        ]
+      }
+    }
+  },
   "image": {
     "reference": "python:3.9.0-alpine",
     "must_equal_direct_trivy": true,

@@ -43,7 +43,7 @@ from zanjir import ci_gate, code_targets, iac, images, inventory, nettrust, repo
 EXPECTED = json.loads((HERE / 'expected.json').read_text(encoding='utf-8'))
 WORK = Path(tempfile.mkdtemp(prefix='threatchain-bench-work-'))
 OFFLINE = ('sast', 'secrets', 'apex', 'iac', 'compose', 'web', 'impact', 'gate')
-ONLINE = ('lockfiles', 'image')
+ONLINE = ('lockfiles', 'jvm_dotnet', 'image')
 RESULTS = []
 
 
@@ -310,6 +310,28 @@ def bench_lockfiles():
     record('lockfiles', not failures, 'hammasi kutilganidek' if not failures else '; '.join(failures))
 
 
+
+def bench_jvm_dotnet():
+    """Maven/Gradle build-tool output and NuGet locks, end to end against OSV."""
+    from zanjir import advisories
+    spec = EXPECTED['jvm_dotnet']
+    failures, metrics = [], {}
+    for folder, want in spec['projects'].items():
+        data = inventory.collect(HERE / 'corpus' / 'jvm-dotnet' / folder)
+        matches, details, errors, _ = advisories.query_packages(data['packages'])
+        if errors and all(e.get('reason') == 'osv_query_incomplete' for e in errors) and not matches:
+            raise Skip('OSV ga ulanib bo‘lmadi')
+        findings = advisories.normalize(data['packages'], matches, details, {}, False)
+        text = json.dumps(findings)
+        missing = [cve for cve in want['must_find'] if cve not in text]
+        got = {'packages': data['unique_packages'], 'gaps': [g['reason'] for g in data['gaps']]}
+        if got != {'packages': want['packages'], 'gaps': want['gaps']} or missing or errors:
+            failures.append(f"{folder}: {got}, topilmadi {missing}, xato {len(errors)}")
+        metrics[folder] = {'packages': got['packages'], 'findings': len(findings)}
+        print(f"     {folder}: {got['packages']} paket, {len(findings)} topilma, yetishmagan {missing}", flush=True)
+    record('jvm_dotnet', not failures, 'hammasi kutilganidek' if not failures else '; '.join(failures), metrics)
+
+
 def bench_image():
     need(images.BINARY.is_file(), 'Trivy o‘rnatilmagan')
     spec = EXPECTED['image']
@@ -333,7 +355,7 @@ def bench_image():
 
 CHECKS = {'sast': bench_sast, 'secrets': bench_secrets, 'apex': bench_apex, 'iac': bench_iac,
           'compose': bench_compose, 'web': bench_web, 'impact': bench_impact, 'gate': bench_gate,
-          'lockfiles': bench_lockfiles, 'image': bench_image}
+          'lockfiles': bench_lockfiles, 'jvm_dotnet': bench_jvm_dotnet, 'image': bench_image}
 
 
 def main():

@@ -24,6 +24,7 @@ python3 benchmarks/run.py --output natija.json
 | `impact` | So'rovlarni sanaydigan nishon (`servers/impact_target.py`) | 1 ulanish; band server 6 so'rovdan keyin to'xtatiladi; sekin serverda bitta sekinlashuv |
 | `gate` | Yuqoridagilar ustida `ci_gate.py` | Chiqish kodlari 0 / 1 / 1 |
 | `lockfiles` *(online)* | 9 ta mashhur loyihaning commit'ga pinlangan lockfile'i | Paket va bo'shliq soni aniq mos |
+| `jvm_dotnet` *(online)* | Haqiqiy `mvn dependency:tree` (matn + JSON), `gradle dependencies` va NuGet `packages.lock.json` | Paket va bo'shliq soni aniq; OSV'dan Log4Shell, jackson-databind, Guava, Newtonsoft.Json CVE'lari topiladi |
 | `image` *(online)* | `python:3.9.0-alpine` | To'g'ridan-to'g'ri Trivy bilan to'liq mos; SBOM zaifliklari to'liq |
 
 **Izolyatsiya.** Hamma narsa vaqtinchalik `THREATCHAIN_DATA_DIR` ga yoziladi — operatorning

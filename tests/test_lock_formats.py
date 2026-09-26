@@ -151,6 +151,80 @@ class TomlLockTests(ParserBase):
         self.assertEqual([g['reason'] for g in gaps], ['lock_entry_not_versioned'])
 
 
+CORPUS = Path(__file__).resolve().parents[1] / 'benchmarks' / 'corpus' / 'jvm-dotnet'
+
+
+class BuildToolOutputTests(ParserBase):
+    """Real `mvn dependency:tree` and `gradle dependencies` output (benchmarks/corpus/jvm-dotnet)."""
+
+    def names(self, rows):
+        return {(r['name'], r['version'], r['scope']) for r in rows}
+
+    def test_maven_text_json_and_console_output_agree(self):
+        text, _ = self.collect('dependency-tree.txt', (CORPUS / 'maven' / 'dependency-tree.txt').read_text(encoding='utf-8'))
+        data, _ = self.collect('dependency-tree.json', (CORPUS / 'maven' / 'dependency-tree.json').read_text(encoding='utf-8'))
+        console, _ = self.collect('dependency-tree.txt', (CORPUS / 'maven' / 'mvn-console-output.log').read_text(encoding='utf-8'))
+        self.assertEqual(self.names(text), self.names(data))
+        self.assertEqual(self.names(text), self.names(console))
+        self.assertEqual(len(text), 9)                  # the project itself is not a dependency
+        self.assertIn(('org.apache.logging.log4j:log4j-core', '2.14.1', 'runtime'), self.names(text))
+        self.assertIn(('junit:junit', '4.12', 'development'), self.names(text))
+        self.assertTrue(all(r['ecosystem'] == 'Maven' and r['evidence_kind'] == 'build_tool_resolution' for r in text))
+
+    def test_maven_omitted_entries_are_not_counted(self):
+        tree = ('com.example:demo:jar:1.0\n'
+                '+- a:b:jar:1.0:compile\n'
+                '|  \\- (c:d:jar:1.0:compile - omitted for conflict with 2.0)\n'
+                '\\- c:d:jar:2.0:compile\n')
+        rows, gaps = self.collect('dependency-tree.txt', tree)
+        self.assertEqual(self.names(rows), {('a:b', '1.0', 'runtime'), ('c:d', '2.0', 'runtime')})
+        self.assertEqual(gaps, [])
+
+    def test_gradle_uses_the_resolved_version_and_only_classpaths(self):
+        rows, gaps = self.collect('gradle-dependencies.txt',
+                                  (CORPUS / 'gradle' / 'gradle-dependencies.txt').read_text(encoding='utf-8'))
+        names = self.names(rows)
+        self.assertEqual(gaps, [])
+        # `guava:30.0-jre -> 31.1-jre`: what the build ships is 31.1-jre.
+        self.assertIn(('com.google.guava:guava', '31.1-jre', 'runtime'), names)
+        self.assertNotIn('30.0-jre', {r['version'] for r in rows if r['name'] == 'com.google.guava:guava'})
+        # A BOM-managed dependency with no requested version.
+        self.assertIn(('com.fasterxml.jackson.core:jackson-databind', '2.13.0', 'runtime'), names)
+        # annotationProcessor is not a classpath the application ships with.
+        self.assertNotIn('org.projectlombok:lombok', {r['name'] for r in rows})
+        # testRuntimeClasspath repeats the runtime ones; they stay runtime.
+        self.assertIn(('org.apache.logging.log4j:log4j-core', '2.14.1', 'runtime'), names)
+        self.assertIn(('junit:junit', '4.12', 'development'), names)
+        self.assertEqual(len(rows), len({(r['name'], r['version']) for r in rows}))
+
+    def test_gradle_constraints_unresolved_and_project_entries_are_skipped(self):
+        report = ('runtimeClasspath - Runtime classpath.\n'
+                  '+--- project :core\n'
+                  '+--- x:y:1.0 (c)\n'
+                  '+--- x:z:2.0 (n)\n'
+                  '+--- x:w:{strictly 1.0} -> 1.0\n'
+                  '\\--- x:v:3.0 (*)\n')
+        rows, gaps = self.collect('gradle-dependencies.txt', report)
+        self.assertEqual(self.names(rows), {('x:w', '1.0', 'runtime'), ('x:v', '3.0', 'runtime')})
+
+    def test_nuget_lock_skips_projects_and_repeats_across_frameworks(self):
+        rows, gaps = self.collect('packages.lock.json', (CORPUS / 'nuget' / 'packages.lock.json').read_text(encoding='utf-8'))
+        self.assertEqual({(r['ecosystem'], r['name'], r['version']) for r in rows},
+                         {('NuGet', 'Newtonsoft.Json', '12.0.1'), ('NuGet', 'System.Text.Encodings.Web', '4.5.0')})
+        self.assertEqual(gaps, [])
+
+    def test_build_scripts_are_covered_when_resolved_output_sits_next_to_them(self):
+        maven = inventory.collect(CORPUS / 'maven')
+        self.assertEqual(maven['gaps'], [])
+        self.assertEqual({m['path']: m['state'] for m in maven['manifests']}['pom.xml'], 'covered_by_resolved_output')
+        gradle = inventory.collect(CORPUS / 'gradle')
+        self.assertEqual(gradle['gaps'], [])
+
+    def test_a_project_file_without_a_nuget_lock_is_a_named_gap(self):
+        data = inventory.collect(CORPUS / 'nuget')
+        self.assertEqual(data['gaps'], [{'path': 'lib/Lib.csproj', 'reason': 'nuget_lockfile_missing'}])
+
+
 class UnsupportedManifestTests(ParserBase):
     def test_a_build_script_is_refused_with_the_command_that_fixes_it(self):
         # build.gradle.kts states ranges and properties, not resolved versions;
