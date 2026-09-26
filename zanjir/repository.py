@@ -610,7 +610,7 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
         except (ValueError,OSError,TypeError) as error:
             unknowns.append(f'{path}: proxy adapteri — {error}')
     now=datetime.datetime.now(datetime.timezone.utc)
-    return {'schema_version':2,'kind':'repository','id':now.strftime('%Y%m%dT%H%M%S')+'-'+uuid.uuid4().hex[:8],
+    report={'schema_version':2,'kind':'repository','id':now.strftime('%Y%m%dT%H%M%S')+'-'+uuid.uuid4().hex[:8],
             'created_at':now.isoformat(),'engine_version':VERSION,'duration_ms':round((time.perf_counter()-started)*1000,2),
             'repository':provenance or {'repository':root.name,'commit':None}, 'profile':{'compose':compose,'env_file':env_file,'bindings':bindings},
             'input_sha256':digest(canonical({'files':files,'bindings':bindings,'compose':compose,'env_file':env_file})), 'files':files,'services':inventory,'edges':edges,
@@ -625,6 +625,11 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
                       'Nginx Lua va murakkab dinamik marshrutlar bajarilmaydi. Proxy grafigi hujum grafigi emas.',
                       'Boshqa override fayllari va shell environment qo‘llanmaydi; .env faqat literal qiymatlarni qo‘llaydi.',
                       'Ogohlantirishlar review talab qiladi; bu audit muvofiqligi yoki real ekspluatatsiya isboti emas.']}
+    # Ready diffs for the Compose/nginx fixes that are one deterministic edit,
+    # made now while the files are at hand (zanjir/fixes.py).
+    from . import fixes
+    report['fix_plan']=fixes.repository_plan(report,lambda relative:safe_read(root,relative))
+    return report
 
 
 def sarif(report):

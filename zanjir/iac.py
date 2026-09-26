@@ -30,7 +30,7 @@ import uuid
 from pathlib import Path
 
 from .engine import ROOT, DATA
-from . import images, priority, repo_store, run_index, scanners, taxonomy, triage
+from . import images, priority, repo_store, run_index, scanners, taxonomy, triage, fixes
 from . import findings as findings_mod
 from . import verification as verification_mod
 
@@ -177,6 +177,8 @@ def execute(rid, target, event):
             if process.returncode != 0:
                 raise ValueError('Trivy config bajarilmadi; tool.log faylini tekshiring.')
             report.update(normalize(json.loads(output.read_text(encoding='utf-8')), work / 'source'))
+            # Diffs are made from the snapshot while it still exists (zanjir/fixes.py).
+            report['fix_plan'] = fixes.iac_plan(report['findings'], work / 'source')
         report['verification_summary'] = verification_mod.summarize(report['findings'])
         report['severity_counts'] = {level: sum(1 for f in report['findings'] if f['severity'] == level)
                                      for level in ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN')}

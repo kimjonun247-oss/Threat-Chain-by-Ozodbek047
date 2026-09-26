@@ -127,6 +127,58 @@ function view(name) {
 // has none) and must never stop the report itself from showing. A finding that
 // disappeared is shown as "yo‘qolgan", never as fixed -- coverage may simply
 // have shrunk, which is what the server's own note says too.
+// "How to fix it" for a report (zanjir/fixes.py): upgrade targets, a ready
+// Dockerfile line, and unified diffs. Placed right after `anchorId`. Nothing is
+// applied from here -- the operator copies the diff into their own change.
+function showFixPlan(plan, anchorId) {
+  const anchor = $(anchorId);
+  if (!anchor || !plan) return;
+  const old = anchor.parentElement.querySelector(':scope > .fix-plan');
+  if (old) old.remove();
+  const e = escapeHTML;
+  const colour = text => String(text).split('\n').map(line => {
+    const cls = line.startsWith('+++') || line.startsWith('---') ? 'meta' : line.startsWith('+') ? 'add'
+      : line.startsWith('-') ? 'del' : line.startsWith('@@') || line.startsWith('#') ? 'meta' : '';
+    return cls ? `<span class="${cls}">${e(line)}</span>` : e(line);
+  }).join('\n');
+  const diff = item => `<details class="fix-diff"><summary><code>${e(item.path)}</code>${item.rules ? ' · ' + item.rules.map(r => e(r.rule_id)).join(', ') : ''}</summary>
+    ${item.rules ? `<ul class="muted">${item.rules.map(r => `<li>${e(r.rule_id)}${r.service_id ? ' (' + e(r.service_id) + ')' : ''}: ${e(r.why)}</li>`).join('')}</ul>` : ''}
+    <div class="fix-actions"><button class="ghost small" data-copy>Nusxa olish</button></div><pre class="diff">${colour(item.diff)}</pre></details>`;
+  let body = '';
+  if (plan.packages) {
+    const rows = plan.packages.filter(p => p.upgrade_to || p.without_fix.length);
+    body = rows.length ? `<div class="table-wrap"><table><thead><tr><th>Paket</th><th>Hozir</th><th>Yangilash</th><th>OSV qayta tekshiruvi</th><th>Buyruq</th></tr></thead><tbody>${rows.map(p => `<tr>
+      <td>${e(p.ecosystem)} · <strong>${e(p.name)}</strong><br><small>${e(p.advisories.join(', '))}</small></td><td>${e(p.current)}</td>
+      <td>${p.upgrade_to ? `<strong>${e(p.upgrade_to)}</strong>${p.major_upgrade ? ' <span class="badge amber">major</span>' : ''}` : '<span class="badge">tuzatish yo‘q</span>'}${p.without_fix.length ? `<br><small>Tuzatishsiz: ${e(p.without_fix.join(', '))}</small>` : ''}</td>
+      <td>${{clean: '<span class="badge green">toza</span>', still_affected: '<span class="badge red">hali zaif</span>', unavailable: 'tekshirib bo‘lmadi', not_checked: '—'}[p.target_check] || e(p.target_check)}</td>
+      <td>${p.command ? `<code>${e(p.command)}</code>` : '—'}${p.transitive_note ? `<br><small class="muted">${e(p.transitive_note)}</small>` : ''}</td></tr>`).join('')}</tbody></table></div>
+      ${rows.flatMap(p => p.diffs).map(diff).join('')}` : '<p class="muted">Tuzatish versiyasi ma’lum paket yo‘q.</p>';
+  } else if ('dockerfile_snippet' in plan) {
+    body = (plan.base_image_note ? `<p class="unknown-note">${e(plan.base_image_note)}</p>` : '') +
+      (plan.dockerfile_snippet ? `<p>${e(plan.note)}</p><div class="fix-actions"><button class="ghost small" data-copy>Nusxa olish</button></div><pre class="diff">${e(plan.dockerfile_snippet)}</pre>` : '') +
+      (plan.language_packages.length ? `<ul>${plan.language_packages.map(r => `<li><code>${e(r.command || r.package + ' → ' + r.to)}</code>${r.major_upgrade ? ' <span class="badge amber">major</span>' : ''}</li>`).join('')}</ul>` : '') ||
+      '<p class="muted">Tuzatilgan versiyasi ma’lum paket yo‘q.</p>';
+  } else {
+    body = (plan.files || []).map(diff).join('') +
+      ((plan.advice || []).length ? `<ul>${plan.advice.map(a => `<li><strong>${e(a.rule_id)}</strong>${a.service_id ? ' (' + e(a.service_id) + ')' : ''}${a.path ? ' · ' + e(a.path) : ''}: ${e(a.advice)}</li>`).join('')}</ul>` : '') ||
+      '<p class="muted">Avtomatik diff tuzib bo‘ladigan topilma yo‘q.</p>';
+  }
+  const box = document.createElement('details');
+  box.className = 'fix-plan pilot-help';
+  const LABELS = {files_with_diff: 'diffli fayl', rules_fixed: 'diff bilan tuzatiladi', advice_only: 'faqat tavsiya',
+                  packages: 'paket', with_target: 'yangilash versiyasi bor', target_clean: 'OSV bo‘yicha toza',
+                  with_diff: 'manifest diff', major_upgrades: 'major yangilash', os_packages: 'OS paketi',
+                  language_packages: 'til paketi', eosl: 'EOSL'};
+  const summary = Object.entries(plan.summary || {}).filter(([, v]) => v).map(([k, v]) => v === true ? LABELS[k] || k : `${LABELS[k] || k}: ${v}`);
+  box.innerHTML = `<summary>Tuzatish taklifi${summary.length ? ' · ' + e(summary.join(', ')) : ''}</summary>${body}<p class="hint-text">${e(plan.note || '')}</p>`;
+  box.addEventListener('click', event => {
+    const button = event.target.closest('[data-copy]');
+    if (!button) return;
+    const text = button.parentElement.nextElementSibling.textContent;
+    navigator.clipboard?.writeText(text).then(() => { button.textContent = 'Nusxalandi'; }, () => {});
+  });
+  anchor.after(box);
+}
 async function fillBaseline(stage, reportId, elementId) {
   const box = $(elementId);
   if (!box) return;
@@ -180,6 +232,7 @@ function renderRepository(report) {
     <details class="source-details"><summary>Xizmatlar va host portlari (${s.services})</summary><div class="table-wrap"><table><thead><tr><th>Xizmat</th><th>Host → konteyner</th><th>Compose tarmog‘i</th></tr></thead><tbody>${report.services.map(service=>`<tr><td>${escapeHTML(service.id)}</td><td>${service.ports.map(p=>escapeHTML((p.host_ip||'default')+':'+p.published+' → '+p.target+'/'+p.protocol)).join('<br>')||'Host porti berilmagan'}</td><td>${escapeHTML(service.networks.join(', ')||'Noma’lum / maxsus rejim')}</td></tr>`).join('')}</tbody></table></div></details>
     <details class="source-details"><summary>Proxy bog‘lanishlari (${s.proxy_routes})</summary><p class="muted">Bu konfiguratsiyada e’lon qilingan yo‘llar; runtime reachability yoki autentifikatsiya isbotlanmagan. depends_on aloqa yo‘li sifatida ishlatilmaydi.</p><div class="table-wrap"><table><thead><tr><th>Proxy : port</th><th>Yo‘l</th><th>Target</th><th>Protokol</th></tr></thead><tbody>${report.edges.map(e=>`<tr><td>${escapeHTML(e.from)} : ${escapeHTML(e.listen)}</td><td>${escapeHTML(e.location)}</td><td>${escapeHTML(e.to)} : ${e.target_port}</td><td>${escapeHTML(e.scheme)}</td></tr>`).join('')}</tbody></table></div></details>
     <details class="source-details"><summary>Qamrov, cheklovlar va fayl xeshlari</summary><ul class="muted">${[...report.unknowns,...report.limits].map(u=>`<li>${escapeHTML(u)}</li>`).join('')}</ul><p class="hash">Input SHA-256: ${escapeHTML(report.input_sha256)}</p>${report.files.map(f=>`<p class="hash">${escapeHTML(f.path)}<br>${f.sha256}</p>`).join('')}</details>`;
+  showFixPlan(report.fix_plan,'repository-comparison');
   $('repository-result').querySelectorAll('.review-form').forEach(form=>form.addEventListener('submit',async event=>{
     event.preventDefault(); const button=form.querySelector('button'); button.disabled=true;
     try{const saved=await api('/api/repository/review',{report_id:report.id,fingerprint:form.dataset.fingerprint,status:form.elements.status.value,owner:form.elements.owner.value,note:form.elements.note.value});state.reviews[report.input_sha256+':'+form.dataset.fingerprint]=saved;form.querySelector('.review-feedback').textContent='Qaror saqlandi · '+time(saved.updated_at);form.closest('details').querySelector('summary small').textContent=report.findings.find(f=>f.fingerprint===form.dataset.fingerprint).service_id+' · '+reviewNames[saved.status];}

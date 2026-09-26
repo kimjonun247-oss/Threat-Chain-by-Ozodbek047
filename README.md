@@ -76,6 +76,30 @@ Trivy bazasi keraksiz yangilanmaydi.
 (`nice 10`, Linux'da `ionice` idle sinfi; Windows'da BELOW_NORMAL) — natija o'zgarmaydi, faqat
 operatorning boshqa ishiga xalal bermaydi. Ajratilgan skan serverida `THREATCHAIN_NORMAL_PRIORITY=1`.
 
+## Tuzatish taklifi: qaysi versiya va tayyor diff (2026-09-26)
+
+Har hisobotda `fix_plan` (dashboard: *Tuzatish taklifi*). Hech narsa avtomatik qo'llanmaydi.
+
+- **CVE (kutubxonalar):** har advisory uchun joriy versiyadan katta eng kichik tuzatilgan versiya, paket bo'yicha
+  ulardan eng kattasi (log4j-core 2.14.1 → 2.15.0 emas, 2.12.2 shoxi ham emas). Maqsad versiya **OSV'da qayta
+  tekshiriladi**: u ham zaif bo'lsa, keyingi tuzatishga o'tiladi (≤3 marta; 2.15.0 → 2.16.0), natija `toza /
+  hali zaif / tekshirib bo'lmadi`. Major versiya o'zgarishi belgilanadi. Versiya literal yozilgan manifestlar uchun
+  unified diff: `requirements*.txt`, `pyproject.toml`, `go.mod`, `pom.xml`, `*.csproj`, `build.gradle`; har
+  ekotizim uchun buyruq (`npm/yarn/pnpm`, `pip/poetry`, `go get`, `dotnet add package`, `composer`, `cargo`, `bundle`).
+- **Docker image:** tuzatilgan OS paketlari bitta tayyor qator (`RUN apk add --upgrade …` / `apt-get
+  --only-upgrade …` / `dnf upgrade …`), til paketlari buyrug'i, EOSL bo'lsa base image ogohlantirishi.
+- **IaC va Compose/Nginx:** bir ma'noli tuzatishlar uchun diff — Dockerfile `USER 10001`, `--no-install-recommends`;
+  Kubernetes `privileged/hostNetwork/hostPID/hostIPC/allowPrivilegeEscalation → false`, `runAsNonRoot/
+  readOnlyRootFilesystem → true`; Compose portni `127.0.0.1` ga bog'lash, proxy ortidagi xizmatning host portini
+  olib tashlash (RP-003/004), docker.sock va xavfli capability'larni olib tashlash, debug o'chirish; nginx
+  `proxy_ssl_verify on`, `location /x/` (alias), xavfsizlik sarlavhalarini ichki blokda takrorlash. Inson qarori
+  kerak bo'lganlar (qaysi base tag, qaysi healthcheck, tarmoq segmentatsiyasi, SSRF, ochiq bo'lishi kerak bo'lgan
+  gateway porti) — diff emas, tavsiya.
+- **Maxfiy qiymat diff'ga tushmaydi:** `PASSWORD/SECRET/TOKEN/KEY` qatorlari `***` bilan yashiriladi (shu bo'lak
+  qo'lda qo'llanadi), kontekst 2 qator.
+- **Isbot (CI benchmark `fixes`):** diff'lar `patch` bilan qo'llanib qayta skan qilinadi — IaC 41 → 36 (5/5
+  qoida yo'qoldi), Compose/Nginx 17 → 3 (13/13 (qoida, joy) yo'qoldi; qolgan 3 tasi faqat tavsiyali).
+
 ## Nazariy topilmani ikkinchi GET bilan tasdiqlash (2026-09-26)
 
 Bitta mos javob — bu kuzatuv, tasdiq emas. Web skan oxirida har bir nazariy topilma xavfsiz qo'shimcha GET bilan

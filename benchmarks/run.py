@@ -42,7 +42,7 @@ from zanjir import ci_gate, code_targets, iac, images, inventory, nettrust, repo
 
 EXPECTED = json.loads((HERE / 'expected.json').read_text(encoding='utf-8'))
 WORK = Path(tempfile.mkdtemp(prefix='threatchain-bench-work-'))
-OFFLINE = ('sast', 'secrets', 'apex', 'iac', 'compose', 'web', 'impact', 'gate')
+OFFLINE = ('sast', 'secrets', 'apex', 'iac', 'compose', 'fixes', 'web', 'impact', 'gate')
 ONLINE = ('lockfiles', 'jvm_dotnet', 'image')
 RESULTS = []
 
@@ -57,8 +57,8 @@ def record(name, ok, detail, metrics=None):
     print(f'{status:4} {name}: {detail}', flush=True)
 
 
-def copy_corpus(name):
-    target = WORK / name
+def copy_corpus(name, copy=None):
+    target = WORK / (copy or name)
     shutil.copytree(HERE / 'corpus' / name, target)
     return target
 
@@ -201,6 +201,43 @@ def bench_iac():
     record('iac', ok, f"{report['state']}, {len(report['findings'])} topilma, yetishmagan {missing}",
            {'findings': len(report['findings']), 'missing': missing})
 
+
+
+def bench_fixes():
+    """The proposed diffs, applied with `patch`, must make their findings go away on a rescan."""
+    need(images.BINARY.is_file(), 'Trivy o‘rnatilmagan')
+    need(shutil.which('patch'), '`patch` o‘rnatilmagan')
+    spec = EXPECTED['fixes']
+    results = {}
+    for name in ('iac', 'compose'):
+        root = copy_corpus(name, 'fix-' + name)     # a copy of its own: the diffs are applied to it
+        if name == 'iac':
+            code_targets.register('bench-fix-iac', root)
+            scan = lambda: iac.start('bench-fix-iac', background=False)
+        else:
+            bindings = json.loads((root / 'bindings.json').read_text(encoding='utf-8'))
+            repo_store.register_project('bench-fix-compose', root, 'docker-compose.yml', bindings=bindings)
+            scan = lambda: repo_store.scan_profile('bench-fix-compose')
+        # Compared per (rule, service or file): a gateway keeps its public port on
+        # purpose and gets advice, not a diff, so RP-001 may rightly remain there.
+        where = (lambda f: (f['rule_id'], f.get('path'))) if name == 'iac' else \
+            (lambda f: (f['rule_id'], f.get('service_id')))
+        before = scan()
+        plan = before['fix_plan']
+        targeted = sorted({(rule['rule_id'], rule.get('service_id') if name == 'compose' else item['path'])
+                           for item in plan['files'] for rule in item['rules']}, key=str)
+        for item in plan['files']:
+            subprocess.run(['patch', '-p1', '-s'], input=item['diff'], text=True, cwd=root, check=True)
+        after = scan()
+        # nginx rules carry the proxy service's id in the report; the diff names the file.
+        remaining = {where(f) for f in after['findings']}
+        left = sorted([t for t in targeted if t in remaining or
+                       (t[1] is None and any(r[0] == t[0] for r in remaining))], key=str)
+        results[name] = {'targeted': targeted, 'still_found': left,
+                         'findings': [len(before['findings']), len(after['findings'])]}
+    ok = all(not r['still_found'] and len(r['targeted']) >= spec['min_rules_fixed'][name] for name, r in results.items())
+    record('fixes', ok, '; '.join(f"{n}: {len(r['targeted'])} (qoida, joy) diff bilan tuzatildi, qayta skanda qolgan {r['still_found']}, "
+                                  f"topilmalar {r['findings'][0]} → {r['findings'][1]}" for n, r in results.items()), results)
 
 # ---------------------------------------------------------------------- compose
 def bench_compose():
@@ -362,7 +399,7 @@ def bench_image():
 
 
 CHECKS = {'sast': bench_sast, 'secrets': bench_secrets, 'apex': bench_apex, 'iac': bench_iac,
-          'compose': bench_compose, 'web': bench_web, 'impact': bench_impact, 'gate': bench_gate,
+          'compose': bench_compose, 'fixes': bench_fixes, 'web': bench_web, 'impact': bench_impact, 'gate': bench_gate,
           'lockfiles': bench_lockfiles, 'jvm_dotnet': bench_jvm_dotnet, 'image': bench_image}
 
 

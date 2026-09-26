@@ -71,6 +71,13 @@
     "rp005_findings": 1,
     "safe_findings": 0
   },
+  "fixes": {
+    "_comment": "(rule, service/file) pairs whose diff, applied with patch, must remove the finding on rescan.",
+    "min_rules_fixed": {
+      "iac": 5,
+      "compose": 12
+    }
+  },
   "web": {
     "vulnerable_must_find": [
       "zanjir-env",

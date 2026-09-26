@@ -6,7 +6,7 @@ from pathlib import Path
 import threading
 import uuid
 from .engine import ROOT, DATA
-from . import inventory, advisories, scanners, repo_store, run_index, triage
+from . import inventory, advisories, scanners, repo_store, run_index, triage, fixes
 from . import verification as verification_mod
 
 RUNS=DATA/'dependency-runs'
@@ -43,6 +43,7 @@ def execute(rid):
         # inventory is read; the manifests are copied into inventory.json first.
         with scanners.source_for(report['target']) as (root,provenance):
             collected=inventory.collect(root)
+            manifest_texts=fixes.read_manifests(root)
         report['source']=provenance
         repo_store.write_json(folder/'inventory.json',collected)
         report.update(inventory_sha256=collected['sha256'],coverage={k:v for k,v in collected.items() if k!='packages'})
@@ -55,6 +56,8 @@ def execute(rid):
             kev,kev_meta=advisories.kev_catalog()
             findings=advisories.normalize(collected['packages'],matches,details,kev,kev_meta['state']=='available')
             advisories.enrich(findings,progress=progress)
+            progress('Tuzatish rejasi: maqsad versiyalar OSV’da qayta tekshirilmoqda')
+            report['fix_plan']=fixes.dependency_plan(findings,manifest_texts,advisories.query_packages)
             report.update(findings=findings,count=len(findings),query_errors=errors,
                           feeds={'osv':{'checked_packages':len(matches),'requested_packages':collected['unique_packages'],
                                         'responses':len(provenance),'oldest_retrieved_at':min((p['retrieved_at'] for p in provenance),default=None),

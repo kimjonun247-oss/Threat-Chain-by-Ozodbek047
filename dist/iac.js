@@ -30,7 +30,7 @@
       + `<details class="pilot-help"><summary>Qamrov</summary><p>${e(row.coverage_scope||'')}</p>${coverage}<p class="hash">Snapshot SHA-256: ${e(row.snapshot_sha256||'—')}</p></details>`
       + `<div class="dep-filters"><label>Qidirish<input id="iac-search" type="search" value="${e(filter)}" placeholder="Tekshiruv, fayl yoki matn"></label><label>Og‘irlik<select id="iac-severity">${['all','CRITICAL','HIGH','MEDIUM','LOW','UNKNOWN'].map(s=>`<option value="${s}" ${severity===s?'selected':''}>${s==='all'?'Barchasi':s}</option>`).join('')}</select></label></div>`
       + `<p id="iac-count" class="muted"></p><div id="iac-findings"></div>`;
-    if (!['queued','running'].includes(row.state)) fillBaseline('iac', row.id, 'iac-baseline');
+    if (!['queued','running'].includes(row.state)) { fillBaseline('iac', row.id, 'iac-baseline'); showFixPlan(row.fix_plan, 'iac-baseline'); }
     $('iac-search').addEventListener('input', event => { filter = event.target.value.toLowerCase(); rows(); });
     $('iac-severity').addEventListener('change', event => { severity = event.target.value; rows(); });
     rows();

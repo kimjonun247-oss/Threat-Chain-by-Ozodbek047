@@ -448,3 +448,6 @@ button.small{padding:3px 8px;font-size:12px}
 .login-box label{display:grid;gap:5px;font-size:13px;font-weight:600;color:var(--ink)}
 .login-box input{padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);font:inherit;font-weight:400}
 .login-box input:focus{outline:2px solid var(--teal);outline-offset:1px}
+.fix-plan pre.diff{background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px 12px;overflow:auto;font-size:12px;line-height:1.45;white-space:pre;max-height:420px}
+.fix-diff{margin:8px 0}.fix-diff summary{cursor:pointer}.fix-actions{display:flex;justify-content:flex-end;margin:4px 0}
+.fix-plan pre.diff .add{color:var(--green);background:var(--green-bg);display:inline-block;min-width:100%}.fix-plan pre.diff .del{color:var(--red);background:var(--red-bg);display:inline-block;min-width:100%}.fix-plan pre.diff .meta{color:var(--muted)}

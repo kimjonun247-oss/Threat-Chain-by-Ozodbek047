@@ -12,7 +12,7 @@ import sys
 import threading
 import uuid
 from .engine import ROOT, DATA
-from . import priority, repo_store, scanners, taxonomy, run_index, findings as findings_mod, triage
+from . import priority, repo_store, scanners, taxonomy, run_index, findings as findings_mod, triage, fixes
 from . import verification as verification_mod
 
 RUNS = DATA / 'image-runs'
@@ -608,6 +608,7 @@ def execute(rid):
         except (OSError, ValueError):
             report['database'] = None
         stale = refresh['failed']
+        report['fix_plan'] = fixes.image_plan(report)
         report['state'] = 'completed' if report['coverage'] and report['database'] and not stale else 'partial'
         if stale:
             # Findings from an out-of-date database can miss recent CVEs; the scan
