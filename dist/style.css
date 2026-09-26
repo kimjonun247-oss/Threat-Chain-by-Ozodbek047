@@ -438,3 +438,5 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.92em;backgroun
   display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px 10px;min-width:0}
 .window-fields legend{padding:0 4px;font-size:.9em}
 .window-fields input{width:100%;box-sizing:border-box}
+button.small{padding:3px 8px;font-size:12px}
+#jobs-view table td{vertical-align:top}

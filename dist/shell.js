@@ -223,14 +223,41 @@
     }),
 
     settings: async () => {
-      let status = {};
+      let status = {}, channels = {}, queue = {};
       try { status = await api('/api/settings'); } catch (error) { status = {error: error.message}; }
+      try { channels = await api('/api/settings/notifications'); } catch (error) { channels = {}; }
+      try { queue = await api('/api/jobs'); } catch (error) { queue = {}; }
+      const mail = channels.email || {};
+      const set = item => item?.present ? `o‘rnatilgan ${e(item.masked || '')}` : 'o‘rnatilmagan';
       openModal('Sozlamalar', `
         <h3>NVD API kaliti</h3>
         <p class="hint-text">Holat: <strong>${status.nvd_api_key?.present ? 'o‘rnatilgan (' + e(status.nvd_api_key.source) + ')' : 'o‘rnatilmagan'}</strong>${status.nvd_api_key?.masked ? ' · ' + e(status.nvd_api_key.masked) : ''}</p>
         <form id="settings-nvd">
           <label>Yangi kalit<input name="key" type="password" autocomplete="off" placeholder="nvd.nist.gov/developers/request-an-api-key"></label>
           <div class="modal-actions"><button type="button" class="secondary" data-clear>Kalitni o‘chirish</button><button class="primary" data-submit>Saqlash</button></div>
+          <p class="modal-feedback"></p>
+        </form>
+        <h3>Xabar kanallari</h3>
+        <p class="hint-text">Jadvaldagi skan natijasi o‘zgarganda yuboriladi. Manzil va parol hech qachon qaytarilmaydi; bo‘sh qoldirilgan maydon saqlangan qiymatni o‘zgartirmaydi.</p>
+        <form id="settings-notify">
+          <label>Webhook (JSON POST) · ${set(channels.webhook)}<input name="webhook_url" type="password" autocomplete="off" placeholder="https://…"></label>
+          <label>Slack incoming webhook · ${set(channels.slack)}<input name="slack_webhook_url" type="password" autocomplete="off" placeholder="https://hooks.slack.com/services/…"></label>
+          <fieldset class="window-fields"><legend>Email (SMTP) · ${mail.present ? 'o‘rnatilgan' : 'o‘rnatilmagan'}</legend>
+            <label>Server<input name="host" value="${e(mail.host || '')}" placeholder="smtp.example.com"></label>
+            <label>Port<input name="port" type="number" min="1" max="65535" value="${e(mail.port || 587)}"></label>
+            <label>Himoya<select name="security">${['starttls', 'ssl', 'none'].map(v => `<option${mail.security === v ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
+            <label>Login<input name="username" value="${e(mail.username || '')}" autocomplete="off"></label>
+            <label>Parol${mail.password_from_env ? ' (THREATCHAIN_SMTP_PASSWORD ustun)' : mail.password_present ? ' (saqlangan)' : ''}<input name="password" type="password" autocomplete="off"></label>
+            <label>Kimdan<input name="sender" value="${e(mail.sender || '')}" placeholder="threatchain@example.com"></label>
+            <label>Kimga (vergul bilan)<input name="recipients" value="${e((mail.recipients || []).join(', '))}"></label>
+          </fieldset>
+          <div class="modal-actions"><button type="button" class="secondary" data-test>Sinov xabari</button><button type="button" class="secondary" data-clear-notify>Hammasini o‘chirish</button><button class="primary" data-submit>Saqlash</button></div>
+          <p class="modal-feedback"></p>
+        </form>
+        <h3>Navbat</h3>
+        <form id="settings-queue">
+          <label>Bir vaqtda ishlaydigan skanlar (1–4; bir turdagi skan baribir bittadan)<input name="max" type="number" min="1" max="4" value="${e(queue.max_parallel || 1)}"></label>
+          <div class="modal-actions"><button class="primary" data-submit>Saqlash</button></div>
           <p class="modal-feedback"></p>
         </form>
         <h3>Muhit</h3>
@@ -250,6 +277,40 @@
         });
         box.querySelector('[data-clear]').addEventListener('click', () =>
           submit(box, '/api/settings/nvd-key', {key: ''}, () => 'Kalit o‘chirildi.'));
+        const notifyForm = box.querySelector('#settings-notify');
+        notifyForm.addEventListener('submit', event => {
+          event.preventDefault();
+          const form = new FormData(notifyForm);
+          const text = name => (form.get(name) || '').trim();
+          const payload = {};
+          if (text('webhook_url')) payload.webhook_url = text('webhook_url');
+          if (text('slack_webhook_url')) payload.slack_webhook_url = text('slack_webhook_url');
+          if (text('host')) {
+            payload.email = {host: text('host'), port: parseInt(text('port'), 10) || 587, security: form.get('security'),
+                             username: text('username'), sender: text('sender'), recipients: text('recipients')};
+            if (form.get('password')) payload.email.password = form.get('password');
+          }
+          submit(notifyForm, '/api/settings/notifications', payload, () => 'Saqlandi.');
+          notifyForm.querySelectorAll('input[type=password]').forEach(input => { input.value = ''; });
+        });
+        notifyForm.querySelector('[data-test]').addEventListener('click', async () => {
+          try {
+            const result = await api('/api/notifications/test', {confirm: true});
+            feedback(notifyForm, result.results.length
+              ? result.results.map(r => `${r.channel}: ${r.ok ? 'yuborildi' : 'xato ' + r.error}`).join(' · ')
+              : 'Kanal sozlanmagan.', result.results.every(r => r.ok));
+          } catch (error) { feedback(notifyForm, error.message, false); }
+        });
+        notifyForm.querySelector('[data-clear-notify]').addEventListener('click', () => {
+          if (confirm('Barcha xabar kanallari o‘chirilsinmi?'))
+            submit(notifyForm, '/api/settings/notifications', {webhook_url: '', slack_webhook_url: '', email: false}, () => 'O‘chirildi.');
+        });
+        const queueForm = box.querySelector('#settings-queue');
+        queueForm.addEventListener('submit', event => {
+          event.preventDefault();
+          submit(queueForm, '/api/settings/queue', {max_parallel_scans: parseInt(new FormData(queueForm).get('max'), 10)},
+                 r => `Saqlandi: bir vaqtda ${r.max_parallel_scans} ta.`);
+        });
       });
     },
 

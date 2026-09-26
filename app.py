@@ -16,7 +16,7 @@ from urllib.parse import urlsplit, parse_qs
 from zanjir.engine import ROOT
 from zanjir import repo_store
 from zanjir import scanners, dependencies, images, readiness, webscan, pipeline, custom_rules, portfolio, triage, baseline, iac, sbom
-from zanjir import findings_index, settings, code_targets, dashboard, browse
+from zanjir import findings_index, settings, code_targets, dashboard, browse, jobs, notify
 from zanjir.repository import scan_repository, sarif
 
 RUN_LOCK = threading.Lock()
@@ -66,7 +66,7 @@ MIN_COMPRESS = 1024
 # global scope already, so behaviour is unchanged). THREATCHAIN_DEBUG_ASSETS=1
 # serves them one by one again for debugging in the browser.
 BUNDLES = {'bundle.js': ('app.js', 'shell.js', 'dashboard.js', 'findings.js', 'project.js', 'scanners.js',
-                         'dependencies.js', 'pilot-dashboard.js', 'web-pilot.js', 'iac.js', 'portfolio.js'),
+                         'dependencies.js', 'pilot-dashboard.js', 'web-pilot.js', 'iac.js', 'portfolio.js', 'jobs.js'),
            'bundle.css': ('style.css', 'dependencies.css')}
 ASSET_TYPES['.js'] = "text/javascript"
 
@@ -290,6 +290,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, browse.listing(query.get('path', [''])[0][:400]))
             except ValueError as error:
                 return self.send(400, {'error': str(error)})
+        if path == '/api/jobs':
+            return self.send(200, jobs.listing())
+        if path == '/api/settings/notifications':
+            return self.send(200, settings.notification_status())
         if path == '/api/dashboard':
             return self.send(200, dashboard.overview())
         if path == '/api/findings':
@@ -485,6 +489,27 @@ class Handler(BaseHTTPRequestHandler):
                                                              payload['stages'], payload.get('owner', '')))
                 if path == '/api/portfolio/remove' and set(payload) == {'id'}:
                     return self.send(200, portfolio.remove(payload['id']))
+                return self.send(400, {'error': 'Amal yoki maydonlar noto‘g‘ri.'})
+            except ValueError as error:
+                return self.send(400, {'error': str(error)})
+        if path.startswith('/api/jobs') or path.startswith('/api/schedules') or path.startswith('/api/notifications') \
+                or path in ('/api/settings/notifications', '/api/settings/queue'):
+            try:
+                if path == '/api/jobs' and {'kind'} <= set(payload) <= {'kind', 'target', 'payload', 'notify'}:
+                    return self.send(202, jobs.enqueue(payload['kind'], payload.get('target'), payload.get('payload'),
+                                                       notify=payload.get('notify', 'never')))
+                if path == '/api/jobs/cancel' and set(payload) == {'id'}:
+                    return self.send(200, jobs.cancel(payload['id']))
+                if path == '/api/schedules':
+                    return self.send(200, jobs.save_schedule(payload))
+                if path == '/api/schedules/remove' and set(payload) == {'id'}:
+                    return self.send(200, jobs.remove_schedule(payload['id']))
+                if path == '/api/settings/notifications':
+                    return self.send(200, settings.set_notifications(payload))
+                if path == '/api/settings/queue' and set(payload) == {'max_parallel_scans'}:
+                    return self.send(200, settings.set_max_parallel(payload['max_parallel_scans']))
+                if path == '/api/notifications/test' and payload == {'confirm': True}:
+                    return self.send(200, {'results': notify.deliver(notify.test_event())})
                 return self.send(400, {'error': 'Amal yoki maydonlar noto‘g‘ri.'})
             except ValueError as error:
                 return self.send(400, {'error': str(error)})
@@ -707,6 +732,8 @@ def main():
         return
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     server.daemon_threads = True
+    # Queued and scheduled scans run inside the server process (zanjir/jobs.py).
+    jobs.start_worker()
     print(f"Zanjir lokal MVP: http://127.0.0.1:{server.server_port}", flush=True)
     try:
         server.serve_forever()

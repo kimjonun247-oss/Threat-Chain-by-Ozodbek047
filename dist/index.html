@@ -17,6 +17,7 @@
   <script src="/web-pilot.js" defer></script>
   <script src="/iac.js" defer></script>
   <script src="/portfolio.js" defer></script>
+  <script src="/jobs.js" defer></script>
   <link rel="stylesheet" href="/dependencies.css">
 </head>
 <body>
@@ -64,6 +65,7 @@
       <button class="nav" data-view="repository"><svg class="ic"><use href="#i-server"/></svg> Repository</button>
       <button class="nav" data-view="iac"><svg class="ic"><use href="#i-sliders"/></svg> IaC</button>
       <button class="nav" data-view="web"><svg class="ic"><use href="#i-globe"/></svg> Sayt va API</button>
+      <button class="nav" data-view="jobs"><svg class="ic"><use href="#i-clock"/></svg> Navbat va jadval</button>
 
       <p class="nav-group">NATIJALAR</p>
       <button class="nav" data-view="findings"><svg class="ic"><use href="#i-list"/></svg> Topilmalar <span class="nav-count" id="nav-findings-count" hidden></span></button>
@@ -164,6 +166,32 @@
         <div class="scanner-summary"><p id="dep-progress" role="status" aria-live="polite"></p><button id="dep-cancel" class="secondary" hidden>Bekor qilish</button></div>
         <div id="dep-result" class="empty">Loyihani tanlab tekshiruvni boshlang yoki oldingi hisobotni oching.</div>
         <details class="pilot-help"><summary>Hisobot tarixi va taqqoslash</summary><div id="dep-history"></div><div class="dep-filters"><label>Oldingi hisobot<select id="dep-before"></select></label><button id="dep-compare" class="secondary">Ochiq hisobot bilan solishtirish</button></div><p id="dep-delta" role="status"></p></details>
+      </section>
+      <section id="jobs-view" class="view" hidden>
+        <div class="section-heading"><div><p class="eyebrow">NAVBAT · JADVAL · XABARNOMA</p><h2>Skanlar navbati va avtomatik jadval</h2></div><button id="jobs-refresh" class="ghost" title="Yangilash" aria-label="Yangilash"><svg class="ic"><use href="#i-refresh"/></svg></button></div>
+        <p id="jobs-note" class="muted"></p>
+        <form id="job-form" class="dep-filters">
+          <label>Tur<select id="job-kind"></select></label>
+          <label>Nishon<select id="job-target"></select></label>
+          <label>Xabar<select id="job-notify"><option value="never">xabar yo‘q</option><option value="on_change">natija o‘zgarsa</option><option value="always">har safar</option></select></label>
+          <button class="primary">Navbatga qo‘shish</button>
+          <span id="job-feedback" class="muted"></span>
+        </form>
+        <div id="jobs-list" class="empty">Yuklanmoqda…</div>
+        <div class="section-heading"><h2>Jadval</h2></div>
+        <form id="schedule-form" class="dep-filters">
+          <label>Jadval ID<input name="id" required maxlength="40" placeholder="masalan: tungi-kod"></label>
+          <label>Tur<select name="kind" id="schedule-kind"></select></label>
+          <label>Nishon<select name="target" id="schedule-target"></select></label>
+          <label>Kunlar<input name="days" placeholder="mon-fri"></label>
+          <label>Vaqt<input name="at" type="time" required value="02:30"></label>
+          <label>Vaqt zonasi<input name="timezone" placeholder="+05:00" maxlength="40"></label>
+          <label>Xabar<select name="notify"><option value="on_change">natija o‘zgarsa</option><option value="always">har safar</option><option value="never">xabar yo‘q</option></select></label>
+          <button class="primary">Saqlash</button>
+          <span id="schedule-feedback" class="muted"></span>
+        </form>
+        <div id="schedule-list" class="empty">Yuklanmoqda…</div>
+        <p class="hint-text">Xabar kanallari (webhook, Slack, email) “Umumiy sozlamalar”da. Server o‘chiq paytda o‘tib ketgan vaqt qaytganda bir marta bajariladi (24 soat ichida).</p>
       </section>
       <section id="portfolio-view" class="view" hidden>
         <div class="section-heading"><div><p class="eyebrow">PORTFEL · BARCHA LOYIHALAR</p><h2>Qaysi loyihaning qaysi qatlami tekshirilmagan?</h2></div><button id="portfolio-refresh" class="secondary">Yangilash</button></div>

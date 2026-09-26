@@ -57,8 +57,8 @@ function busy(value, message = '') {
   $('progress').textContent = message;
 }
 function view(name) {
-  for (const item of ['repository','code','dependencies','iac','readiness','images','web','assessments','portfolio','findings','project']) $(item+'-view').hidden = item !== name;
-  $('environment-label').textContent = name === 'assessments' ? 'UMUMIY TEKSHIRUV · AI ISHLATILMAYDI' : name === 'web' ? 'RUXSATLI SAYT · NUCLEI · GET' : name === 'readiness' ? 'PILOT · BOSHLASH' : name === 'images' ? 'IMAGE · TRIVY' : name === 'dependencies' ? 'CVE · OSV · KEV · NVD · EPSS' : name === 'code' ? 'KOD · SIRLAR · CWE/OWASP' : name === 'findings' ? 'TOPILMALAR · BARCHA SKANERLAR' : name === 'project' ? 'LOYIHA · BARCHA QATLAMLAR' : name === 'iac' ? 'IAC · TRIVY CONFIG · FAQAT O‘QISH' : name === 'portfolio' ? 'PORTFEL · UMUMIY BALL YO‘Q' : 'REPOSITORY · FAQAT O‘QISH';
+  for (const item of ['repository','code','dependencies','iac','readiness','images','web','assessments','portfolio','findings','project','jobs']) $(item+'-view').hidden = item !== name;
+  $('environment-label').textContent = name === 'assessments' ? 'UMUMIY TEKSHIRUV · AI ISHLATILMAYDI' : name === 'web' ? 'RUXSATLI SAYT · NUCLEI · GET' : name === 'readiness' ? 'PILOT · BOSHLASH' : name === 'images' ? 'IMAGE · TRIVY' : name === 'dependencies' ? 'CVE · OSV · KEV · NVD · EPSS' : name === 'code' ? 'KOD · SIRLAR · CWE/OWASP' : name === 'findings' ? 'TOPILMALAR · BARCHA SKANERLAR' : name === 'project' ? 'LOYIHA · BARCHA QATLAMLAR' : name === 'iac' ? 'IAC · TRIVY CONFIG · FAQAT O‘QISH' : name === 'portfolio' ? 'PORTFEL · UMUMIY BALL YO‘Q' : name === 'jobs' ? 'NAVBAT · JADVAL · XABARNOMA' : 'REPOSITORY · FAQAT O‘QISH';
   document.querySelectorAll('[data-view]').forEach(button => {
     const active = button.dataset.view === name;
     button.classList.toggle('active', active);

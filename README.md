@@ -76,6 +76,23 @@ Trivy bazasi keraksiz yangilanmaydi.
 (`nice 10`, Linux'da `ionice` idle sinfi; Windows'da BELOW_NORMAL) — natija o'zgarmaydi, faqat
 operatorning boshqa ishiga xalal bermaydi. Ajratilgan skan serverida `THREATCHAIN_NORMAL_PRIORITY=1`.
 
+## Navbat, jadval va xabarnomalar (2026-09-26)
+
+- **Navbat** (`zanjir/jobs.py`, dashboard: *Navbat va jadval*, API: `POST /api/jobs`): "boshqa tekshiruv davom
+  etmoqda" rad javobi o'rniga so'rov navbatga tushadi va skaner bo'shashi bilan boshlanadi. Bir turdagi skan
+  bittadan, mashinada umumiy parallel chegara (standart 1, sozlamada 1–4). Bir xil tur+nishon ikki marta
+  navbatga tushmaydi. Server qayta ishga tushsa, navbat saqlanadi; ishlayotgan ish `interrupted` deb belgilanadi.
+- **Jadval** (`POST /api/schedules`): kunlar (`mon-fri`), vaqt (`02:30`) va UTC ofseti. Server o'chiq paytda
+  o'tib ketgan vaqt qaytganda **bir marta** bajariladi (24 soat ichida), har o'tgan kun uchun emas. Web nishon
+  ruxsat oynasidan tashqarida bo'lsa, ish oyna ochilguncha `waiting` holatida kutadi.
+- **Xabarnomalar** (`zanjir/notify.py`): natija oldingi skandan farq qilsa (yangi yoki yo'qolgan topilma —
+  fingerprint bo'yicha, yoki holat o'zgarishi) — JSON webhook, Slack incoming webhook va/yoki email (SMTP).
+  Xabarda faqat bosqich, nishon, holatlar, sonlar va 5 tagacha yangi topilma (qoida, jiddiylik, joy) bor —
+  kod, dalil yoki maxfiy qiymat yo'q. Manzillar va SMTP paroli `profiles/settings.json` da (faqat egasi o'qiydi),
+  API ularni qaytarmaydi; `THREATCHAIN_SMTP_PASSWORD` ustun turadi. "Yo'qolgan" hech qachon "tuzatildi" demaydi.
+- Tekshirildi: haqiqiy serverda 3 ta ish ketma-ket bajarildi, birinchi skan xabar yubordi, o'zgarmagan ikkinchi
+  skan yubormadi; jadval belgilangan daqiqada ishga tushdi va keyingi vaqt ertaga deb ko'rsatildi.
+
 ## Sifat nazorati va katta tarix (2026-09-26)
 
 - **CI** (`.github/workflows/ci.yml`): har push/PR'da lint (Python kompilyatsiyasi + dashboard JS),
