@@ -39,6 +39,9 @@ WHITESPACE = re.compile(r'\s+')
 FIELDS_PER_TOOL = {
     'semgrep': ('rule_id', 'path', 'context'),
     'pmd': ('rule_id', 'path', 'context'),
+    # CodeQL reports a flow: the same sink reached from two different sources is
+    # two findings, and an edit that moves lines keeps neither end's file.
+    'codeql': ('rule_id', 'path', 'sink', 'source'),
     # gitleaks is the one scanner whose finding text we deliberately cannot see:
     # it runs with --redact=100, so `Secret` and `Match` arrive as the literal
     # string "REDACTED" and there is nothing to hash. Hashing the secret would

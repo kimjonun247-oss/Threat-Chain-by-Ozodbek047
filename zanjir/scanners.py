@@ -761,6 +761,17 @@ def execute(target,rid):
                 # linked, never merged, so no evidence is lost. See baseline.py.
                 report['duplicates']=baseline.link_duplicates(report['findings'])
                 write(folder/'report.json',report)
+            # Optional deep analysis (CodeQL, inter-file taint): opt-in in settings,
+            # it runs on the same snapshot and counts like any other tool.
+            from . import deep_analysis
+            if deep_analysis.enabled():
+                report['progress']='CodeQL: fayllararo ma’lumot oqimi tahlili (bir necha daqiqa)'
+                write(folder/'report.json',report)
+                record,deep=deep_analysis.run(work/'source',work,env)
+                report['tools']['codeql']=record
+                report['findings']+=deep
+                report['count']=len(report['findings']);report['verification_summary']=verification_mod.summarize(report['findings'])
+                report['duplicates']=baseline.link_duplicates(report['findings'])
             states=[item['state'] for item in report['tools'].values()]
             report['state']='completed' if all(s=='completed' for s in states) else 'failed' if all(s=='failed' for s in states) else 'partial'
             # Kept out of report['tools'] on purpose: a project without .git is

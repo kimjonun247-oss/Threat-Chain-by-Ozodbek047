@@ -21,6 +21,7 @@ python3 benchmarks/run.py --output natija.json
 | `iac` | Dockerfile, Kubernetes, Terraform | ≥ 41 topilma, asosiy tekshiruvlar bor |
 | `compose` | RP-001…011 ni ishga tushiradigan Compose/Nginx + xavfsiz Compose | 11/11 qoida, RP-005 bitta, xavfsizda 0 |
 | `fixes` | IaC va Compose/Nginx korpusi | Tuzatish diff'lari `patch` bilan qo'llanadi, qayta skanda tuzatilgan (qoida, joy) juftliklari qolmasligi shart (IaC ≥ 5, Compose ≥ 12) |
+| `deep` | Fayllararo taint korpusi (`corpus/interfile`: Python + JS) | CodeQL SQL injection, command injection va reflected XSS oqimlarini fayllar orasida topadi (CodeQL o'rnatilmagan bo'lsa SKIP) |
 | `web` | Zaif va tuzatilgan lokal sayt (`servers/web_target.py`) | Barcha kutilgan topilmalar, 7 ta nazariy topilma ikkinchi GET bilan tasdiqlanadi; tuzatilganda faqat HTTP |
 | `impact` | So'rovlarni sanaydigan nishon (`servers/impact_target.py`) | 1 ulanish; band server 6 so'rovdan keyin to'xtatiladi; sekin serverda bitta sekinlashuv |
 | `gate` | Yuqoridagilar ustida `ci_gate.py` | Chiqish kodlari 0 / 1 / 1 |

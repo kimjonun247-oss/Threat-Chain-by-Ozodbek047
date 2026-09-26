@@ -29,7 +29,7 @@
     page=Math.min(page,pages-1);
     const body=$('code-findings');
     if(!body)return;
-    body.innerHTML=matched.length?`<div class="scanner-table"><table><thead><tr><th>Vosita</th><th>Daraja</th><th>Fayl va satr</th><th>Kuzatuv</th><th>CWE / OWASP</th><th>Holat</th></tr></thead><tbody>${matched.slice(page*PER_PAGE,page*PER_PAGE+PER_PAGE).map(f=>`<tr><td>${e(f.tool)}</td><td>${severityBadge(f.severity)||'—'}</td><td>${e(f.path)}:${e(f.line)}</td><td><strong>${e(f.rule_id)}</strong><p>${e(f.message)}</p></td><td>${e((f.cwe_ids||[]).join(', ')||'—')} ${owaspBadges(f.owasp_top10_2025)}</td><td>Qo‘lda tekshirish kerak${f.secret_value?'<br>Qiymat yashirilgan':''}</td></tr>`).join('')}</tbody></table></div>`
+    body.innerHTML=matched.length?`<div class="scanner-table"><table><thead><tr><th>Vosita</th><th>Daraja</th><th>Fayl va satr</th><th>Kuzatuv</th><th>CWE / OWASP</th><th>Holat</th></tr></thead><tbody>${matched.slice(page*PER_PAGE,page*PER_PAGE+PER_PAGE).map(f=>`<tr><td>${e(f.tool)}</td><td>${severityBadge(f.severity)||'—'}</td><td>${e(f.path)}:${e(f.line)}</td><td><strong>${e(f.rule_id)}</strong><p>${e(f.message)}</p>${f.data_flow?`<p class="muted">Ma’lumot oqimi: <code>${e(f.data_flow.source)}</code> → <code>${e(f.data_flow.sink)}</code> · ${e(f.data_flow.steps)} qadam${f.data_flow.cross_file?' · <span class="badge amber">fayllararo</span>':''}</p>`:''}</td><td>${e((f.cwe_ids||[]).join(', ')||'—')} ${owaspBadges(f.owasp_top10_2025)}</td><td>Qo‘lda tekshirish kerak${f.secret_value?'<br>Qiymat yashirilgan':''}</td></tr>`).join('')}</tbody></table></div>`
       :'<p class="empty">Ushbu filtrga mos kuzatuv yo‘q.</p>';
     $('code-page').textContent=`${matched.length} ta kuzatuv · ${page+1}/${pages} sahifa`;
     $('code-prev').disabled=page===0;

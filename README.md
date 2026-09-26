@@ -76,6 +76,27 @@ Trivy bazasi keraksiz yangilanmaydi.
 (`nice 10`, Linux'da `ionice` idle sinfi; Windows'da BELOW_NORMAL) — natija o'zgarmaydi, faqat
 operatorning boshqa ishiga xalal bermaydi. Ajratilgan skan serverida `THREATCHAIN_NORMAL_PRIORITY=1`.
 
+## Ixtiyoriy chuqur tahlil: CodeQL (2026-09-26)
+
+Semgrep (open-source) naqshni bitta funksiya/fayl ichida ko'radi. So'rov qiymati bir faylda o'qilib, boshqa fayldagi
+yordamchi orqali SQL/shell/HTML'ga yetsa — u buni ko'rmaydi. CodeQL butun dastur bo'ylab ma'lumot oqimini kuzatadi.
+
+```
+python3 setup_codeql.py        # CodeQL 2.27.1 bundle: ~0.9 GB, SHA-256 pinlangan + GitHub checksum bilan solishtiriladi
+```
+*Umumiy sozlamalar → Chuqur tahlil* (yoki `POST /api/settings/deep-analysis {"codeql": true}`) — shundan keyin har
+kod skanida `codeql` bosqichi qo'shiladi (past ustuvorlikda, `--no-download`, `security-extended` so'rovlari).
+
+- **Qamrov:** build talab qilmaydigan tillar — Python, JavaScript/TypeScript, Ruby, Java/Kotlin, C#
+  (`--build-mode=none`). Go, C/C++, Swift build talab qiladi (repository kodi bajarilmaydi) — hisobotda
+  "qamrovga kirmadi" deb yoziladi. **PHP'ni CodeQL qo'llamaydi** — DVWA kabi PHP loyihalarda fayllararo tahlil
+  uchun tijoriy Semgrep Pro kerak; bu hisobotda aniq aytiladi.
+- **Natija:** har topilmada manba → xavfli nuqta (`app.py:11 → store.py:8`), qadamlar soni va "fayllararo" belgisi.
+- **Isbot (benchmark `deep`, CI'da):** `corpus/interfile` — SQL injection (12 qadam), command injection (7),
+  reflected XSS (5), hammasi fayllar orasida. Xuddi shu korpusda Semgrep SQL injection'ni **umuman topmaydi**.
+- **Litsenziya:** ochiq kod va ilmiy ish uchun bepul; xususiy/tijoriy kodni tahlil qilish uchun GitHub Advanced
+  Security litsenziyasi kerak — yoqishdan oldin tekshiring.
+
 ## Tuzatish taklifi: qaysi versiya va tayyor diff (2026-09-26)
 
 Har hisobotda `fix_plan` (dashboard: *Tuzatish taklifi*). Hech narsa avtomatik qo'llanmaydi.

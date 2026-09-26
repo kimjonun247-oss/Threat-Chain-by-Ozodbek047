@@ -42,7 +42,7 @@ from zanjir import ci_gate, code_targets, iac, images, inventory, nettrust, repo
 
 EXPECTED = json.loads((HERE / 'expected.json').read_text(encoding='utf-8'))
 WORK = Path(tempfile.mkdtemp(prefix='threatchain-bench-work-'))
-OFFLINE = ('sast', 'secrets', 'apex', 'iac', 'compose', 'fixes', 'web', 'impact', 'gate')
+OFFLINE = ('sast', 'secrets', 'apex', 'iac', 'compose', 'fixes', 'deep', 'web', 'impact', 'gate')
 ONLINE = ('lockfiles', 'jvm_dotnet', 'image')
 RESULTS = []
 
@@ -239,6 +239,24 @@ def bench_fixes():
     record('fixes', ok, '; '.join(f"{n}: {len(r['targeted'])} (qoida, joy) diff bilan tuzatildi, qayta skanda qolgan {r['still_found']}, "
                                   f"topilmalar {r['findings'][0]} → {r['findings'][1]}" for n, r in results.items()), results)
 
+
+def bench_deep():
+    """CodeQL must follow each flow across files (benchmarks/corpus/interfile)."""
+    from zanjir import deep_analysis
+    need(deep_analysis.installed(), 'CodeQL o‘rnatilmagan (python3 setup_codeql.py)')
+    root = copy_corpus('interfile')
+    work = WORK / 'deep-work'
+    work.mkdir()
+    tool, found = deep_analysis.run(root, work, scanners.environment(work))
+    spec = EXPECTED['deep']
+    got = {f['rule_id']: f for f in found}
+    missing = sorted(set(spec['must_find']) - set(got))
+    single_file = sorted(rule for rule in spec['must_find'] if rule in got and not (got[rule].get('data_flow') or {}).get('cross_file'))
+    ok = tool['state'] == 'completed' and not missing and not single_file
+    flows = ', '.join(f"{rule} ({(got[rule].get('data_flow') or {}).get('steps', 0)} qadam)" for rule in sorted(got))
+    record('deep', ok, f"CodeQL {tool.get('version', '?')}: {flows}; yetishmagan {missing}, fayllararo emas {single_file}",
+           {'rules': sorted(got), 'cross_file_flows': tool.get('cross_file_flows')})
+
 # ---------------------------------------------------------------------- compose
 def bench_compose():
     rules, safe = {}, None
@@ -399,7 +417,7 @@ def bench_image():
 
 
 CHECKS = {'sast': bench_sast, 'secrets': bench_secrets, 'apex': bench_apex, 'iac': bench_iac,
-          'compose': bench_compose, 'fixes': bench_fixes, 'web': bench_web, 'impact': bench_impact, 'gate': bench_gate,
+          'compose': bench_compose, 'fixes': bench_fixes, 'deep': bench_deep, 'web': bench_web, 'impact': bench_impact, 'gate': bench_gate,
           'lockfiles': bench_lockfiles, 'jvm_dotnet': bench_jvm_dotnet, 'image': bench_image}
 
 

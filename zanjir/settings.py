@@ -198,3 +198,15 @@ def set_max_parallel(value):
     data['max_parallel_scans'] = value
     write(data)
     return {'max_parallel_scans': value}
+
+
+def set_deep_analysis(codeql):
+    """Turn the optional CodeQL stage on or off for code scans."""
+    if type(codeql) is not bool:
+        raise ValueError('codeql: true yoki false.')
+    data = read()
+    data['deep_analysis'] = {**(data.get('deep_analysis') or {}), 'codeql': codeql}
+    write(data)
+    from . import deep_analysis
+    return {'codeql': codeql, 'installed': deep_analysis.installed(),
+            'note': None if deep_analysis.installed() or not codeql else 'CodeQL o‘rnatilmagan: python3 setup_codeql.py'}

@@ -257,6 +257,10 @@
           <div class="modal-actions"><button type="button" class="secondary" data-test>Sinov xabari</button><button type="button" class="secondary" data-clear-notify>Hammasini o‘chirish</button><button class="primary" data-submit>Saqlash</button></div>
           <p class="modal-feedback"></p>
         </form>
+        <h3>Chuqur tahlil (CodeQL)</h3>
+        <p class="hint-text">Fayllararo ma’lumot oqimi (taint) tahlili: Python, JS/TS, Ruby, Java/Kotlin, C#. Sekin (daqiqalar) va alohida litsenziyali: ochiq kod va ilmiy ish uchun bepul, xususiy kod uchun GitHub Advanced Security kerak. ${status.deep_analysis?.installed ? 'O‘rnatilgan.' : 'O‘rnatilmagan: <code>python3 setup_codeql.py</code>.'}</p>
+        <form id="settings-deep"><label><input type="checkbox" name="codeql"${status.deep_analysis?.codeql ? ' checked' : ''}> Kod skanida CodeQL bosqichini qo‘shish</label>
+          <div class="modal-actions"><button class="primary" data-submit>Saqlash</button></div><p class="modal-feedback"></p></form>
         <h3>Navbat</h3>
         <form id="settings-queue">
           <label>Bir vaqtda ishlaydigan skanlar (1–4; bir turdagi skan baribir bittadan)<input name="max" type="number" min="1" max="4" value="${e(queue.max_parallel || 1)}"></label>
@@ -310,6 +314,12 @@
         notifyForm.querySelector('[data-clear-notify]').addEventListener('click', () => {
           if (confirm('Barcha xabar kanallari o‘chirilsinmi?'))
             submit(notifyForm, '/api/settings/notifications', {webhook_url: '', slack_webhook_url: '', email: false}, () => 'O‘chirildi.');
+        });
+        const deepForm = box.querySelector('#settings-deep');
+        deepForm.addEventListener('submit', event => {
+          event.preventDefault();
+          submit(deepForm, '/api/settings/deep-analysis', {codeql: deepForm.elements.codeql.checked},
+                 r => (r.codeql ? 'Yoqildi.' : 'O‘chirildi.') + (r.note ? ' ' + r.note : ''));
         });
         const queueForm = box.querySelector('#settings-queue');
         queueForm.addEventListener('submit', event => {

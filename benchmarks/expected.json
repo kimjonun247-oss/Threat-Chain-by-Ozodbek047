@@ -78,6 +78,14 @@
       "compose": 12
     }
   },
+  "deep": {
+    "_comment": "Inter-file taint (CodeQL): each flow starts in one file and reaches its sink in another. Semgrep OSS does not report the SQL injection at all.",
+    "must_find": [
+      "py/sql-injection",
+      "py/command-line-injection",
+      "js/reflected-xss"
+    ]
+  },
   "web": {
     "vulnerable_must_find": [
       "zanjir-env",

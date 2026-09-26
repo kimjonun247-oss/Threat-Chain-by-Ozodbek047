@@ -372,6 +372,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(400, {'error': str(error)})
         if path == '/api/settings':
             status = settings.status(ALLOW_REGISTRATION[0])
+            from zanjir import deep_analysis
+            status['deep_analysis'] = {'codeql': deep_analysis.enabled(), 'installed': deep_analysis.installed()}
             health = readiness.status()
             return self.send(200, {**status, 'version': health['version'],
                                    'free_disk_gb': health['free_disk_gb'],
@@ -592,7 +594,7 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as error:
                 return self.send(400, {'error': str(error)})
         if path.startswith('/api/jobs') or path.startswith('/api/schedules') or path.startswith('/api/notifications') \
-                or path in ('/api/settings/notifications', '/api/settings/queue'):
+                or path in ('/api/settings/notifications', '/api/settings/queue', '/api/settings/deep-analysis'):
             try:
                 if path == '/api/jobs' and {'kind'} <= set(payload) <= {'kind', 'target', 'payload', 'notify'}:
                     return self.send(202, jobs.enqueue(payload['kind'], payload.get('target'), payload.get('payload'),
@@ -606,6 +608,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(200, jobs.remove_schedule(payload['id']))
                 if path == '/api/settings/notifications':
                     return self.send(200, settings.set_notifications(payload))
+                if path == '/api/settings/deep-analysis' and set(payload) == {'codeql'}:
+                    return self.send(200, settings.set_deep_analysis(payload['codeql']))
                 if path == '/api/settings/queue' and set(payload) == {'max_parallel_scans'}:
                     return self.send(200, settings.set_max_parallel(payload['max_parallel_scans']))
                 if path == '/api/notifications/test' and payload == {'confirm': True}:
