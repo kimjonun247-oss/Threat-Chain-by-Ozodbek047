@@ -47,3 +47,6 @@ profiles/users.json
 profiles/schedules/
 audit/
 jobs/
+
+# Dashboard dev tools (npm ci in web/); dist/ is the committed build output.
+web/node_modules/

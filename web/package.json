@@ -1,0 +1,20 @@
+{
+  "name": "threatchain-dashboard",
+  "private": true,
+  "description": "ThreatChain dashboard: TypeScript sources, type check, lint and build. The built dist/ is committed, so running ThreatChain needs no Node.js.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "lint": "eslint src",
+    "build": "node build.mjs",
+    "check": "node build.mjs --check",
+    "all": "npm run typecheck && npm run lint && npm run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "esbuild": "0.28.2",
+    "eslint": "10.11.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.70.1"
+  }
+}

@@ -56,9 +56,10 @@ STARTED_AT = datetime.datetime.now(datetime.timezone.utc).isoformat()
 # index.html references every asset as /name?v=<hash>, so an asset URL names one
 # exact content and can be cached "immutable"; editing a file changes its hash
 # and therefore its URL. No build step is involved -- the rewrite happens here.
-ASSET_NAMES = ('index.html', 'app.js', 'shell.js', 'dashboard.js', 'findings.js', 'project.js', 'scanners.js',
-               'dependencies.js', 'pilot-dashboard.js', 'web-pilot.js', 'iac.js', 'portfolio.js',
-               'style.css', 'dependencies.css', 'favicon.svg', 'bundle.js', 'bundle.css')
+# Script and style order: web/bundle.json, shared with the build (web/build.mjs).
+BUNDLES = {name: tuple(parts) for name, parts in
+           json.loads((ROOT / 'web/bundle.json').read_text(encoding='utf-8')).items() if not name.startswith('_')}
+ASSET_NAMES = ('index.html', *BUNDLES['bundle.js'], *BUNDLES['bundle.css'], 'favicon.svg', 'bundle.js', 'bundle.css')
 ASSET_TYPES = {".js": "text/javascript", ".css": "text/css", ".html": "text/html", ".svg": "image/svg+xml"}
 _ASSETS = {}
 _ASSETS_LOCK = threading.Lock()
@@ -70,9 +71,6 @@ MIN_COMPRESS = 1024
 # concatenated in the page's own order (all eleven are 'use strict' and share one
 # global scope already, so behaviour is unchanged). THREATCHAIN_DEBUG_ASSETS=1
 # serves them one by one again for debugging in the browser.
-BUNDLES = {'bundle.js': ('app.js', 'shell.js', 'dashboard.js', 'findings.js', 'project.js', 'scanners.js',
-                         'dependencies.js', 'pilot-dashboard.js', 'web-pilot.js', 'iac.js', 'portfolio.js', 'jobs.js'),
-           'bundle.css': ('style.css', 'dependencies.css')}
 ASSET_TYPES['.js'] = "text/javascript"
 
 
@@ -82,7 +80,11 @@ def bundling():
 
 def asset(name):
     """(body, etag, gzip_body) for one file of dist/, rebuilt only when it changes."""
-    if name in BUNDLES:
+    # The build (web/build.mjs) writes dist/bundle.js and dist/bundle.css,
+    # minified. The server only joins the parts itself when those files are
+    # missing -- a checkout without the build output still works.
+    prebuilt = name in BUNDLES and (ROOT / 'dist' / name).is_file()
+    if name in BUNDLES and not prebuilt:
         key = tuple(asset(part)[1] for part in BUNDLES[name])
         path = None
     else:
@@ -96,7 +98,7 @@ def asset(name):
         hit = _ASSETS.get(name)
     if hit and hit[0] == key:
         return hit[1]
-    if name in BUNDLES:
+    if name in BUNDLES and not prebuilt:
         separator = b'\n;\n' if name.endswith('.js') else b'\n'
         body = separator.join(b'/* ---- ' + part.encode() + b' ---- */\n' + asset(part)[0] for part in BUNDLES[name])
     else:

@@ -1,6 +1,7 @@
 # ThreatChain CI — har bir push va pull request'da.
 #
-#   lint        Python fayllari kompilyatsiya bo'ladi, dashboard JS sintaksisi to'g'ri.
+#   lint        Python kompilyatsiyasi; dashboard: TypeScript (strict), ESLint va dist/ build natijasi
+#               web/src bilan mosligi (esbuild), JS sintaksisi.
 #   unit        Unit testlar uchala OS da (tashqi vositasiz qismlar; vosita kerak bo'lgan
 #               testlar vosita yo'q joyda SKIP bo'ladi).
 #   platform    Rasmiy relizlardan vositalar o'rnatiladi va verify_platform.py uchala OS da
@@ -44,6 +45,18 @@ jobs:
           node-version: '22'
       - name: Python kompilyatsiyasi
         run: python -m compileall -q zanjir tests benchmarks *.py
+      - name: Dashboard dev vositalari (web/)
+        run: npm ci --no-audit --no-fund
+        working-directory: web
+      - name: TypeScript (strict)
+        run: npm run typecheck
+        working-directory: web
+      - name: ESLint
+        run: npm run lint
+        working-directory: web
+      - name: dist/ manbaga mos (esbuild)
+        run: npm run check
+        working-directory: web
       - name: Dashboard JS sintaksisi
         run: for f in dist/*.js; do node --check "$f"; done
 

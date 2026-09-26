@@ -132,20 +132,21 @@ class RegistryMemoTests(unittest.TestCase):
 class LazyViewTests(unittest.TestCase):
     """Each section loads its data the first time it is opened, not at page load."""
 
+    # The sources are web/src/*.ts; dist/ is their build output.
     def test_section_modules_start_through_when_shown(self):
-        dist = Path(app.ROOT) / 'dist'
-        expected = {'scanners.js': "whenShown(['code']", 'dependencies.js': "whenShown(['dependencies']",
-                    'pilot-dashboard.js': "whenShown(['images']", 'web-pilot.js': "whenShown(['web', 'assessments']",
-                    'app.js': "whenShown(['repository']"}
+        src = Path(app.ROOT) / 'web' / 'src'
+        expected = {'scanners.ts': "whenShown(['code']", 'dependencies.ts': "whenShown(['dependencies']",
+                    'pilot-dashboard.ts': "whenShown(['images']", 'web-pilot.ts': "whenShown(['web', 'assessments']",
+                    'app.ts': "whenShown(['repository']"}
         for name, marker in expected.items():
             with self.subTest(name=name):
-                text = (dist / name).read_text(encoding='utf-8')
+                text = (src / name).read_text(encoding='utf-8')
                 self.assertIn(marker, text)
-                if name != 'app.js':          # app.js init() only wires buttons
+                if name != 'app.ts':          # app.ts init() only wires buttons
                     self.assertIsNone(re.search(r'(?m)^\s*(init|initCode)\(\);', text))
 
     def test_sidebar_does_not_fetch_the_dashboard_a_second_time(self):
-        shell = (Path(app.ROOT) / 'dist' / 'shell.js').read_text(encoding='utf-8')
+        shell = (Path(app.ROOT) / 'web' / 'src' / 'shell.ts').read_text(encoding='utf-8')
         self.assertIn("addEventListener('dashboard-data'", shell)
         self.assertNotRegex(shell, r'(?m)^\s*loadHistory\(\);')
 
@@ -163,11 +164,30 @@ class BundleAndPollingTests(Server):
         self.assertEqual(len(styles), 1)
         self.assertTrue(scripts[0].startswith(b'/bundle.js?v='))
 
-    def test_bundle_is_the_files_in_page_order(self):
+    def test_the_built_bundle_is_served_as_built(self):
+        # web/build.mjs writes the minified bundle; the server sends that file.
         _, bundle, _ = self.get('/bundle.js')
-        positions = [bundle.index(b'/* ---- ' + name.encode() + b' ---- */') for name in app.BUNDLES['bundle.js']]
+        self.assertEqual(bundle, (Path(app.ROOT) / 'dist' / 'bundle.js').read_bytes())
+        _, css, _ = self.get('/bundle.css')
+        self.assertEqual(css, (Path(app.ROOT) / 'dist' / 'bundle.css').read_bytes())
+
+    def test_without_a_built_bundle_the_server_joins_the_files_in_page_order(self):
+        built = Path(app.ROOT) / 'dist' / 'bundle.js'
+        real_is_file = Path.is_file
+        with patch.object(Path, 'is_file', lambda path: False if path == built else real_is_file(path)):
+            app._ASSETS.pop('bundle.js', None)
+            body = app.asset('bundle.js')[0]
+        app._ASSETS.pop('bundle.js', None)
+        positions = [body.index(b'/* ---- ' + name.encode() + b' ---- */') for name in app.BUNDLES['bundle.js']]
         self.assertEqual(positions, sorted(positions))
-        self.assertIn((Path(app.ROOT) / 'dist' / 'findings.js').read_bytes(), bundle)
+        self.assertIn((Path(app.ROOT) / 'dist' / 'findings.js').read_bytes(), body)
+
+    def test_every_script_is_built_from_its_typescript_source(self):
+        for name in app.BUNDLES['bundle.js']:
+            with self.subTest(name=name):
+                self.assertTrue((Path(app.ROOT) / 'web' / 'src' / name.replace('.js', '.ts')).is_file())
+                header = (Path(app.ROOT) / 'dist' / name).read_text(encoding='utf-8').splitlines()[0]
+                self.assertEqual(header, f"// Generated from web/src/{name.replace('.js', '.ts')} by web/build.mjs -- edit the source, not this file.")
 
     def test_debug_mode_serves_files_one_by_one(self):
         with patch.dict('os.environ', {'THREATCHAIN_DEBUG_ASSETS': '1'}):

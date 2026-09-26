@@ -1,78 +1,70 @@
-'use strict';
-/* The workbench shell: command bar, modal windows, keyboard navigation and the
-   theme switch. Everything the old build could only do through a .cmd script
-   lives here as a window, so an operator never has to leave the browser to
-   register a target or set a key.
-
-   Three constraints shaped it:
-     - No build step and no framework. Plain modules, same as the rest of dist/.
-     - CSP: script-src 'self'; style-src 'self'. Nothing is written inline --
-       state that used to need an inline style becomes a class, and a test
-       asserts the files stay free of both.
-     - Nothing here decides anything. Every window posts to an endpoint that
-       already validates; the UI never invents a value the server did not. */
+// Generated from web/src/shell.ts by web/build.mjs -- edit the source, not this file.
+"use strict";
 (() => {
   const e = escapeHTML;
-  const THEME_KEY = 'threatchain.theme';
-
-  /* ---- theme ---------------------------------------------------------- */
+  const THEME_KEY = "threatchain.theme";
   function applyTheme(mode) {
-    document.documentElement.setAttribute('data-theme', mode);
-    const button = $('theme-toggle');
-    if (button) { button.setAttribute('aria-pressed', String(mode === 'dark')); button.title = mode === 'dark' ? 'Yorug‘ rejimga o‘tish' : 'Qorong‘u rejimga o‘tish'; }
-    try { localStorage.setItem(THEME_KEY, mode); } catch (error) { /* private mode: the choice simply is not remembered */ }
+    document.documentElement.setAttribute("data-theme", mode);
+    const button = $("theme-toggle");
+    if (button) {
+      button.setAttribute("aria-pressed", String(mode === "dark"));
+      button.title = mode === "dark" ? "Yorug‘ rejimga o‘tish" : "Qorong‘u rejimga o‘tish";
+    }
+    try {
+      localStorage.setItem(THEME_KEY, mode);
+    } catch (error) {
+    }
   }
-  let stored = null;
-  try { stored = localStorage.getItem(THEME_KEY); } catch (error) { stored = null; }
-  applyTheme(stored || (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
-  $('theme-toggle')?.addEventListener('click', () =>
-    applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'));
-
-  /* ---- modal windows --------------------------------------------------- */
+  let stored;
+  try {
+    stored = localStorage.getItem(THEME_KEY);
+  } catch (error) {
+    stored = null;
+  }
+  applyTheme(stored || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+  $("theme-toggle")?.addEventListener("click", () => applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark"));
   let lastFocus = null;
   function closeModal() {
-    $('modal').hidden = true;
-    $('modal-body').innerHTML = '';
+    $("modal").hidden = true;
+    $("modal-body").innerHTML = "";
     if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
   }
   function openModal(title, html, onReady) {
     lastFocus = document.activeElement;
-    $('modal-title').textContent = title;
-    $('modal-body').innerHTML = html;
-    $('modal').hidden = false;
-    if (onReady) onReady($('modal-body'));
-    const first = $('modal-body').querySelector('input,select,textarea,button');
-    (first || $('modal-close')).focus();
+    $("modal-title").textContent = title;
+    $("modal-body").innerHTML = html;
+    $("modal").hidden = false;
+    if (onReady) onReady($("modal-body"));
+    const first = $("modal-body").querySelector("input,select,textarea,button");
+    (first || $("modal-close")).focus();
   }
   window.openModal = openModal;
   window.closeModal = closeModal;
-  $('modal-close').addEventListener('click', closeModal);
-  $('modal').addEventListener('mousedown', event => { if (event.target === $('modal')) closeModal(); });
-
+  $("modal-close").addEventListener("click", closeModal);
+  $("modal").addEventListener("mousedown", (event) => {
+    if (event.target === $("modal")) closeModal();
+  });
   function feedback(box, message, ok) {
-    const line = box.querySelector('.modal-feedback');
+    const line = box.querySelector(".modal-feedback");
     if (!line) return;
     line.textContent = message;
-    line.className = 'modal-feedback ' + (ok ? 'ok' : 'bad');
+    line.className = "modal-feedback " + (ok ? "ok" : "bad");
   }
-
   async function submit(box, path, payload, done) {
-    const button = box.querySelector('[data-submit]');
+    const button = box.querySelector("[data-submit]");
     if (button) button.disabled = true;
     try {
       const result = await api(path, payload);
       feedback(box, done(result), true);
-      document.dispatchEvent(new CustomEvent('registry-changed'));
+      document.dispatchEvent(new CustomEvent("registry-changed"));
     } catch (error) {
-      feedback(box, error.message, false);
+      feedback(box, messageOf(error), false);
     } finally {
       if (button) button.disabled = false;
     }
   }
-
-  /* ---- the windows ------------------------------------------------------ */
   const WINDOWS = {
-    register: () => openModal('Nishon qo‘shish', `
+    register: () => openModal("Nishon qo‘shish", `
       <div class="facets" role="tablist">
         <button class="chip" data-tab="project" aria-pressed="true">Manba loyihasi</button>
         <button class="chip" data-tab="remote" aria-pressed="false">Masofaviy repozitoriy</button>
@@ -132,109 +124,136 @@
         <p class="hint-text">Faqat ro‘yxat yozuvi o‘chiriladi. Oldingi hisobotlar dalil sifatida tarixda qoladi, loyiha fayllariga tegilmaydi.</p>
         <div class="modal-actions"><button type="button" class="secondary" data-close>Yopish</button><button class="primary" data-submit>Ro‘yxatdan chiqarish</button></div>
         <p class="modal-feedback"></p>
-      </form>`, box => {
-      box.querySelectorAll('[data-tab]').forEach(tab => tab.addEventListener('click', () => {
-        box.querySelectorAll('[data-tab]').forEach(t => t.setAttribute('aria-pressed', String(t === tab)));
-        box.querySelectorAll('[data-panel]').forEach(p => { p.hidden = p.dataset.panel !== tab.dataset.tab; });
+      </form>`, (box) => {
+      box.querySelectorAll("[data-tab]").forEach((tab) => tab.addEventListener("click", () => {
+        box.querySelectorAll("[data-tab]").forEach((t) => t.setAttribute("aria-pressed", String(t === tab)));
+        box.querySelectorAll("[data-panel]").forEach((p) => {
+          p.hidden = p.dataset.panel !== tab.dataset.tab;
+        });
       }));
-      box.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeModal));
-
-      /* Folder picker. The endpoint answers only when the server was started
-         with --allow-registration, the same flag registration itself needs, so
-         a refusal here is the same refusal the form would give. */
-      const browser = box.querySelector('#reg-browser');
+      box.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", closeModal));
+      const browser = box.querySelector("#reg-browser");
       async function openFolder(path) {
         browser.hidden = false;
         browser.innerHTML = '<p class="hint-text">Yuklanmoqda…</p>';
         try {
-          const list = await api('/api/registry/browse' + (path ? '?path=' + encodeURIComponent(path) : ''));
+          const list = await api("/api/registry/browse" + (path ? "?path=" + encodeURIComponent(path) : ""));
           browser.innerHTML = `<div class="folder-head"><span>${e(list.path)}</span>
-            <button type="button" class="primary" data-use="${e(list.path)}" data-compose="${e(list.compose || '')}">Shu papkani olish</button></div>
+            <button type="button" class="primary" data-use="${e(list.path)}" data-compose="${e(list.compose || "")}">Shu papkani olish</button></div>
             <ul class="folder-list">
-            ${list.parent ? `<li><button type="button" data-open="${e(list.parent)}">${'\u2191'} yuqoriga</button></li>` : ''}
-            ${list.entries.map(item => `<li><button type="button" data-open="${e(item.path)}">${e(item.name)}</button>${item.compose ? `<span class="tag">${e(item.compose)}</span>` : ''}</li>`).join('')}
+            ${list.parent ? `<li><button type="button" data-open="${e(list.parent)}">${"↑"} yuqoriga</button></li>` : ""}
+            ${list.entries.map((item) => `<li><button type="button" data-open="${e(item.path)}">${e(item.name)}</button>${item.compose ? `<span class="tag">${e(item.compose)}</span>` : ""}</li>`).join("")}
             </ul>`;
         } catch (error) {
-          browser.innerHTML = `<p class="modal-feedback bad">${e(error.message)}</p>`;
+          browser.innerHTML = `<p class="modal-feedback bad">${e(messageOf(error))}</p>`;
         }
       }
-      browser.addEventListener('click', event => {
-        const step = event.target.closest('[data-open]');
-        if (step) { openFolder(step.dataset.open); return; }
-        const use = event.target.closest('[data-use]');
+      browser.addEventListener("click", (event) => {
+        const step = event.target.closest("[data-open]");
+        if (step) {
+          openFolder(step.dataset.open ?? "");
+          return;
+        }
+        const use = event.target.closest("[data-use]");
         if (!use) return;
-        box.querySelector('#reg-root').value = use.dataset.use;
+        box.querySelector("#reg-root").value = use.dataset.use ?? "";
         if (use.dataset.compose) box.querySelector('#reg-project [name="compose"]').value = use.dataset.compose;
         browser.hidden = true;
       });
-      box.querySelector('#reg-pick').addEventListener('click', () => openFolder(''));
-      box.querySelector('#reg-project').addEventListener('submit', event => {
+      box.querySelector("#reg-pick").addEventListener("click", () => openFolder(""));
+      box.querySelector("#reg-project").addEventListener("submit", (event) => {
         event.preventDefault();
-        const form = new FormData(event.target);
-        submit(box, '/api/registry/project', {
-          id: form.get('id').trim(), root: form.get('root').trim(),
-          compose: form.get('compose').trim(), name: form.get('name').trim()
-        }, r => `Ro‘yxatga olindi: ${r.id}. Sahifani yangilang yoki skanerni tanlang.`);
+        const form = formData(event.target);
+        submit(box, "/api/registry/project", {
+          id: form.get("id").trim(),
+          root: form.get("root").trim(),
+          compose: form.get("compose").trim(),
+          name: form.get("name").trim()
+        }, (r) => `Ro‘yxatga olindi: ${r.id}. Sahifani yangilang yoki skanerni tanlang.`);
       });
-      box.querySelector('#reg-remote').addEventListener('submit', event => {
+      box.querySelector("#reg-remote").addEventListener("submit", (event) => {
         event.preventDefault();
-        const form = new FormData(event.target);
-        submit(box, '/api/registry/remote', {
-          id: form.get('id').trim(), url: form.get('url').trim(),
-          ref: form.get('ref').trim(), name: form.get('name').trim()
-        }, r => `Masofaviy repozitoriy ro‘yxatga olindi: ${r.id}`);
+        const form = formData(event.target);
+        submit(box, "/api/registry/remote", {
+          id: form.get("id").trim(),
+          url: form.get("url").trim(),
+          ref: form.get("ref").trim(),
+          name: form.get("name").trim()
+        }, (r) => `Masofaviy repozitoriy ro‘yxatga olindi: ${r.id}`);
       });
-      box.querySelector('#reg-image').addEventListener('submit', event => {
+      box.querySelector("#reg-image").addEventListener("submit", (event) => {
         event.preventDefault();
-        const form = new FormData(event.target);
-        submit(box, '/api/registry/image', {
-          id: form.get('id').trim(), reference: form.get('reference').trim(),
-          name: form.get('name').trim(), auth: form.get('auth'), replace: form.get('replace') === 'on'
-        }, r => `Image ro‘yxatga olindi: ${r.id}` + (r.pinned ? '' : ' (teg — digest har skanda yoziladi)'));
+        const form = formData(event.target);
+        submit(box, "/api/registry/image", {
+          id: form.get("id").trim(),
+          reference: form.get("reference").trim(),
+          name: form.get("name").trim(),
+          auth: form.get("auth"),
+          replace: form.get("replace") === "on"
+        }, (r) => `Image ro‘yxatga olindi: ${r.id}` + (r.pinned ? "" : " (teg — digest har skanda yoziladi)"));
       });
-      box.querySelector('#reg-web').addEventListener('submit', event => {
+      box.querySelector("#reg-web").addEventListener("submit", (event) => {
         event.preventDefault();
-        const form = new FormData(event.target);
-        const delay = parseFloat(form.get('rate_delay'));
-        const budget = parseInt(form.get('daily_budget'), 10);
-        const start = form.get('window_start'), end = form.get('window_end');
-        const window = start && end ? {
-          start, end, timezone: form.get('window_tz').trim() || 'UTC',
-          ...(form.get('window_days').trim() ? {days: form.get('window_days').split(',').map(d => d.trim()).filter(Boolean)} : {})
+        const form = formData(event.target);
+        const delay = parseFloat(form.get("rate_delay"));
+        const budget = parseInt(form.get("daily_budget"), 10);
+        const start = form.get("window_start"), end = form.get("window_end");
+        const window2 = start && end ? {
+          start,
+          end,
+          timezone: form.get("window_tz").trim() || "UTC",
+          ...form.get("window_days").trim() ? { days: form.get("window_days").split(",").map((d) => d.trim()).filter(Boolean) } : {}
         } : null;
-        submit(box, '/api/registry/web', {
-          id: form.get('id').trim(), url: form.get('url').trim(), owner: form.get('owner').trim(),
-          authenticated: form.get('authenticated') === 'on', replace: form.get('replace') === 'on',
-          ...(Number.isFinite(delay) ? {rate_delay: delay} : {}),
-          ...(window ? {scan_window: window} : {}),
-          ...(Number.isFinite(budget) ? {daily_request_budget: budget} : {})
-        }, r => `Nishon ro‘yxatga olindi: ${r.id} · ${r.url}`
-             + (r.scan_window ? ` · oyna ${r.scan_window.days.join(',')} ${r.scan_window.start}–${r.scan_window.end} (${r.scan_window.timezone})` : '')
-             + (r.daily_request_budget ? ` · kuniga ≤${r.daily_request_budget} so‘rov` : '')
-             + (r.auth_variable ? ` — ${r.auth_variable} o‘zgaruvchisini o‘rnating` : ''));
+        submit(box, "/api/registry/web", {
+          id: form.get("id").trim(),
+          url: form.get("url").trim(),
+          owner: form.get("owner").trim(),
+          authenticated: form.get("authenticated") === "on",
+          replace: form.get("replace") === "on",
+          ...Number.isFinite(delay) ? { rate_delay: delay } : {},
+          ...window2 ? { scan_window: window2 } : {},
+          ...Number.isFinite(budget) ? { daily_request_budget: budget } : {}
+        }, (r) => `Nishon ro‘yxatga olindi: ${r.id} · ${r.url}` + (r.scan_window ? ` · oyna ${r.scan_window.days.join(",")} ${r.scan_window.start}–${r.scan_window.end} (${r.scan_window.timezone})` : "") + (r.daily_request_budget ? ` · kuniga ≤${r.daily_request_budget} so‘rov` : "") + (r.auth_variable ? ` — ${r.auth_variable} o‘zgaruvchisini o‘rnating` : ""));
       });
-      box.querySelector('#reg-remove').addEventListener('submit', event => {
+      box.querySelector("#reg-remove").addEventListener("submit", (event) => {
         event.preventDefault();
-        const form = new FormData(event.target);
-        const id = form.get('id').trim();
+        const form = formData(event.target);
+        const id = form.get("id").trim();
         if (!confirm(`“${id}” ro‘yxatdan chiqarilsinmi? Hisobotlar tarixda qoladi.`)) return;
-        submit(box, '/api/registry/remove', {kind: form.get('kind'), id}, r => `Ro‘yxatdan chiqarildi: ${r.id}. ${r.note}`);
+        submit(box, "/api/registry/remove", { kind: form.get("kind"), id }, (r) => `Ro‘yxatdan chiqarildi: ${r.id}. ${r.note}`);
       });
     }),
-
     settings: async () => {
-      let status = {}, channels = {}, queue = {};
-      try { status = await api('/api/settings'); } catch (error) { status = {error: error.message}; }
-      try { channels = await api('/api/settings/notifications'); } catch (error) { channels = {}; }
-      try { queue = await api('/api/jobs'); } catch (error) { queue = {}; }
+      let status, channels, queue;
+      try {
+        status = await api("/api/settings");
+      } catch (error) {
+        status = { error: messageOf(error) };
+      }
+      try {
+        channels = await api("/api/settings/notifications");
+      } catch (error) {
+        channels = {};
+      }
+      try {
+        queue = await api("/api/jobs");
+      } catch (error) {
+        queue = {};
+      }
       let audit = null;
-      if (document.body.dataset.role === 'admin') { try { audit = await api('/api/audit?limit=100'); } catch (error) { audit = null; } }
-      const auditRows = audit ? audit.entries.map(row => `<tr><td>${e(time(row.at))}</td><td>${e(row.user || '—')}</td><td>${e(row.action)}${row.path ? ' ' + e(row.path) : ''}</td><td>${e(row.status ?? '')}</td><td>${e(row.address || '')}</td><td><small>${e(row.details ? JSON.stringify(row.details) : '')}</small></td></tr>`).join('') : '';
+      if (document.body.dataset.role === "admin") {
+        try {
+          audit = await api("/api/audit?limit=100");
+        } catch (error) {
+          audit = null;
+        }
+      }
+      const auditRows = audit ? audit.entries.map((row) => `<tr><td>${e(time(row.at))}</td><td>${e(row.user || "—")}</td><td>${e(row.action)}${row.path ? " " + e(row.path) : ""}</td><td>${e(row.status ?? "")}</td><td>${e(row.address || "")}</td><td><small>${e(row.details ? JSON.stringify(row.details) : "")}</small></td></tr>`).join("") : "";
       const mail = channels.email || {};
-      const set = item => item?.present ? `o‘rnatilgan ${e(item.masked || '')}` : 'o‘rnatilmagan';
-      openModal('Sozlamalar', `
+      const set = (item) => item?.present ? `o‘rnatilgan ${e(item.masked || "")}` : "o‘rnatilmagan";
+      openModal("Sozlamalar", `
         <h3>NVD API kaliti</h3>
-        <p class="hint-text">Holat: <strong>${status.nvd_api_key?.present ? 'o‘rnatilgan (' + e(status.nvd_api_key.source) + ')' : 'o‘rnatilmagan'}</strong>${status.nvd_api_key?.masked ? ' · ' + e(status.nvd_api_key.masked) : ''}</p>
+        <p class="hint-text">Holat: <strong>${status.nvd_api_key?.present ? "o‘rnatilgan (" + e(status.nvd_api_key.source) + ")" : "o‘rnatilmagan"}</strong>${status.nvd_api_key?.masked ? " · " + e(status.nvd_api_key.masked) : ""}</p>
         <form id="settings-nvd">
           <label>Yangi kalit<input name="key" type="password" autocomplete="off" placeholder="nvd.nist.gov/developers/request-an-api-key"></label>
           <div class="modal-actions"><button type="button" class="secondary" data-clear>Kalitni o‘chirish</button><button class="primary" data-submit>Saqlash</button></div>
@@ -245,21 +264,21 @@
         <form id="settings-notify">
           <label>Webhook (JSON POST) · ${set(channels.webhook)}<input name="webhook_url" type="password" autocomplete="off" placeholder="https://…"></label>
           <label>Slack incoming webhook · ${set(channels.slack)}<input name="slack_webhook_url" type="password" autocomplete="off" placeholder="https://hooks.slack.com/services/…"></label>
-          <fieldset class="window-fields"><legend>Email (SMTP) · ${mail.present ? 'o‘rnatilgan' : 'o‘rnatilmagan'}</legend>
-            <label>Server<input name="host" value="${e(mail.host || '')}" placeholder="smtp.example.com"></label>
+          <fieldset class="window-fields"><legend>Email (SMTP) · ${mail.present ? "o‘rnatilgan" : "o‘rnatilmagan"}</legend>
+            <label>Server<input name="host" value="${e(mail.host || "")}" placeholder="smtp.example.com"></label>
             <label>Port<input name="port" type="number" min="1" max="65535" value="${e(mail.port || 587)}"></label>
-            <label>Himoya<select name="security">${['starttls', 'ssl', 'none'].map(v => `<option${mail.security === v ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
-            <label>Login<input name="username" value="${e(mail.username || '')}" autocomplete="off"></label>
-            <label>Parol${mail.password_from_env ? ' (THREATCHAIN_SMTP_PASSWORD ustun)' : mail.password_present ? ' (saqlangan)' : ''}<input name="password" type="password" autocomplete="off"></label>
-            <label>Kimdan<input name="sender" value="${e(mail.sender || '')}" placeholder="threatchain@example.com"></label>
-            <label>Kimga (vergul bilan)<input name="recipients" value="${e((mail.recipients || []).join(', '))}"></label>
+            <label>Himoya<select name="security">${["starttls", "ssl", "none"].map((v) => `<option${mail.security === v ? " selected" : ""}>${v}</option>`).join("")}</select></label>
+            <label>Login<input name="username" value="${e(mail.username || "")}" autocomplete="off"></label>
+            <label>Parol${mail.password_from_env ? " (THREATCHAIN_SMTP_PASSWORD ustun)" : mail.password_present ? " (saqlangan)" : ""}<input name="password" type="password" autocomplete="off"></label>
+            <label>Kimdan<input name="sender" value="${e(mail.sender || "")}" placeholder="threatchain@example.com"></label>
+            <label>Kimga (vergul bilan)<input name="recipients" value="${e((mail.recipients || []).join(", "))}"></label>
           </fieldset>
           <div class="modal-actions"><button type="button" class="secondary" data-test>Sinov xabari</button><button type="button" class="secondary" data-clear-notify>Hammasini o‘chirish</button><button class="primary" data-submit>Saqlash</button></div>
           <p class="modal-feedback"></p>
         </form>
         <h3>Chuqur tahlil (CodeQL)</h3>
-        <p class="hint-text">Fayllararo ma’lumot oqimi (taint) tahlili: Python, JS/TS, Ruby, Java/Kotlin, C#. Sekin (daqiqalar) va alohida litsenziyali: ochiq kod va ilmiy ish uchun bepul, xususiy kod uchun GitHub Advanced Security kerak. ${status.deep_analysis?.installed ? 'O‘rnatilgan.' : 'O‘rnatilmagan: <code>python3 setup_codeql.py</code>.'}</p>
-        <form id="settings-deep"><label><input type="checkbox" name="codeql"${status.deep_analysis?.codeql ? ' checked' : ''}> Kod skanida CodeQL bosqichini qo‘shish</label>
+        <p class="hint-text">Fayllararo ma’lumot oqimi (taint) tahlili: Python, JS/TS, Ruby, Java/Kotlin, C#. Sekin (daqiqalar) va alohida litsenziyali: ochiq kod va ilmiy ish uchun bepul, xususiy kod uchun GitHub Advanced Security kerak. ${status.deep_analysis?.installed ? "O‘rnatilgan." : "O‘rnatilmagan: <code>python3 setup_codeql.py</code>."}</p>
+        <form id="settings-deep"><label><input type="checkbox" name="codeql"${status.deep_analysis?.codeql ? " checked" : ""}> Kod skanida CodeQL bosqichini qo‘shish</label>
           <div class="modal-actions"><button class="primary" data-submit>Saqlash</button></div><p class="modal-feedback"></p></form>
         <h3>Navbat</h3>
         <form id="settings-queue">
@@ -268,74 +287,95 @@
           <p class="modal-feedback"></p>
         </form>
         ${audit ? `<h3>Audit jurnali (so‘nggi 100)</h3>
-        <p class="hint-text">Foydalanuvchilar: ${audit.users.map(u => e(u.name) + ' (' + e(u.role) + ')').join(', ')}. Foydalanuvchilar faqat server konsolida boshqariladi: <code>python3 app.py --add-user ISM --role operator</code>.</p>
-        <div class="audit-list table-wrap"><table><thead><tr><th>Vaqt</th><th>Kim</th><th>Amal</th><th>Kod</th><th>Manzil</th><th>ID’lar</th></tr></thead><tbody>${auditRows}</tbody></table></div>` : ''}
+        <p class="hint-text">Foydalanuvchilar: ${audit.users.map((u) => e(u.name) + " (" + e(u.role) + ")").join(", ")}. Foydalanuvchilar faqat server konsolida boshqariladi: <code>python3 app.py --add-user ISM --role operator</code>.</p>
+        <div class="audit-list table-wrap"><table><thead><tr><th>Vaqt</th><th>Kim</th><th>Amal</th><th>Kod</th><th>Manzil</th><th>ID’lar</th></tr></thead><tbody>${auditRows}</tbody></table></div>` : ""}
         <h3>Muhit</h3>
         <table class="kv"><tbody>
-          <tr><td>Versiya</td><td>${e(status.version || '—')}</td></tr>
-          <tr><td>Python</td><td>${e(status.python || '—')}</td></tr>
-          <tr><td>Bo‘sh disk</td><td>${e(status.free_disk_gb ?? '—')} GB</td></tr>
-          <tr><td>Kod barmoq izi</td><td>${e(status.code_fingerprint || '—')}</td></tr>
+          <tr><td>Versiya</td><td>${e(status.version || "—")}</td></tr>
+          <tr><td>Python</td><td>${e(status.python || "—")}</td></tr>
+          <tr><td>Bo‘sh disk</td><td>${e(status.free_disk_gb ?? "—")} GB</td></tr>
+          <tr><td>Kod barmoq izi</td><td>${e(status.code_fingerprint || "—")}</td></tr>
         </tbody></table>
-`, box => {
-        box.querySelector('#settings-nvd').addEventListener('submit', event => {
+`, (box) => {
+        box.querySelector("#settings-nvd").addEventListener("submit", (event) => {
           event.preventDefault();
-          const value = new FormData(event.target).get('key').trim();
-          if (!value) { feedback(box, 'Kalit bo‘sh.', false); return; }
-          submit(box, '/api/settings/nvd-key', {key: value}, () => 'Saqlandi. Keyingi CVE tekshiruvida ishlatiladi.');
+          const value = formData(event.target).get("key").trim();
+          if (!value) {
+            feedback(box, "Kalit bo‘sh.", false);
+            return;
+          }
+          submit(box, "/api/settings/nvd-key", { key: value }, () => "Saqlandi. Keyingi CVE tekshiruvida ishlatiladi.");
           event.target.reset();
         });
-        box.querySelector('[data-clear]').addEventListener('click', () =>
-          submit(box, '/api/settings/nvd-key', {key: ''}, () => 'Kalit o‘chirildi.'));
-        const notifyForm = box.querySelector('#settings-notify');
-        notifyForm.addEventListener('submit', event => {
+        box.querySelector("[data-clear]").addEventListener("click", () => submit(box, "/api/settings/nvd-key", { key: "" }, () => "Kalit o‘chirildi."));
+        const notifyForm = box.querySelector("#settings-notify");
+        notifyForm.addEventListener("submit", (event) => {
           event.preventDefault();
-          const form = new FormData(notifyForm);
-          const text = name => (form.get(name) || '').trim();
+          const form = formData(notifyForm);
+          const text = (name) => (form.get(name) || "").trim();
           const payload = {};
-          if (text('webhook_url')) payload.webhook_url = text('webhook_url');
-          if (text('slack_webhook_url')) payload.slack_webhook_url = text('slack_webhook_url');
-          if (text('host')) {
-            payload.email = {host: text('host'), port: parseInt(text('port'), 10) || 587, security: form.get('security'),
-                             username: text('username'), sender: text('sender'), recipients: text('recipients')};
-            if (form.get('password')) payload.email.password = form.get('password');
+          if (text("webhook_url")) payload.webhook_url = text("webhook_url");
+          if (text("slack_webhook_url")) payload.slack_webhook_url = text("slack_webhook_url");
+          if (text("host")) {
+            payload.email = {
+              host: text("host"),
+              port: parseInt(text("port"), 10) || 587,
+              security: form.get("security"),
+              username: text("username"),
+              sender: text("sender"),
+              recipients: text("recipients")
+            };
+            if (form.get("password")) payload.email.password = form.get("password");
           }
-          submit(notifyForm, '/api/settings/notifications', payload, () => 'Saqlandi.');
-          notifyForm.querySelectorAll('input[type=password]').forEach(input => { input.value = ''; });
+          submit(notifyForm, "/api/settings/notifications", payload, () => "Saqlandi.");
+          notifyForm.querySelectorAll("input[type=password]").forEach((input) => {
+            input.value = "";
+          });
         });
-        notifyForm.querySelector('[data-test]').addEventListener('click', async () => {
+        notifyForm.querySelector("[data-test]").addEventListener("click", async () => {
           try {
-            const result = await api('/api/notifications/test', {confirm: true});
-            feedback(notifyForm, result.results.length
-              ? result.results.map(r => `${r.channel}: ${r.ok ? 'yuborildi' : 'xato ' + r.error}`).join(' · ')
-              : 'Kanal sozlanmagan.', result.results.every(r => r.ok));
-          } catch (error) { feedback(notifyForm, error.message, false); }
+            const result = await api("/api/notifications/test", { confirm: true });
+            feedback(notifyForm, result.results.length ? result.results.map((r) => `${r.channel}: ${r.ok ? "yuborildi" : "xato " + r.error}`).join(" · ") : "Kanal sozlanmagan.", result.results.every((r) => r.ok));
+          } catch (error) {
+            feedback(notifyForm, messageOf(error), false);
+          }
         });
-        notifyForm.querySelector('[data-clear-notify]').addEventListener('click', () => {
-          if (confirm('Barcha xabar kanallari o‘chirilsinmi?'))
-            submit(notifyForm, '/api/settings/notifications', {webhook_url: '', slack_webhook_url: '', email: false}, () => 'O‘chirildi.');
+        notifyForm.querySelector("[data-clear-notify]").addEventListener("click", () => {
+          if (confirm("Barcha xabar kanallari o‘chirilsinmi?"))
+            submit(notifyForm, "/api/settings/notifications", { webhook_url: "", slack_webhook_url: "", email: false }, () => "O‘chirildi.");
         });
-        const deepForm = box.querySelector('#settings-deep');
-        deepForm.addEventListener('submit', event => {
+        const deepForm = box.querySelector("#settings-deep");
+        deepForm.addEventListener("submit", (event) => {
           event.preventDefault();
-          submit(deepForm, '/api/settings/deep-analysis', {codeql: deepForm.elements.codeql.checked},
-                 r => (r.codeql ? 'Yoqildi.' : 'O‘chirildi.') + (r.note ? ' ' + r.note : ''));
+          submit(
+            deepForm,
+            "/api/settings/deep-analysis",
+            { codeql: deepForm.elements.codeql.checked },
+            (r) => (r.codeql ? "Yoqildi." : "O‘chirildi.") + (r.note ? " " + r.note : "")
+          );
         });
-        const queueForm = box.querySelector('#settings-queue');
-        queueForm.addEventListener('submit', event => {
+        const queueForm = box.querySelector("#settings-queue");
+        queueForm.addEventListener("submit", (event) => {
           event.preventDefault();
-          submit(queueForm, '/api/settings/queue', {max_parallel_scans: parseInt(new FormData(queueForm).get('max'), 10)},
-                 r => `Saqlandi: bir vaqtda ${r.max_parallel_scans} ta.`);
+          submit(
+            queueForm,
+            "/api/settings/queue",
+            { max_parallel_scans: parseInt(formData(queueForm).get("max"), 10) },
+            (r) => `Saqlandi: bir vaqtda ${r.max_parallel_scans} ta.`
+          );
         });
       });
     },
-
     export: async () => {
-      let projects = [];
-      try { projects = (await api('/api/portfolio')).projects; } catch (error) { projects = []; }
-      openModal('Eksport markazi', `
+      let projects;
+      try {
+        projects = (await api("/api/portfolio")).projects;
+      } catch (error) {
+        projects = [];
+      }
+      openModal("Eksport markazi", `
         <h3>Loyiha bo‘yicha</h3>
-        <label>Loyiha<select id="export-project">${projects.map(p => `<option value="${e(p.id)}">${e(p.name)}</option>`).join('') || '<option value="">Loyiha yo‘q</option>'}</select></label>
+        <label>Loyiha<select id="export-project">${projects.map((p) => `<option value="${e(p.id)}">${e(p.name)}</option>`).join("") || '<option value="">Loyiha yo‘q</option>'}</select></label>
         <p class="modal-feedback"></p>
         <div class="modal-actions"><button class="secondary" id="export-sbom">Loyiha SBOM (CycloneDX) ↓</button></div>
         <h3>Hisobot bo‘yicha</h3>
@@ -345,81 +385,88 @@
           <tr><td>Kod, CVE, IaC, Sayt</td><td>JSON · Markdown</td></tr>
           <tr><td>Docker image</td><td>JSON · CycloneDX SBOM</td></tr>
         </tbody></table>
-`, box => {
-        box.querySelector('#export-sbom').addEventListener('click', () => {
-          const project = box.querySelector('#export-project').value;
-          if (!project) { feedback(box, 'Avval loyiha tanlang.', false); return; }
-          window.location.href = '/api/images/sbom?project=' + encodeURIComponent(project);
+`, (box) => {
+        box.querySelector("#export-sbom").addEventListener("click", () => {
+          const project = box.querySelector("#export-project").value;
+          if (!project) {
+            feedback(box, "Avval loyiha tanlang.", false);
+            return;
+          }
+          window.location.href = "/api/images/sbom?project=" + encodeURIComponent(project);
         });
       });
-    },
-
+    }
   };
-
-  document.querySelectorAll('[data-modal]').forEach(button =>
-    button.addEventListener('click', () => WINDOWS[button.dataset.modal]?.()));
-
-  /* ---- keyboard -------------------------------------------------------- */
-  const GOTO = {t: 'findings', l: 'portfolio', u: 'assessments', b: 'readiness', p: 'project'};
+  document.querySelectorAll("[data-modal]").forEach((button) => button.addEventListener("click", () => WINDOWS[button.dataset.modal ?? ""]?.()));
+  const GOTO = { t: "findings", l: "portfolio", u: "assessments", b: "readiness", p: "project" };
   let pendingGoto = false;
-  document.addEventListener('keydown', event => {
+  document.addEventListener("keydown", (event) => {
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName) || event.target.isContentEditable;
-    if (event.key === 'Escape') {
-      if (!$('modal').hidden) closeModal();
-      else if (!$('drawer').hidden) $('drawer-close').click();
+    if (event.key === "Escape") {
+      if (!$("modal").hidden) closeModal();
+      else if (!$("drawer").hidden) $("drawer-close").click();
       return;
     }
     if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
-    if (event.key === '/') { event.preventDefault(); $('global-search').focus(); return; }
-    if (pendingGoto && GOTO[event.key]) { pendingGoto = false; view(GOTO[event.key]); return; }
-    pendingGoto = event.key === 'g';
+    if (event.key === "/") {
+      event.preventDefault();
+      $("global-search").focus();
+      return;
+    }
+    if (pendingGoto && GOTO[event.key]) {
+      pendingGoto = false;
+      view(GOTO[event.key]);
+      return;
+    }
+    pendingGoto = event.key === "g";
   });
-
-  /* ---- global search --------------------------------------------------- */
-  /* Typing searches. The request is held back briefly so one word does not
-     become one request per letter; Enter sends it immediately. */
   let typingTimer = null;
   function runSearch() {
     clearTimeout(typingTimer);
-    document.dispatchEvent(new CustomEvent('search-requested', {detail: $('global-search').value.trim()}));
-    view('findings');
+    document.dispatchEvent(new CustomEvent("search-requested", { detail: $("global-search").value.trim() }));
+    view("findings");
   }
-  $('global-search').addEventListener('input', () => {
+  $("global-search").addEventListener("input", () => {
     clearTimeout(typingTimer);
     typingTimer = setTimeout(runSearch, 250);
   });
-  $('commandbar').addEventListener('submit', event => { event.preventDefault(); runSearch(); });
-
-  /* ---- sidebar: recent scans ------------------------------------------ */
-  /* The sidebar always said "no scans yet": nothing ever filled it. It now
-     lists the same rows as the dashboard feed (server: dashboard.recent_scans)
-     and opens the stage a row belongs to. Refreshed whenever a view is shown,
-     so a scan finished in one section appears without a page reload. */
-  const STAGE_TITLE = {code: 'Kod', dependencies: 'CVE', iac: 'IaC', images: 'Image', web: 'Sayt', repository: 'Repository'};
-  const STATE_TITLE = {completed: 'tugadi', partial: 'qisman', failed: 'yiqildi', running: 'ishlamoqda', queued: 'navbatda',
-                       cancelled: 'bekor qilindi', no_supported_packages: 'manifest yo‘q'};
-  // Fed by the overview's own /api/dashboard answer (dashboard-data) instead of a
-  // second identical request; other views refresh it at most every 20 seconds.
-  const HISTORY_TTL = 20000;
+  $("commandbar").addEventListener("submit", (event) => {
+    event.preventDefault();
+    runSearch();
+  });
+  const STAGE_TITLE = { code: "Kod", dependencies: "CVE", iac: "IaC", images: "Image", web: "Sayt", repository: "Repository" };
+  const STATE_TITLE = {
+    completed: "tugadi",
+    partial: "qisman",
+    failed: "yiqildi",
+    running: "ishlamoqda",
+    queued: "navbatda",
+    cancelled: "bekor qilindi",
+    no_supported_packages: "manifest yo‘q"
+  };
+  const HISTORY_TTL = 2e4;
   let historyAt = 0;
   function renderHistory(rows) {
     historyAt = Date.now();
-    const box = $('history');
+    const box = $("history");
     if (!box) return;
-    box.innerHTML = rows.length ? rows.map(r => `<button type="button" data-history-stage="${e(r.stage)}">
-        <b>${e(STAGE_TITLE[r.stage] || r.stage)}</b> · ${e(r.target)} · ${e(STATE_TITLE[r.state] || r.state || '—')}${r.count == null ? '' : ' · ' + e(r.count)}
-        <time>${e(time(r.created_at))}</time></button>`).join('')
-      : '<p>Hali tekshiruv yo‘q.</p>';
+    box.innerHTML = rows.length ? rows.map((r) => `<button type="button" data-history-stage="${e(r.stage)}">
+        <b>${e(STAGE_TITLE[r.stage] || r.stage)}</b> · ${e(r.target)} · ${e(STATE_TITLE[r.state] || r.state || "—")}${r.count == null ? "" : " · " + e(r.count)}
+        <time>${e(time(r.created_at))}</time></button>`).join("") : "<p>Hali tekshiruv yo‘q.</p>";
   }
   async function loadHistory(event) {
-    if (event?.detail === 'readiness' || Date.now() - historyAt < HISTORY_TTL) return;
-    try { renderHistory((await api('/api/dashboard')).recent || []); }
-    catch (error) { if ($('history')) $('history').innerHTML = '<p>Ro‘yxat yuklanmadi.</p>'; }
+    if (event?.detail === "readiness" || Date.now() - historyAt < HISTORY_TTL) return;
+    try {
+      renderHistory((await api("/api/dashboard")).recent || []);
+    } catch (error) {
+      if ($("history")) $("history").innerHTML = "<p>Ro‘yxat yuklanmadi.</p>";
+    }
   }
-  document.addEventListener('dashboard-data', event => renderHistory(event.detail.recent || []));
-  $('history')?.addEventListener('click', event => {
-    const button = event.target.closest('[data-history-stage]');
-    if (button && STAGE_TITLE[button.dataset.historyStage]) view(button.dataset.historyStage);
+  document.addEventListener("dashboard-data", (event) => renderHistory(event.detail.recent || []));
+  $("history")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-history-stage]");
+    const stage = button?.dataset.historyStage ?? "";
+    if (STAGE_TITLE[stage]) view(stage);
   });
-  document.addEventListener('view-shown', loadHistory);
+  document.addEventListener("view-shown", loadHistory);
 })();

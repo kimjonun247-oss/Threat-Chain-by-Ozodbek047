@@ -76,6 +76,28 @@ Trivy bazasi keraksiz yangilanmaydi.
 (`nice 10`, Linux'da `ionice` idle sinfi; Windows'da BELOW_NORMAL) — natija o'zgarmaydi, faqat
 operatorning boshqa ishiga xalal bermaydi. Ajratilgan skan serverida `THREATCHAIN_NORMAL_PRIORITY=1`.
 
+## Frontend: TypeScript, lint va build (2026-09-26)
+
+Dashboard manbasi — `web/src/*.ts` (12 ta skript + `types.ts`), **strict** TypeScript. Build — esbuild:
+`dist/*.js` (har skript alohida, o'qiladigan; `THREATCHAIN_DEBUG_ASSETS=1` rejimi uchun) va minify qilingan
+`dist/bundle.js` (121 KB) + `dist/bundle.css`. Server tayyor bundle'ni beradi (runtime'da yig'ish faqat
+build natijasi yo'q bo'lsa). Tartibning yagona manbai — `web/bundle.json` (build ham, server ham o'qiydi).
+
+```
+cd web && npm ci && npm run all      # tsc --noEmit (strict) + eslint + build
+npm run check                        # dist/ manbaga mosmi (CI shu bilan tekshiradi)
+```
+
+- **ThreatChain'ni ishlatish uchun Node kerak emas**: `dist/` build natijasi omborda; Node faqat frontend'ni
+  o'zgartiradigan dasturchiga kerak. Dev bog'liqliklar aniq versiyada pinlangan (`package-lock.json`).
+- **CI (`lint` job)**: `npm ci` → TypeScript strict → ESLint (`typescript-eslint` recommended, `eqeqeq`,
+  `prefer-const`, `no-var`) → `npm run check` (dist/ eskirgan bo'lsa yiqiladi) → `node --check`.
+- **Turlar**: DOM, hodisalar, forma maydonlari, holatlar va yordamchi funksiyalar aniq turlangan; server JSON
+  javoblari yagona `ApiData` nomi bilan (serverda tekshiriladi) — 211 joyda. Keyingi qadam: Python hisobot
+  sxemalaridan TS interfeyslarini hosil qilish.
+- Tekshirildi: brauzerda ikkala rejimda (bundle va debug) 12 ta bo'lim, 3 ta modal va qidiruv — konsol xatosi 0,
+  HTTP ≥ 400 javob 0. O'tish paytida topilgan xato: debug rejimida `jobs.js` 404 edi (ro'yxat qo'lda yuritilardi).
+
 ## Ixtiyoriy chuqur tahlil: CodeQL (2026-09-26)
 
 Semgrep (open-source) naqshni bitta funksiya/fayl ichida ko'radi. So'rov qiymati bir faylda o'qilib, boshqa fayldagi
