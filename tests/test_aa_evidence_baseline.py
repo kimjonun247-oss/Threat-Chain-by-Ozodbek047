@@ -2,6 +2,7 @@
 import unittest
 
 import evidence_guard
+import isolation  # noqa: F401 -- redirects audit/users/queue before any other test
 
 
 class EvidenceBaseline(unittest.TestCase):

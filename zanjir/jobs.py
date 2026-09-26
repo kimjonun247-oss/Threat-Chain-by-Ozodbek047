@@ -114,7 +114,7 @@ def check(kind, target, payload):
         modules()['code'].check_target(target)
 
 
-def enqueue(kind, target=None, payload=None, source='manual', schedule_id=None, notify='never'):
+def enqueue(kind, target=None, payload=None, source='manual', schedule_id=None, notify='never', requested_by=None):
     check(kind, target, payload)
     if notify not in NOTIFY:
         raise ValueError('notify: ' + ', '.join(NOTIFY))
@@ -127,7 +127,8 @@ def enqueue(kind, target=None, payload=None, source='manual', schedule_id=None, 
         job = {'id': now().strftime('%Y%m%dT%H%M%S') + '-' + uuid.uuid4().hex[:8], 'kind': kind,
                'target': target, 'payload': payload, 'source': source, 'schedule_id': schedule_id,
                'notify': notify, 'state': 'queued', 'created_at': now().isoformat(), 'not_before': None,
-               'report_id': None, 'message': 'Navbatda', 'attempts': 0}
+               'report_id': None, 'message': 'Navbatda', 'attempts': 0,
+               'requested_by': requested_by or ('scheduler' if source == 'schedule' else None)}
         jobs.append(job)
         save(jobs)
     wake()

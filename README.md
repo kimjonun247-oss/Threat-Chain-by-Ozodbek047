@@ -76,6 +76,33 @@ Trivy bazasi keraksiz yangilanmaydi.
 (`nice 10`, Linux'da `ionice` idle sinfi; Windows'da BELOW_NORMAL) — natija o'zgarmaydi, faqat
 operatorning boshqa ishiga xalal bermaydi. Ajratilgan skan serverida `THREATCHAIN_NORMAL_PRIORITY=1`.
 
+## Jamoa rejimi: login, rollar, audit, TLS (2026-09-26)
+
+Standart holat o'zgarmaydi: server faqat `127.0.0.1` da, foydalanuvchi yo'q bo'lsa login so'ralmaydi. Jamoa uchun:
+
+```
+python3 app.py --add-user boss --role admin          # parol so'raladi (kamida 12 belgi)
+python3 app.py --add-user ali  --role operator
+python3 app.py --bind 0.0.0.0 --port 8443 --tls-cert cert.pem --tls-key key.pem --public-host scanner.example.com:8443
+```
+
+- **Tashqariga faqat himoya bilan:** `127.0.0.1` dan boshqa manzilda server TLS sertifikatisiz, admin
+  foydalanuvchisiz yoki `--public-host` siz ishga tushmaydi (sabab aytiladi). TLS 1.2+, HSTS; handshake
+  so'rov oqimida bajariladi — sekin mijoz boshqalarni to'sib qo'ymaydi; 60 s faolsiz ulanish yopiladi.
+- **Rollar:** `viewer` — ko'rish; `operator` — skan, navbat, kod/image nishonlari, triage; `admin` — web nishon
+  ruxsati (uchinchi tomon serveriga so'rov yuborish qarori), sozlamalar, xabar kanallari, jadval, o'z qoidalari,
+  audit jurnali. Foydalanuvchilar faqat server konsolida boshqariladi (`--add-user`, `--set-password`,
+  `--set-role`, `--remove-user`, `--list-users`) — HTTP orqali hech qachon.
+- **Parol va sessiya:** PBKDF2-SHA256 (600 000 iteratsiya, tuz); sessiya — 256-bit tasodifiy token, `HttpOnly;
+  SameSite=Strict; Secure` cookie, xotirada faqat SHA-256 xeshi; 30 daqiqa faolsizlik yoki 12 soatdan keyin tugaydi;
+  parol/rol o'zgarsa sessiyalar yopiladi. 5 ta noto'g'ri urinishdan keyin foydalanuvchi va manzil bo'yicha
+  bloklash (1 → 15 daqiqa). Noma'lum foydalanuvchi uchun ham xesh hisoblanadi (vaqt orqali nom aniqlanmaydi).
+- **Audit jurnali** (`audit/audit.jsonl`, admin: *Umumiy sozlamalar*): kirish/chiqish, noto'g'ri urinishlar,
+  rad etilgan so'rovlar va har bir o'zgartiruvchi so'rov — kim, rol, manzil, yo'l, HTTP kodi va faqat ID'lar
+  (parol, token, URL ichidagi login, qoida matni yozilmaydi). Localhost rejimida ham yoziladi.
+- Tekshirildi (brauzer, TLS): noto'g'ri parol rad etildi; cookie `HttpOnly/Secure/SameSite=Strict`; kuzatuvchi
+  skan boshlay olmadi (403, jurnalda `refused`); admin audit jurnalini ko'rdi.
+
 ## Navbat, jadval va xabarnomalar (2026-09-26)
 
 - **Navbat** (`zanjir/jobs.py`, dashboard: *Navbat va jadval*, API: `POST /api/jobs`): "boshqa tekshiruv davom

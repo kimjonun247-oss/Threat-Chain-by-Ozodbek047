@@ -40,9 +40,60 @@ async function request(path, body) {
   const response = await fetch(path, body === undefined ? {} : { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
   let data;
   try { data = await response.json(); } catch { throw new Error('Server javobini o‘qib bo‘lmadi. Serverni tekshiring.'); }
+  // Team mode: an expired or missing session asks for a login once, then the
+  // request that hit it is repeated -- the operator does not lose their place.
+  if (response.status === 401 && data.login_required) { await login(); return request(path, body); }
   if (!response.ok) throw new Error(data.error || 'So‘rov bajarilmadi.');
   return data;
 }
+const ROLE_NAMES = {viewer: 'kuzatuvchi', operator: 'operator', admin: 'admin'};
+let loginPromise = null;
+function login() {
+  if (loginPromise) return loginPromise;
+  loginPromise = new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'login-overlay';
+    overlay.innerHTML = `<form class="login-box" autocomplete="on">
+      <h2>ThreatChain</h2><p class="muted">Davom etish uchun tizimga kiring.</p>
+      <label>Foydalanuvchi<input name="username" autocomplete="username" required maxlength="40"></label>
+      <label>Parol<input name="password" type="password" autocomplete="current-password" required maxlength="200"></label>
+      <button class="primary">Kirish</button><p class="login-error" role="alert"></p></form>`;
+    document.body.appendChild(overlay);
+    const form = overlay.querySelector('form');
+    form.elements.username.focus();
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const response = await fetch('/api/auth/login', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({username: form.elements.username.value.trim(), password: form.elements.password.value})});
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) { form.querySelector('.login-error').textContent = data.error || 'Kirib bo‘lmadi.'; form.elements.password.value = ''; return; }
+      overlay.remove();
+      loginPromise = null;
+      showUser(data.user);
+      resolve(data.user);
+    });
+  });
+  return loginPromise;
+}
+function showUser(user) {
+  const box = $('user-box');
+  if (!box) return;
+  box.hidden = !user;
+  if (!user) return;
+  box.querySelector('.user-name').textContent = `${user.name} · ${ROLE_NAMES[user.role] || user.role}`;
+  document.body.dataset.role = user.role;
+}
+document.addEventListener('DOMContentLoaded', async () => {
+  const logout = $('logout');
+  if (logout) logout.addEventListener('click', async () => {
+    await fetch('/api/auth/logout', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+    location.reload();
+  });
+  try {
+    const me = await (await fetch('/api/auth/me')).json();
+    if (me.auth_enabled) { if (me.user) showUser(me.user); else await login(); }
+  } catch { /* the first API call will report it */ }
+});
 // A report opened from the history list belongs to one target; the view's
 // target picker used to keep showing whatever was selected before, so the page
 // read "Zanjir demo" above the bench-sast report.

@@ -42,3 +42,8 @@ work/
 venv/
 # ci_gate.py ning standart SARIF chiqishi (joriy papkaga yoziladi)
 threatchain.sarif
+# Foydalanuvchilar (parol xeshlari), audit jurnali, navbat va jadvallar: mahalliy holat.
+profiles/users.json
+profiles/schedules/
+audit/
+jobs/

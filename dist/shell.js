@@ -227,6 +227,9 @@
       try { status = await api('/api/settings'); } catch (error) { status = {error: error.message}; }
       try { channels = await api('/api/settings/notifications'); } catch (error) { channels = {}; }
       try { queue = await api('/api/jobs'); } catch (error) { queue = {}; }
+      let audit = null;
+      if (document.body.dataset.role === 'admin') { try { audit = await api('/api/audit?limit=100'); } catch (error) { audit = null; } }
+      const auditRows = audit ? audit.entries.map(row => `<tr><td>${e(time(row.at))}</td><td>${e(row.user || '—')}</td><td>${e(row.action)}${row.path ? ' ' + e(row.path) : ''}</td><td>${e(row.status ?? '')}</td><td>${e(row.address || '')}</td><td><small>${e(row.details ? JSON.stringify(row.details) : '')}</small></td></tr>`).join('') : '';
       const mail = channels.email || {};
       const set = item => item?.present ? `o‘rnatilgan ${e(item.masked || '')}` : 'o‘rnatilmagan';
       openModal('Sozlamalar', `
@@ -260,6 +263,9 @@
           <div class="modal-actions"><button class="primary" data-submit>Saqlash</button></div>
           <p class="modal-feedback"></p>
         </form>
+        ${audit ? `<h3>Audit jurnali (so‘nggi 100)</h3>
+        <p class="hint-text">Foydalanuvchilar: ${audit.users.map(u => e(u.name) + ' (' + e(u.role) + ')').join(', ')}. Foydalanuvchilar faqat server konsolida boshqariladi: <code>python3 app.py --add-user ISM --role operator</code>.</p>
+        <div class="audit-list table-wrap"><table><thead><tr><th>Vaqt</th><th>Kim</th><th>Amal</th><th>Kod</th><th>Manzil</th><th>ID’lar</th></tr></thead><tbody>${auditRows}</tbody></table></div>` : ''}
         <h3>Muhit</h3>
         <table class="kv"><tbody>
           <tr><td>Versiya</td><td>${e(status.version || '—')}</td></tr>

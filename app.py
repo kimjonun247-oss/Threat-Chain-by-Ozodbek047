@@ -7,6 +7,7 @@ import gzip
 import hashlib
 import json
 import os
+import sys
 import mimetypes
 import threading
 from pathlib import Path
@@ -16,13 +17,17 @@ from urllib.parse import urlsplit, parse_qs
 from zanjir.engine import ROOT
 from zanjir import repo_store
 from zanjir import scanners, dependencies, images, readiness, webscan, pipeline, custom_rules, portfolio, triage, baseline, iac, sbom
-from zanjir import findings_index, settings, code_targets, dashboard, browse, jobs, notify
+from zanjir import findings_index, settings, code_targets, dashboard, browse, jobs, notify, auth
 from zanjir.repository import scan_repository, sarif
 
 RUN_LOCK = threading.Lock()
 # A one-element list rather than a plain global: the handler reads it at request
 # time and main() sets it once, without either needing a `global` statement.
 ALLOW_REGISTRATION = [False]
+# Set by main(): extra Host names a team server answers to, and whether it
+# serves TLS (cookies become Secure and HSTS is sent).
+PUBLIC_HOSTS = []
+TLS = [False]
 
 
 def code_fingerprint():
@@ -137,6 +142,9 @@ class Handler(BaseHTTPRequestHandler):
     # Keep-alive: the page and its API calls reuse one connection instead of a
     # new TCP handshake per request (HTTP/1.0 closed every connection).
     protocol_version = "HTTP/1.1"
+    # An idle or stalled connection (including a TLS handshake that never
+    # finishes) frees its thread after a minute instead of holding it forever.
+    timeout = 60
 
     def log_message(self, *_):
         pass
@@ -178,6 +186,12 @@ class Handler(BaseHTTPRequestHandler):
     def send(self, status, data, mime="application/json; charset=utf-8", attachment=None,
              cache="no-store", etag=None, gzipped=None):
         self._responded = True
+        pending = getattr(self, '_audit', None)
+        if pending:
+            # Every state-changing request, whatever its outcome, with the ids it named.
+            self._audit = None
+            auth.audit('request', user=pending['user'], role=pending['role'], address=self.client_address[0],
+                       path=pending['path'], status=status, details=pending['details'])
         if getattr(self, '_status_only', False) and status == 200 and isinstance(data, dict) and 'state' in data:
             data = status_view(data)
         body = json.dumps(data, ensure_ascii=False).encode("utf-8") if isinstance(data, (dict, list)) else data
@@ -204,6 +218,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Connection", "close")
             self.close_connection = True
         self.send_header("Cache-Control", cache)
+        for name, value in getattr(self, '_extra_headers', ()):
+            self.send_header(name, value)
+        if TLS[0]:
+            self.send_header("Strict-Transport-Security", "max-age=31536000")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
@@ -214,18 +232,86 @@ class Handler(BaseHTTPRequestHandler):
 
     def local_request(self):
         port = self.server.server_port
-        hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
+        hosts = {f"127.0.0.1:{port}", f"localhost:{port}"} | set(PUBLIC_HOSTS)
+        # A Host header outside this set is how a DNS-rebinding page would
+        # reach the dashboard; a team server names its public host explicitly.
         if self.headers.get("Host") not in hosts:
-            self.send(403, {"error": "Faqat localhost orqali kirish mumkin."})
+            self.send(403, {"error": "Faqat localhost (yoki --public-host) orqali kirish mumkin."})
             return False
         origin = self.headers.get("Origin")
-        if origin and origin not in {f"http://{host}" for host in hosts}:
+        scheme = 'https' if TLS[0] else 'http'
+        if origin and origin not in {f"{scheme}://{host}" for host in hosts}:
             self.send(403, {"error": "Tashqi sahifadan so‘rov qabul qilinmaydi."})
             return False
         if self.headers.get("Sec-Fetch-Site") == "cross-site":
             self.send(403, {"error": "Cross-site so‘rov qabul qilinmaydi."})
             return False
         return True
+
+    def cookie_token(self):
+        for part in (self.headers.get('Cookie') or '').split(';'):
+            name, _, value = part.strip().partition('=')
+            if name == auth.COOKIE:
+                return value
+        return None
+
+    def gate(self, path, payload=None):
+        """True when the request may proceed; otherwise the refusal has been sent.
+
+        With no users configured (a single workstation on loopback) nothing
+        changes. Otherwise every /api/ call needs a session with a role that
+        covers it; the page and its scripts stay public -- they hold no data.
+        """
+        self._user = None
+        if not path.startswith('/api/') or path in ('/api/auth/login', '/api/auth/me') or not auth.enabled():
+            if self.command == 'POST' and path.startswith('/api/') and path != '/api/auth/login':
+                self._audit = {'user': None, 'role': None, 'path': path, 'details': auth.payload_ids(payload)}
+            return True
+        user = auth.session(self.cookie_token())
+        if user is None:
+            self.send(401, {'error': 'Tizimga kiring.', 'login_required': True})
+            return False
+        self._user = user
+        if not auth.allowed(user, self.command, path):
+            auth.audit('refused', user=user['name'], role=user['role'], address=self.client_address[0], path=path,
+                       status=403)
+            self.send(403, {'error': f"Bu amal uchun “{auth.required_role(self.command, path)}” roli kerak."})
+            return False
+        if self.command == 'POST':
+            self._audit = {'user': user['name'], 'role': user['role'], 'path': path, 'details': auth.payload_ids(payload)}
+        return True
+
+    def auth_routes(self, path, payload=None):
+        """/api/auth/*: returns True when it answered."""
+        if path == '/api/auth/me' and self.command == 'GET':
+            user = auth.session(self.cookie_token()) if auth.enabled() else None
+            self.send(200, {'auth_enabled': auth.enabled(), 'user': user, 'tls': TLS[0]})
+            return True
+        if path == '/api/auth/login' and self.command == 'POST':
+            if not isinstance(payload, dict) or set(payload) != {'username', 'password'}:
+                self.send(400, {'error': 'username va password kerak.'})
+                return True
+            try:
+                token, user = auth.login(payload['username'], payload['password'], self.client_address[0])
+            except PermissionError as error:
+                self.send(429, {'error': str(error)})
+                return True
+            except ValueError as error:
+                self.send(401, {'error': str(error)})
+                return True
+            flags = '; Secure' if TLS[0] else ''
+            self._extra_headers = [('Set-Cookie', f'{auth.COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/{flags}')]
+            self.send(200, {'user': user})
+            return True
+        if path == '/api/auth/logout' and self.command == 'POST':
+            entry = auth.logout(self.cookie_token())
+            if entry:
+                auth.audit('logout', user=entry['user'], role=entry['role'], address=self.client_address[0])
+            flags = '; Secure' if TLS[0] else ''
+            self._extra_headers = [('Set-Cookie', f'{auth.COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0{flags}')]
+            self.send(200, {'logged_out': True})
+            return True
+        return False
 
     def _get(self):
         # ?status=1 on any report URL answers with the few fields a progress
@@ -235,6 +321,16 @@ class Handler(BaseHTTPRequestHandler):
         if not self.local_request():
             return
         path = urlsplit(self.path).path
+        self._extra_headers = []
+        if self.auth_routes(path) or not self.gate(path):
+            return
+        if path == '/api/audit':
+            query = parse_qs(urlsplit(self.path).query)
+            try:
+                limit = int(query.get('limit', ['200'])[0])
+            except ValueError:
+                limit = 200
+            return self.send(200, {'entries': auth.read_audit(limit), 'users': auth.listing()})
         for prefix, module in (('/api/web', webscan), ('/api/assessments', pipeline)):
             if path == prefix + '/targets' and module is webscan:
                 return self.send(200, webscan.targets())
@@ -482,6 +578,9 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("JSON obyekt kerak")
         except (ValueError, json.JSONDecodeError):
             return self.send(400, {"error": "So‘rov formati noto‘g‘ri."})
+        self._extra_headers = []
+        if self.auth_routes(path, payload) or not self.gate(path, payload):
+            return
         if path.startswith('/api/portfolio'):
             try:
                 if path == '/api/portfolio/register' and {'id', 'name', 'stages'} <= set(payload) <= {'id', 'name', 'stages', 'owner'}:
@@ -497,7 +596,8 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 if path == '/api/jobs' and {'kind'} <= set(payload) <= {'kind', 'target', 'payload', 'notify'}:
                     return self.send(202, jobs.enqueue(payload['kind'], payload.get('target'), payload.get('payload'),
-                                                       notify=payload.get('notify', 'never')))
+                                                       notify=payload.get('notify', 'never'),
+                                                       requested_by=(self._user or {}).get('name')))
                 if path == '/api/jobs/cancel' and set(payload) == {'id'}:
                     return self.send(200, jobs.cancel(payload['id']))
                 if path == '/api/schedules':
@@ -690,6 +790,81 @@ def project_sbom(project_id):
     return sbom.merge(reports, name=str(project_id))
 
 
+def read_password(args, confirm=True):
+    if args.password_stdin:
+        return sys.stdin.readline().rstrip('\n')
+    import getpass
+    first = getpass.getpass('Parol (kamida 12 belgi): ')
+    if confirm and getpass.getpass('Parolni takrorlang: ') != first:
+        raise ValueError('Parollar mos kelmadi.')
+    return first
+
+
+def manage_users(args, parser):
+    """User administration happens here, on the server's own console -- never over HTTP."""
+    try:
+        if args.list_users:
+            for row in auth.listing():
+                print(f"{row['name']:24} {row['role']:9} {row['created_at']}" + (' (o‘chirilgan)' if row['disabled'] else ''))
+            return
+        if args.add_user:
+            print(json.dumps(auth.add_user(args.add_user, args.role, read_password(args)), ensure_ascii=False))
+        elif args.set_password:
+            auth.set_password(args.set_password, read_password(args))
+            print('Parol almashtirildi; foydalanuvchining sessiyalari yopildi.')
+        elif args.set_role:
+            auth.set_role(args.set_role, args.role)
+            print(f'Rol: {args.role}.')
+        elif args.remove_user:
+            auth.remove_user(args.remove_user)
+            print('O‘chirildi.')
+    except ValueError as error:
+        parser.error(str(error))
+
+
+LOOPBACK = ('127.0.0.1', 'localhost', '::1')
+
+
+def make_server(args, parser):
+    """The HTTP(S) server; refuses a team setup that would expose data unprotected."""
+    import ssl
+    loopback = args.bind in LOOPBACK
+    if bool(args.tls_cert) != bool(args.tls_key):
+        parser.error('--tls-cert va --tls-key birga beriladi.')
+    if not loopback:
+        # Anything beyond this machine: encrypted, authenticated, with a known name.
+        if not args.tls_cert:
+            parser.error(f'--bind {args.bind}: tashqariga faqat TLS bilan ochiladi (--tls-cert va --tls-key).')
+        if not auth.enabled():
+            parser.error('Tashqariga ochishdan oldin admin yarating: python3 app.py --add-user ISM --role admin')
+        if not args.public_host:
+            parser.error('--public-host kerak: brauzer manzilidagi host:port (masalan scanner.example.com:8443).')
+    PUBLIC_HOSTS[:] = args.public_host
+    server = ThreadingHTTPServer((args.bind, args.port), Handler)
+    server.daemon_threads = True
+    if args.tls_cert:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        try:
+            context.load_cert_chain(args.tls_cert, args.tls_key)
+        except (OSError, ssl.SSLError) as error:
+            parser.error(f'TLS sertifikati yuklanmadi: {error}')
+        # The handshake runs in the request thread, not in accept(): one slow
+        # client must not hold up every other connection.
+        server.socket = context.wrap_socket(server.socket, server_side=True, do_handshake_on_connect=False)
+        TLS[0] = True
+        # Plain HTTP to the TLS port, failed handshakes, dropped clients: normal
+        # on a reachable port and not worth a traceback each.
+        default_error = server.handle_error
+
+        def handle_error(request, client_address):
+            if isinstance(sys.exc_info()[1], (ssl.SSLError, ConnectionError, TimeoutError)):
+                return
+            default_error(request, client_address)
+        server.handle_error = handle_error
+    return server
+
+
 def main():
     parser = argparse.ArgumentParser(description="Zanjir lokal MVP")
     parser.add_argument("--port", type=int, default=8765)
@@ -706,8 +881,25 @@ def main():
     parser.add_argument('--compose',help='Compose path relative to repository')
     parser.add_argument('--env-file',help='Optional literal .env path relative to repository')
     parser.add_argument('--bindings',help='Optional JSON proxy bindings array')
+    team = parser.add_argument_group('Jamoa rejimi (login, rollar, TLS)')
+    team.add_argument('--bind', default='127.0.0.1',
+                      help='Tinglash manzili. 127.0.0.1 dan boshqasi faqat --tls-cert/--tls-key, --public-host va '
+                           'kamida bitta foydalanuvchi bilan ishga tushadi.')
+    team.add_argument('--public-host', action='append', default=[],
+                      help='Brauzer ishlatadigan Host qiymati, masalan scanner.example.com:8443 (bir necha marta mumkin)')
+    team.add_argument('--tls-cert', help='PEM sertifikat (zanjir bilan)')
+    team.add_argument('--tls-key', help='PEM shaxsiy kalit')
+    team.add_argument('--add-user', metavar='NAME', help='Foydalanuvchi qo‘shish (parol so‘raladi)')
+    team.add_argument('--role', choices=auth.ROLES, default='viewer', help='--add-user / --set-role uchun rol')
+    team.add_argument('--set-password', metavar='NAME', help='Parolni almashtirish')
+    team.add_argument('--set-role', metavar='NAME', help='Rolni almashtirish (--role bilan)')
+    team.add_argument('--remove-user', metavar='NAME', help='Foydalanuvchini o‘chirish')
+    team.add_argument('--list-users', action='store_true', help='Foydalanuvchilar ro‘yxati')
+    team.add_argument('--password-stdin', action='store_true', help='Parolni so‘ramasdan stdin’dan o‘qish (avtomatlashtirish uchun)')
     args = parser.parse_args()
     ALLOW_REGISTRATION[0] = bool(getattr(args, 'allow_registration', False))
+    if args.add_user or args.set_password or args.set_role or args.remove_user or args.list_users:
+        return manage_users(args, parser)
     if args.register_project:
         if not args.repo or not args.compose:
             parser.error('--register-project requires --repo and --compose')
@@ -730,11 +922,12 @@ def main():
             report=repo_store.save_report(scan_repository(args.scan_repo,args.compose,args.env_file,bindings))
         print(json.dumps({'id':report['id'],'summary':report['summary'],'unknowns':report['unknowns']},indent=2))
         return
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    server.daemon_threads = True
+    server = make_server(args, parser)
     # Queued and scheduled scans run inside the server process (zanjir/jobs.py).
     jobs.start_worker()
-    print(f"Zanjir lokal MVP: http://127.0.0.1:{server.server_port}", flush=True)
+    scheme = 'https' if TLS[0] else 'http'
+    shown = PUBLIC_HOSTS[0] if PUBLIC_HOSTS else f'127.0.0.1:{server.server_port}'
+    print(f"Zanjir: {scheme}://{shown}" + (' · login talab qilinadi' if auth.enabled() else ''), flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -440,3 +440,11 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.92em;backgroun
 .window-fields input{width:100%;box-sizing:border-box}
 button.small{padding:3px 8px;font-size:12px}
 #jobs-view table td{vertical-align:top}
+.login-overlay{position:fixed;inset:0;background:rgba(14,30,53,.55);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px}
+.login-box{background:var(--surface);border-radius:var(--radius-lg);padding:28px;width:100%;max-width:360px;display:grid;gap:12px;box-shadow:var(--shadow-md)}
+.login-box h2{margin:0}.login-box input{width:100%;box-sizing:border-box}.login-error{color:var(--red);min-height:1.2em;margin:0}
+.user-box{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
+.audit-list{max-height:320px;overflow:auto;font-size:12px}
+.login-box label{display:grid;gap:5px;font-size:13px;font-weight:600;color:var(--ink)}
+.login-box input{padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);font:inherit;font-weight:400}
+.login-box input:focus{outline:2px solid var(--teal);outline-offset:1px}

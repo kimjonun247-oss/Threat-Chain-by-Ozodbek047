@@ -11,7 +11,19 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from zanjir import iac, triage
+from zanjir import auth, iac, jobs, triage
+
+# Suite-wide, from the moment any test imports this module: the audit log, the
+# user list and the job queue are the operator's, not the tests'. Without this
+# every test POST appended to the real audit log (66 lines on the first run),
+# and a developer who had created a user locally saw every HTTP test fail 401.
+_STATE = Path(tempfile.mkdtemp(prefix='threatchain-test-state-'))
+auth.AUDIT = _STATE / 'audit/audit.jsonl'
+auth.USERS = _STATE / 'profiles/users.json'
+jobs.JOBS = _STATE / 'jobs'
+jobs.QUEUE = _STATE / 'jobs/queue.json'
+jobs.STATE = _STATE / 'jobs/schedule-state.json'
+jobs.SCHEDULES = _STATE / 'profiles/schedules'
 
 
 def isolate_triage(case):
