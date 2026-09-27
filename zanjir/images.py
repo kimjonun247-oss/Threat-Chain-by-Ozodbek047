@@ -11,12 +11,12 @@ import subprocess
 import sys
 import threading
 import uuid
-from .engine import ROOT
-from . import repo_store, scanners, taxonomy, run_index, findings as findings_mod, triage
+from .engine import ROOT, DATA
+from . import priority, repo_store, scanners, taxonomy, run_index, findings as findings_mod, triage, fixes
 from . import verification as verification_mod
 
-RUNS = ROOT / 'image-runs'
-PROFILES = ROOT / 'profiles/images'
+RUNS = DATA / 'image-runs'
+PROFILES = DATA / 'profiles/images'
 CACHE = ROOT / '.tools/trivy/cache'
 # Windows keeps the original .tools/trivy/trivy.exe; every other platform uses
 # the vendored posix/ build installed by setup_tools.py.
@@ -162,7 +162,7 @@ def registry_credentials(host, mode):
                  'saqlanmaydi va hisobotda faqat o‘zgaruvchi nomi ko‘rinadi.')}
 
 
-def register(target, reference, name=None, auth='none'):
+def register(target, reference, name=None, auth='none', replace=False):
     if not repo_store.PROFILE_ID.fullmatch(target) or target.startswith('pilot-'):
         raise ValueError('Image ID 2–40 belgili bo‘lsin; pilot- nomlari band.')
     parsed = parse_reference(reference)          # raises with the exact reason
@@ -177,9 +177,24 @@ def register(target, reference, name=None, auth='none'):
     if not parsed['pinned']:
         row['pin_note'] = ('Teg bilan ro‘yxatga olindi. Teg boshqa mazmunga ko‘chishi mumkin, shuning uchun '
                            'har bir skan aynan qaysi digest tekshirilganini hisobotda yozadi.')
-    with (PROFILES / (target + '.json')).open('x', encoding='utf-8') as file:
-        json.dump(row, file, ensure_ascii=False, indent=2)
+    path = PROFILES / (target + '.json')
+    if path.exists() and not replace:
+        # Used to escape as FileExistsError and close the connection unanswered.
+        raise ValueError('Bu image ID allaqachon ro‘yxatda. Manzilini yangilash uchun “Mavjud bo‘lsa yangilash”ni '
+                         'belgilang (API: "replace": true).')
+    if replace and path.exists():
+        row['replaced_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    repo_store.write_json(path, row)
     return row
+
+
+def remove(target):
+    """Drop a registration. Its reports stay in the history as evidence."""
+    path = PROFILES / (str(target) + '.json')
+    if not repo_store.PROFILE_ID.fullmatch(str(target)) or str(target).startswith('pilot-') or not path.is_file():
+        raise ValueError('Bunday ro‘yxatdagi image yo‘q (pilot- nishonlari o‘chirilmaydi).')
+    path.unlink()
+    return {'id': target, 'removed': True, 'note': 'Oldingi hisobotlar tarixda saqlanib qoldi.'}
 
 
 def read(rid):
@@ -557,8 +572,9 @@ def execute(rid):
         save()
         # Logs may contain registry metadata. Keep them local, never in API exports.
         with (folder / 'tool.log').open('wb') as log:
-            process = subprocess.Popen(command(report['reference'], folder, skip, check_size, limit), cwd=folder, env=env,
-                                       stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+            run_command, low = priority.gentle(command(report['reference'], folder, skip, check_size, limit))
+            process = subprocess.Popen(run_command, cwd=folder, env=env,
+                                       stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, **low)
             deadline = datetime.datetime.now().timestamp() + time_budget_minutes(limit) * 60 + 60
             while process.poll() is None:
                 if CANCEL[rid].wait(0.5):
@@ -592,6 +608,7 @@ def execute(rid):
         except (OSError, ValueError):
             report['database'] = None
         stale = refresh['failed']
+        report['fix_plan'] = fixes.image_plan(report)
         report['state'] = 'completed' if report['coverage'] and report['database'] and not stale else 'partial'
         if stale:
             # Findings from an out-of-date database can miss recent CVEs; the scan

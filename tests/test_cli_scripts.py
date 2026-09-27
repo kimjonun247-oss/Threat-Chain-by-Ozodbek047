@@ -222,7 +222,9 @@ class OutputContractTests(unittest.TestCase):
     def test_stdout_of_a_real_run_parses_as_json(self):
         """The contract above, checked by running the script's real printing path.
 
-        The scan itself is stubbed. An earlier version of this test ran the CLI
+        The scan itself is stubbed, and so is the target lookup: the target used
+        to be resolved for real, so the test passed only on the machine where
+        'validation-osv-control' happened to be registered. An earlier version of this test ran the CLI
         for real and so wrote a genuine report into dependency-runs/ on every
         suite run -- test data mixing into the evidence store, the same mistake
         that once pushed crAPI's real reports out of the listing.
@@ -230,7 +232,7 @@ class OutputContractTests(unittest.TestCase):
         import contextlib
         import io
         import tempfile
-        from zanjir import dependencies
+        from zanjir import dependencies, scanners
         module = importlib.import_module('check_dependencies')
         fake = {'id': '20260101T000000-abcdef12', 'target': 'validation-osv-control', 'state': 'completed',
                 'count': 2, 'priority_counts': {'P1': 0}, 'progress': 'tugadi'}
@@ -238,6 +240,7 @@ class OutputContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp, \
              patch.object(dependencies, 'RUNS', Path(temp)), \
              patch.object(dependencies, 'start', return_value=fake) as start, \
+             patch.object(scanners, 'check_target', return_value=None), \
              patch.object(sys, 'argv', ['check_dependencies.py', '--target', 'validation-osv-control']), \
              contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             with self.assertRaises(SystemExit) as caught:

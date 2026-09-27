@@ -1,0 +1,13 @@
+services:
+  gateway:
+    image: nginx:1.27
+    ports: ["127.0.0.1:8080:80"]
+    networks: [front]
+  api:
+    image: example/api:1.0
+    environment: {NODE_ENV: production}
+    networks: [front, back]
+  db:
+    image: postgres:16
+    networks: [back]
+networks: {front: {}, back: {internal: true}}

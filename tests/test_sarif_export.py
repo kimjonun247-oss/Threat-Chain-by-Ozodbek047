@@ -68,7 +68,23 @@ class SarifExportTests(unittest.TestCase):
 
     def test_empty_report_produces_a_valid_empty_document(self):
         doc = sarif_export.build({'stages': [], 'chain_findings': []})
-        self.assertEqual(doc['runs'], [{'tool': {'driver': {'name': 'ThreatChain', 'rules': []}}, 'results': []}])
+        self.assertEqual(len(doc['runs']), 1)
+        self.assertEqual(doc['runs'][0]['results'], [])
+        self.assertEqual(doc['runs'][0]['tool']['driver']['name'], 'ThreatChain')
+
+    def test_every_run_has_its_own_category_and_names_its_scanner(self):
+        # GitHub code scanning no longer merges runs that share tool name and
+        # category; every run used to be an anonymous "ThreatChain" run.
+        report = {'stages': [
+            {'kind': 'code', 'report': {'findings': [{'tool': 'semgrep', 'rule_id': 'r', 'path': 'a.py', 'line': 1,
+                                                      'message': 'm', 'severity': 'ERROR', 'fingerprint': 'f1'}]}},
+            {'kind': 'images', 'report': {'findings': []}},
+            {'kind': 'iac', 'report': {'findings': []}}]}
+        runs = sarif_export.build(report)['runs']
+        categories = [run['automationDetails']['id'] for run in runs]
+        self.assertEqual(len(categories), len(set(categories)))
+        self.assertEqual(runs[0]['properties']['stage'], 'code')
+        self.assertIn('Semgrep', runs[0]['properties']['scanner'])
 
 
 if __name__ == '__main__':

@@ -16,11 +16,11 @@ import uuid
 
 from vendor import yaml
 
-from .engine import ROOT
-from . import repo_store, code_targets, taxonomy, custom_rules, run_index, baseline, findings as findings_mod, triage, verification as verification_mod
+from .engine import ROOT, DATA
+from . import priority, repo_store, code_targets, taxonomy, custom_rules, run_index, baseline, findings as findings_mod, triage, verification as verification_mod
 
 TOOLS=ROOT/'.tools'
-RUNS=ROOT/'scanner-runs'
+RUNS=DATA/'scanner-runs'
 RULES=ROOT/'scanner-rules'
 # Vendored tools are bundled per platform: a Windows build (gitleaks.exe, a
 # Scripts/ venv) and a POSIX build (a plain binary, a bin/ venv) live side by
@@ -94,8 +94,25 @@ def merged_rules():
     return RULES/'semgrep-merged.yml'
 
 
-def registry_manifest():
+def registry_manifest(cached=False):
     """Manifest of the installed pack, or None when it is not installed.
+
+    cached=True (status views only) reuses the last full verification while no
+    rule file's size or mtime has changed; hashing 1327 files on every dashboard
+    request was a third of its time. A scan always verifies every hash.
+    """
+    if cached:
+        # The manifest and the merged file are what an install or a re-install
+        # rewrites, and the merged file is what a scan actually loads; walking
+        # 1327 rule files for a status line cost 45 ms per dashboard request.
+        root=semgrep_registry()
+        signature=(repo_store.folder_signature(root),repo_store.folder_signature(merged_rules().parent))
+        return repo_store.memo(('registry_manifest',str(root)),signature,registry_manifest)
+    return _verify_registry_manifest()
+
+
+def _verify_registry_manifest():
+    """Full check: every rule file against its recorded SHA-256.
 
     Raises ValueError when the manifest is present but a rule file on disk no
     longer matches its recorded SHA-256: rules decide what a scan can find, so a
@@ -175,8 +192,12 @@ def targets():
     for pid,profile in sorted(bundled_code_samples().items()):
         result.append({'id':pid,'name':profile['name'],
                        'available':(ROOT/repo_store.profile_for(pid)['root']).is_dir()})
+    code_ids={p['id'] for p in code_targets.profiles()}
     for profile in repo_store.list_profiles():
-        if profile['mode']=='registered_local':result.append({'id':profile['id'],'name':profile['name'],'available':True})
+        # A Compose profile may share its id with a code registration; the code
+        # registration (listed below) is then the source of truth for the root.
+        if profile['mode']=='registered_local' and profile['id'] not in code_ids:
+            result.append({'id':profile['id'],'name':profile['name'],'available':True})
     existing={row['id'] for row in result}
     # A remote repository has no local directory to test, so "available" means
     # "registered": whether the clone will succeed is only knowable at scan time,
@@ -195,12 +216,26 @@ def target_root(target):
         # registered_root to compare against; containment is the check instead.
         path=(ROOT/repo_store.profile_for(target)['root']).resolve()
         if not path.is_relative_to(ROOT):raise ValueError('Namuna loyiha chegarasidan tashqarida.')
+    elif remote_profile(target) is not None:
+        # Only source_for() may resolve a remote repository (it clones and cleans
+        # up). Reaching here used to raise KeyError('root') and crash callers.
+        raise ValueError('Bu masofaviy git loyihasi; lokal papkasi yo‘q — skan vaqtida vaqtinchalik klonlanadi.')
     else:
         if target not in {item['id'] for item in targets()}:raise ValueError('Noma’lum loyiha.')
         profile=next((p for p in code_targets.profiles() if p['id']==target),None) or repo_store.profile_for(target)
         path=Path(profile['root'])
         if path.resolve()!=Path(profile['registered_root']).resolve():raise ValueError('Loyiha ro‘yxatidagi manba yo‘li o‘zgargan.')
-    if not path.is_dir():raise ValueError('Loyihaning to‘liq manba papkasi mavjud emas.')
+    if not path.is_dir():
+        # 'crapi-full' is the CLI default, and on a fresh clone its source is not
+        # there (work/ is never committed). Name what can be scanned instead of
+        # leaving the operator with a bare "folder missing".
+        hint=''
+        if target=='crapi-full':
+            ready=[row['id'] for row in targets() if row.get('available') and row['id']!='crapi-full']
+            hint=(' crAPI manbasi work/repositories/crapi-stable da yo‘q (yoki ZANJIR_CRAPI_ROOT o‘rnatilmagan).'
+                  +(' Mavjud nishonlar: '+', '.join(ready)+' — --target bilan tanlang.' if ready else
+                    ' O‘z loyihangizni --register <id> --repo <papka> bilan ro‘yxatga oling.'))
+        raise ValueError('Loyihaning to‘liq manba papkasi mavjud emas.'+hint)
     return path.resolve()
 
 
@@ -240,7 +275,7 @@ def source_for(target):
     try:
         yield path,provenance
     finally:
-        shutil.rmtree(path.parent,ignore_errors=True)
+        remote_source.remove(path.parent)
 
 
 def environment(work,temp=None):
@@ -309,7 +344,7 @@ def snapshot(source,destination):
     if not entries:raise ValueError('Tekshiriladigan matn fayli topilmadi.')
     digest=hashlib.sha256(json.dumps(entries,sort_keys=True).encode()).hexdigest()
     return {'files':len(entries),'bytes':total,'snapshot_sha256':digest,'skipped':skipped,'manifest':entries,
-            'scope':'Joriy matn fayllari; Git tarixi, vendor/node_modules, binar va 1 MB dan katta fayllar kiritilmagan.'}
+            'scope':'Joriy matn fayllari (vendor/node_modules, binar va 1 MB dan katta fayllar kiritilmagan). Git tarixidagi sirlar Gitleaks bilan alohida tekshiriladi (.git bo‘lsa).'}
 
 
 def tool_commands(work,registry=False,local=None,apex=False):
@@ -332,6 +367,60 @@ def tool_commands(work,registry=False,local=None,apex=False):
            if apex and pmd_exe().is_file() else {})}
 
 
+HISTORY_COMMITS=2000
+
+
+def history_secrets(source,current,env,work):
+    """Secrets that are gone from the working tree but still in git history.
+
+    The snapshot deliberately leaves .git out, so a token committed and then
+    deleted in the next commit was never reported -- yet anyone with a clone can
+    still read it. Gitleaks' own `git` mode reads the history (`git log -p`; no
+    repository code or hook runs). Only what the working-tree scan did not
+    already report is added. Returns (summary, findings).
+    """
+    if not (Path(source)/'.git').exists():
+        return {'state':'not_applicable','note':'Manbada .git yo‘q (yoki sayoz klon) — git tarixi tekshirilmadi.'},[]
+    if not gitleaks_exe().is_file():
+        return {'state':'failed','note':'Gitleaks o‘rnatilmagan.'},[]
+    command=[str(gitleaks_exe()),'git',str(source),'--config',str(RULES/'gitleaks.toml'),'--log-opts',f'--all --max-count={HISTORY_COMMITS}',
+             '--report-format','json','--report-path','-','--redact=100','--no-banner','--no-color','--ignore-gitleaks-allow',
+             '--max-target-megabytes','1','--timeout','180']
+    history_env={**env,'GIT_CONFIG_COUNT':'1','GIT_CONFIG_KEY_0':'safe.directory','GIT_CONFIG_VALUE_0':str(source),
+                 'GIT_TERMINAL_PROMPT':'0'}
+    try:
+        run_command,low=priority.gentle(command)
+        process=subprocess.run(run_command,cwd=work,env=history_env,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=240,**low)
+        if process.returncode not in (0,1):raise ValueError('gitleaks git kodi '+str(process.returncode))
+        rows=json.loads(process.stdout or '[]')
+        if not isinstance(rows,list):raise ValueError('gitleaks git natijasi noto‘g‘ri')
+    except (OSError,ValueError,subprocess.TimeoutExpired) as error:
+        return {'state':'failed','note':'Git tarixini o‘qib bo‘lmadi ('+type(error).__name__+').'},[]
+    present={(f['path'],f['rule_id']) for f in current if f.get('tool')=='gitleaks'}
+    found=[];seen=set()
+    for row in rows:
+        try:
+            path=str(row['File']).replace('\\','/');rule=str(row['RuleID']);line=int(row['StartLine']);commit=str(row['Commit'])
+        except (KeyError,TypeError,ValueError):continue
+        if not path or path.startswith('/') or '..' in Path(path).parts or not re.fullmatch(r'[A-Za-z0-9_.-]{1,220}',rule) \
+                or not re.fullmatch(r'[0-9a-f]{7,64}',commit):continue
+        if (path,rule) in present:continue
+        identity=findings_mod.fingerprint('gitleaks',{'rule_id':rule,'path':path,'column':int(row.get('StartColumn') or 0),
+                                                      'entropy':row.get('Entropy')})
+        if identity in seen:continue
+        seen.add(identity)
+        tags=taxonomy.tag_static('gitleaks',rule)
+        found.append({'tool':'gitleaks','rule_id':rule,'path':path,'line':max(1,line),'fingerprint':identity,
+                      'message':(f'Git tarixida qolgan sir (commit {commit[:12]}). Hozirgi fayllarda yo‘q, lekin repozitoriy '
+                                 'nusxasi bor har kim uni o‘qiy oladi. Sirni bekor qiling (rotate) va tarixni tozalang.'),
+                      'severity':None,'state':'unverified_static','secret_value':'hidden',
+                      'history':{'commit':commit[:12],'date':str(row.get('Date') or '')[:25]},
+                      'cwe_ids':tags['cwe_ids'],'owasp_top10_2025':tags['owasp_top10_2025'],'verified':False,
+                      'verification_note':'Git tarixidagi statik moslik; sir hali amalda ekanini tekshiring.'})
+    return {'state':'completed','commits_limit':HISTORY_COMMITS,'count':len(found),
+            'note':'Faqat hozirgi fayllarda ko‘rinmaydigan tarixiy sirlar qo‘shildi.'},found
+
+
 def path_in_snapshot(value,source):
     raw=str(value).replace('\\','/')
     path=Path(raw)
@@ -344,10 +433,19 @@ def path_in_snapshot(value,source):
     return raw
 
 
+def local_rule_count():
+    """How many rules scanner-rules/semgrep.yml holds -- counted, never hard-coded."""
+    try:
+        text=(RULES/'semgrep.yml').read_text(encoding='utf-8')
+    except OSError:
+        return 0
+    return len(re.findall(r'(?m)^  - id: ',text))
+
+
 def rule_set_label(tool,manifest,own=0):
     if tool=='pmd':return 'PMD category/apex/security.xml (10 ta Apex xavfsizlik qoidasi)'
     if tool!='semgrep':return 'Gitleaks ichki qoidalari'
-    parts=['ThreatChain 7 lokal qoida']
+    parts=[f'ThreatChain {local_rule_count()} lokal qoida']
     if manifest:parts.append(f'{manifest["rules"]} rasmiy semgrep-rules qoidasi ({len(manifest["languages"])} til)')
     if own:parts.append(f'{own} ta o‘zingiz yozgan qoida')
     return ' + '.join(parts)
@@ -438,6 +536,41 @@ def registry_messages(manifest):
     return messages
 
 
+def local_messages():
+    """This project's own rules keep their own wording too (scanner-rules/semgrep.yml).
+
+    Every local finding used to carry one generic sentence ("Koddagi xavfli amal
+    yoki TLS sozlamasi...") in the report and in SARIF, so a SQL injection and a
+    weak hash read the same. Same reasoning as registry_messages(): the text comes
+    from the fixed rule file, never from Semgrep's interpolated output.
+    """
+    try:
+        parsed=yaml.safe_load((RULES/'semgrep.yml').read_text(encoding='utf-8'))
+    except (OSError,UnicodeDecodeError,yaml.YAMLError):
+        return {}
+    return {str(rule['id']):clean_message(rule['message']) for rule in (parsed or {}).get('rules') or []
+            if isinstance(rule,dict) and rule.get('id') and rule.get('message')}
+
+
+RULE_META_KEYS=('confidence','impact','likelihood','subcategory')
+
+
+def rule_meta(meta):
+    """The rule author's own confidence/impact/likelihood/subcategory, when given.
+
+    The CI gate uses them: a registry rule marked WARNING but with MEDIUM/HIGH
+    confidence for an injection class is a real finding, while `audit` rules with
+    LOW confidence are leads for a human. Values are plain words from the rule
+    file, so nothing from the scanned project passes through here.
+    """
+    result={}
+    for key in RULE_META_KEYS:
+        value=meta.get(key)
+        if isinstance(value,list):value=value[0] if value else None
+        if isinstance(value,str) and re.fullmatch(r'[A-Za-z_-]{1,20}',value):result[key]=value.lower()
+    return result
+
+
 def pmd_rows(data):
     """Flatten PMD's files[].violations[] into one row per violation."""
     if not isinstance(data,dict) or not isinstance(data.get('files'),list):
@@ -480,7 +613,7 @@ def normalize(tool,data,source,messages=None):
     if not isinstance(rows,list):raise ValueError('Skaner JSON natijasi noto‘g‘ri.')
     result=[]
     for row in rows:
-        severity=None
+        severity=None;meta_fields={}
         if tool=='semgrep':
             rule=str(row['check_id']);path=path_in_snapshot(row['path'],source);line=int(row['start']['line'])
             extra=row.get('extra') if isinstance(row.get('extra'),dict) else {}
@@ -493,6 +626,7 @@ def normalize(tool,data,source,messages=None):
             message=(messages or {}).get(rule) or 'Koddagi xavfli amal yoki TLS sozlamasi. Ma’lumot oqimi va amaliy ta’sirini tekshiring.'
             level=str(extra.get('severity') or '').upper()
             severity=level if level in ('ERROR','WARNING','INFO') else None
+            meta_fields=rule_meta(meta)
         elif tool=='pmd':
             rule=str(row['rule']);path=path_in_snapshot(row['filename'],source);line=int(row['beginline'])
             message=PMD_MESSAGES.get(rule) or 'Apex xavfsizlik qoidasi mos keldi. Ma’lumot oqimini tekshiring.'
@@ -515,7 +649,8 @@ def normalize(tool,data,source,messages=None):
         result.append({'tool':tool,'rule_id':rule,'path':path,'line':line,'fingerprint':identity,'message':message,'severity':severity,
                        'state':'unverified_static','secret_value':'hidden' if tool=='gitleaks' else None,
                        'cwe_ids':tags['cwe_ids'],'owasp_top10_2025':tags['owasp_top10_2025'],
-                       'verified':False,'verification_note':'Statik kod naqshi mosligi; ma’lumot oqimi, ishga tushirish sharti va amaliy ta’siri tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart.'})
+                       'verified':False,'verification_note':'Statik kod naqshi mosligi; ma’lumot oqimi, ishga tushirish sharti va amaliy ta’siri tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart.',
+                       **({'rule_meta':meta_fields} if meta_fields else {})})
     return result
 
 
@@ -578,9 +713,12 @@ def execute(target,rid):
             if not work.is_relative_to(folder.resolve()):raise ValueError('Vaqtinchalik papka chegarasi noto‘g‘ri.')
             coverage=snapshot(source,work/'source')
             write(folder/'snapshot-manifest.json',coverage.pop('manifest'))
+            # Files a partial clone never downloaded are as unscanned as the large
+            # files the snapshot skipped, and are counted with them.
+            coverage['skipped']['large']+=(provenance.get('partial_clone') or {}).get('large_files_not_downloaded',0)
             report['coverage']=coverage
             manifest=registry_manifest()
-            messages=registry_messages(manifest)
+            messages={**local_messages(),**registry_messages(manifest)}
             local=custom_rules.active()
             if local:messages={**messages,**custom_rules.messages()}
             for tool,command in tool_commands(work,registry=bool(manifest),local=local,apex=has_apex(work/'source')).items():
@@ -592,7 +730,8 @@ def execute(target,rid):
                     # The official pack raises the rule count from 7 to ~1300, so the
                     # scan legitimately takes minutes rather than seconds.
                     limit=900 if (tool=='semgrep' and manifest) else 240
-                    process=subprocess.run(command,cwd=work,env=env,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=limit)
+                    run_command,low=priority.gentle(command)
+                    process=subprocess.run(run_command,cwd=work,env=env,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=limit,**low)
                     # Semgrep scan (without --error): findings exit 0. Gitleaks: findings exit 1.
                     allowed=(0,) if tool in ('semgrep','pmd') else (0,1)
                     if process.returncode not in allowed:raise ValueError('Skaner xato bilan tugadi (kod '+str(process.returncode)+').')
@@ -622,8 +761,26 @@ def execute(target,rid):
                 # linked, never merged, so no evidence is lost. See baseline.py.
                 report['duplicates']=baseline.link_duplicates(report['findings'])
                 write(folder/'report.json',report)
+            # Optional deep analysis (CodeQL, inter-file taint): opt-in in settings,
+            # it runs on the same snapshot and counts like any other tool.
+            from . import deep_analysis
+            if deep_analysis.enabled():
+                report['progress']='CodeQL: fayllararo ma’lumot oqimi tahlili (bir necha daqiqa)'
+                write(folder/'report.json',report)
+                record,deep=deep_analysis.run(work/'source',work,env)
+                report['tools']['codeql']=record
+                report['findings']+=deep
+                report['count']=len(report['findings']);report['verification_summary']=verification_mod.summarize(report['findings'])
+                report['duplicates']=baseline.link_duplicates(report['findings'])
             states=[item['state'] for item in report['tools'].values()]
             report['state']='completed' if all(s=='completed' for s in states) else 'failed' if all(s=='failed' for s in states) else 'partial'
+            # Kept out of report['tools'] on purpose: a project without .git is
+            # not a partial scan, and the tool states above decide the stage.
+            report['history_scan'],extra=history_secrets(source,report['findings'],env,work)
+            if extra:
+                report['findings']+=extra
+                report['count']=len(report['findings']);report['verification_summary']=verification_mod.summarize(report['findings'])
+            write(folder/'report.json',report)
     except (OSError,ValueError) as error:
         report.update(state='failed',message=str(error))
     finally:

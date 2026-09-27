@@ -118,7 +118,9 @@ class ComposerLockTests(ParserBase):
 
 class TomlLockTests(ParserBase):
     POETRY = '[[package]]\nname = "django"\nversion = "4.2.1"\n\n[[package]]\nname = "urllib3"\nversion = "1.26.5"\n'
-    CARGO = '[[package]]\nname = "serde"\nversion = "1.0.152"\n'
+    CARGO = ('[[package]]\nname = "serde"\nversion = "1.0.152"\n'
+             'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+             '[[package]]\nname = "my-workspace-crate"\nversion = "0.1.0"\n')
 
     def setUp(self):
         if inventory.tomllib is None:
@@ -137,9 +139,90 @@ class TomlLockTests(ParserBase):
         rows, _ = self.collect('Cargo.lock', self.CARGO)
         self.assertEqual(rows[0]['ecosystem'], 'crates.io')
 
+    def test_a_workspace_crate_is_a_gap_not_a_crates_io_release(self):
+        # ripgrep's lock lists 11 of its own crates with no source; matching them
+        # against crates.io advisories would attach someone else's CVEs.
+        rows, gaps = self.collect('Cargo.lock', self.CARGO)
+        self.assertNotIn('my-workspace-crate', {r['name'] for r in rows})
+        self.assertEqual([g['reason'] for g in gaps], ['lock_entry_local_or_git'])
+
     def test_an_entry_missing_its_version_is_a_gap(self):
         _, gaps = self.collect('poetry.lock', '[[package]]\nname = "x"\n')
         self.assertEqual([g['reason'] for g in gaps], ['lock_entry_not_versioned'])
+
+
+CORPUS = Path(__file__).resolve().parents[1] / 'benchmarks' / 'corpus' / 'jvm-dotnet'
+
+
+class BuildToolOutputTests(ParserBase):
+    """Real `mvn dependency:tree` and `gradle dependencies` output (benchmarks/corpus/jvm-dotnet)."""
+
+    def names(self, rows):
+        return {(r['name'], r['version'], r['scope']) for r in rows}
+
+    def test_maven_text_json_and_console_output_agree(self):
+        text, _ = self.collect('dependency-tree.txt', (CORPUS / 'maven' / 'dependency-tree.txt').read_text(encoding='utf-8'))
+        data, _ = self.collect('dependency-tree.json', (CORPUS / 'maven' / 'dependency-tree.json').read_text(encoding='utf-8'))
+        console, _ = self.collect('dependency-tree.txt', (CORPUS / 'maven' / 'mvn-console-output.log').read_text(encoding='utf-8'))
+        self.assertEqual(self.names(text), self.names(data))
+        self.assertEqual(self.names(text), self.names(console))
+        self.assertEqual(len(text), 9)                  # the project itself is not a dependency
+        self.assertIn(('org.apache.logging.log4j:log4j-core', '2.14.1', 'runtime'), self.names(text))
+        self.assertIn(('junit:junit', '4.12', 'development'), self.names(text))
+        self.assertTrue(all(r['ecosystem'] == 'Maven' and r['evidence_kind'] == 'build_tool_resolution' for r in text))
+
+    def test_maven_omitted_entries_are_not_counted(self):
+        tree = ('com.example:demo:jar:1.0\n'
+                '+- a:b:jar:1.0:compile\n'
+                '|  \\- (c:d:jar:1.0:compile - omitted for conflict with 2.0)\n'
+                '\\- c:d:jar:2.0:compile\n')
+        rows, gaps = self.collect('dependency-tree.txt', tree)
+        self.assertEqual(self.names(rows), {('a:b', '1.0', 'runtime'), ('c:d', '2.0', 'runtime')})
+        self.assertEqual(gaps, [])
+
+    def test_gradle_uses_the_resolved_version_and_only_classpaths(self):
+        rows, gaps = self.collect('gradle-dependencies.txt',
+                                  (CORPUS / 'gradle' / 'gradle-dependencies.txt').read_text(encoding='utf-8'))
+        names = self.names(rows)
+        self.assertEqual(gaps, [])
+        # `guava:30.0-jre -> 31.1-jre`: what the build ships is 31.1-jre.
+        self.assertIn(('com.google.guava:guava', '31.1-jre', 'runtime'), names)
+        self.assertNotIn('30.0-jre', {r['version'] for r in rows if r['name'] == 'com.google.guava:guava'})
+        # A BOM-managed dependency with no requested version.
+        self.assertIn(('com.fasterxml.jackson.core:jackson-databind', '2.13.0', 'runtime'), names)
+        # annotationProcessor is not a classpath the application ships with.
+        self.assertNotIn('org.projectlombok:lombok', {r['name'] for r in rows})
+        # testRuntimeClasspath repeats the runtime ones; they stay runtime.
+        self.assertIn(('org.apache.logging.log4j:log4j-core', '2.14.1', 'runtime'), names)
+        self.assertIn(('junit:junit', '4.12', 'development'), names)
+        self.assertEqual(len(rows), len({(r['name'], r['version']) for r in rows}))
+
+    def test_gradle_constraints_unresolved_and_project_entries_are_skipped(self):
+        report = ('runtimeClasspath - Runtime classpath.\n'
+                  '+--- project :core\n'
+                  '+--- x:y:1.0 (c)\n'
+                  '+--- x:z:2.0 (n)\n'
+                  '+--- x:w:{strictly 1.0} -> 1.0\n'
+                  '\\--- x:v:3.0 (*)\n')
+        rows, gaps = self.collect('gradle-dependencies.txt', report)
+        self.assertEqual(self.names(rows), {('x:w', '1.0', 'runtime'), ('x:v', '3.0', 'runtime')})
+
+    def test_nuget_lock_skips_projects_and_repeats_across_frameworks(self):
+        rows, gaps = self.collect('packages.lock.json', (CORPUS / 'nuget' / 'packages.lock.json').read_text(encoding='utf-8'))
+        self.assertEqual({(r['ecosystem'], r['name'], r['version']) for r in rows},
+                         {('NuGet', 'Newtonsoft.Json', '12.0.1'), ('NuGet', 'System.Text.Encodings.Web', '4.5.0')})
+        self.assertEqual(gaps, [])
+
+    def test_build_scripts_are_covered_when_resolved_output_sits_next_to_them(self):
+        maven = inventory.collect(CORPUS / 'maven')
+        self.assertEqual(maven['gaps'], [])
+        self.assertEqual({m['path']: m['state'] for m in maven['manifests']}['pom.xml'], 'covered_by_resolved_output')
+        gradle = inventory.collect(CORPUS / 'gradle')
+        self.assertEqual(gradle['gaps'], [])
+
+    def test_a_project_file_without_a_nuget_lock_is_a_named_gap(self):
+        data = inventory.collect(CORPUS / 'nuget')
+        self.assertEqual(data['gaps'], [{'path': 'lib/Lib.csproj', 'reason': 'nuget_lockfile_missing'}])
 
 
 class UnsupportedManifestTests(ParserBase):
@@ -189,6 +272,74 @@ class ScopeDescriptionTests(unittest.TestCase):
             self.assertIn(word, scope)
         # And it says plainly what is not covered.
         self.assertIn('pom.xml', scope)
+
+
+class YarnLockTests(ParserBase):
+    """yarn.lock used to be listed as unsupported, so every Yarn project's npm
+    packages went unchecked. Both the classic and the Berry format are read now."""
+    CLASSIC = '# THIS IS AN AUTOGENERATED FILE. DO NOT EDIT THIS FILE DIRECTLY.\n# yarn lockfile v1\n\n\n"@babel/code-frame@^7.0.0", "@babel/code-frame@^7.10.4":\n  version "7.12.13"\n  resolved "https://registry.yarnpkg.com/@babel/code-frame/-/code-frame-7.12.13.tgz#dcfc826beef65e75c50e21d3837d7d95798dd658"\n  integrity sha512-HV1Cm0Q3ZrpCR93tkWOYiuYIgLxZXZFVG2VgK+MBWjUqZTundupbfx2aXarXuw5Ko5aMcjtJgbSs4vUGBS5v6g==\n  dependencies:\n    "@babel/highlight" "^7.12.13"\n\nlodash@4.17.4, lodash@^4.17.0:\n  version "4.17.4"\n  resolved "https://registry.yarnpkg.com/lodash/-/lodash-4.17.4.tgz#78203a4d1c328ae1d86dca6460e369b57f4055ae"\n\n"string-width-cjs@npm:string-width@^4.2.0":\n  version "4.2.3"\n  resolved "https://registry.yarnpkg.com/string-width/-/string-width-4.2.3.tgz#269c7117d27b05ad2e536830a8ec895ef9c6d010"\n\nmy-fork@user/repo:\n  version "1.0.0"\n  resolved "https://codeload.github.com/user/repo/tar.gz/abc123"\n'
+    BERRY = '# This file is generated by running "yarn install" inside your project.\n\n__metadata:\n  version: 6\n  cacheKey: 8\n\n"lodash@npm:^4.17.0, lodash@npm:4.17.4":\n  version: 4.17.4\n  resolution: "lodash@npm:4.17.4"\n  checksum: 1234\n  languageName: node\n  linkType: hard\n\n"@types/node@npm:*":\n  version: 18.0.0\n  resolution: "@types/node@npm:18.0.0"\n\n"resolve@patch:resolve@^1.20.0#~builtin<compat/resolve>":\n  version: 1.22.1\n  resolution: "resolve@patch:resolve@npm%3A1.22.1#~builtin<compat/resolve>::version=1.22.1&hash=07638b"\n\n"app@workspace:.":\n  version: 0.0.0-use.local\n  resolution: "app@workspace:."\n'
+
+    def test_classic_lock_gives_exact_versions_and_resolves_aliases(self):
+        rows, gaps = self.collect('yarn.lock', self.CLASSIC)
+        found = {(r['name'], r['version']) for r in rows}
+        self.assertEqual(found, {('@babel/code-frame', '7.12.13'), ('lodash', '4.17.4'), ('string-width', '4.2.3')})
+        self.assertTrue(all(r['ecosystem'] == 'npm' and r['scope'] == 'unknown' for r in rows))
+
+    def test_a_git_source_is_a_gap_not_a_registry_version(self):
+        rows, gaps = self.collect('yarn.lock', self.CLASSIC)
+        self.assertNotIn('my-fork', {r['name'] for r in rows})
+        self.assertEqual([g['reason'] for g in gaps], ['yarn_non_registry_source'])
+
+    def test_berry_lock_reads_npm_and_patched_entries_and_skips_workspaces(self):
+        rows, gaps = self.collect('yarn.lock', self.BERRY)
+        self.assertEqual({(r['name'], r['version']) for r in rows},
+                         {('lodash', '4.17.4'), ('@types/node', '18.0.0'), ('resolve', '1.22.1')})
+        self.assertEqual([g['reason'] for g in gaps], ['yarn_non_registry_source'])
+
+    def test_package_json_beside_a_yarn_lock_is_not_a_missing_lock(self):
+        root = self.write('yarn.lock', self.CLASSIC)
+        (root / 'package.json').write_text('{}', encoding='utf-8')
+        data = inventory.collect(root)
+        self.assertNotIn('npm_lockfile_missing', {g['reason'] for g in data['gaps']})
+        self.assertEqual(data['manifests'][0]['state'], 'partial')
+
+
+class PnpmLockTests(ParserBase):
+    V5 = 'lockfileVersion: 5.4\npackages:\n  /lodash/4.17.4:\n    resolution: {integrity: sha512-abc}\n    dev: false\n  /@babel/core/7.12.3_supports-color@5.5.0:\n    resolution: {integrity: sha512-abc}\n    dev: true\n'
+    V6 = "lockfileVersion: '6.0'\npackages:\n  /lodash@4.17.4:\n    resolution: {integrity: sha512-abc}\n    dev: false\n  /@babel/core@7.12.3(supports-color@5.5.0):\n    resolution: {integrity: sha512-abc}\n    dev: true\n  github.com/user/repo/abc:\n    resolution: {tarball: https://codeload.github.com/user/repo/tar.gz/abc}\n    name: repo\n    version: 1.0.0\n"
+    V9 = "lockfileVersion: '9.0'\npackages:\n  lodash@4.17.4:\n    resolution: {integrity: sha512-abc}\n  '@babel/core@7.12.3':\n    resolution: {integrity: sha512-abc}\nsnapshots:\n  lodash@4.17.4: {}\n"
+
+    def test_all_three_key_formats_give_the_same_packages(self):
+        for text in (self.V5, self.V6, self.V9):
+            rows, _ = self.collect('pnpm-lock.yaml', text)
+            with self.subTest(version=text.splitlines()[0]):
+                self.assertEqual({(r['name'], r['version']) for r in rows},
+                                 {('lodash', '4.17.4'), ('@babel/core', '7.12.3')})
+
+    def test_dev_flag_becomes_scope_and_peer_suffix_is_not_the_version(self):
+        rows, _ = self.collect('pnpm-lock.yaml', self.V6)
+        found = {r['name']: r for r in rows}
+        self.assertEqual(found['@babel/core']['version'], '7.12.3')
+        self.assertEqual(found['@babel/core']['scope'], 'development')
+        self.assertEqual(found['lodash']['scope'], 'runtime_or_optional')
+
+    def test_tarball_or_git_resolution_is_a_gap(self):
+        rows, gaps = self.collect('pnpm-lock.yaml', self.V6)
+        self.assertNotIn('repo', {r['name'] for r in rows})
+        self.assertEqual([g['reason'] for g in gaps], ['pnpm_non_registry_source'])
+
+    def test_a_multi_document_lock_is_read_whole(self):
+        # pnpm 9/10 can write two YAML documents into one file; vite's lock gave
+        # 0 of 1414 packages before this.
+        text = self.V9 + '---\nlockfileVersion: \'9.0\'\npackages:\n  react@18.3.1:\n    resolution: {integrity: sha512-x}\n'
+        rows, gaps = self.collect('pnpm-lock.yaml', text)
+        self.assertEqual({r['name'] for r in rows}, {'lodash', '@babel/core', 'react'})
+        self.assertEqual(gaps, [])
+
+    def test_broken_yaml_is_an_invalid_manifest_not_a_crash(self):
+        _, gaps = self.collect('pnpm-lock.yaml', 'lockfileVersion: 9.0\npackages: [\n')
+        self.assertEqual([g['reason'] for g in gaps], ['invalid_manifest'])
 
 
 if __name__ == '__main__':

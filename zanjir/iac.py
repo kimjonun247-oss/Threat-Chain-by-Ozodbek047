@@ -29,12 +29,12 @@ import threading
 import uuid
 from pathlib import Path
 
-from .engine import ROOT
-from . import images, repo_store, run_index, scanners, taxonomy, triage
+from .engine import ROOT, DATA
+from . import images, priority, repo_store, run_index, scanners, taxonomy, triage, fixes
 from . import findings as findings_mod
 from . import verification as verification_mod
 
-RUNS = ROOT / 'iac-runs'
+RUNS = DATA / 'iac-runs'
 LOCK = threading.Lock()
 CANCEL = {}
 TIMEOUT = 600
@@ -164,9 +164,10 @@ def execute(rid, target, event):
             repo_store.write_json(folder / 'report.json', report)
             output = work / 'iac.json'
             with (folder / 'tool.log').open('wb') as log:
-                process = subprocess.Popen(command(work / 'source', output), cwd=work,
+                run_command, low = priority.gentle(command(work / 'source', output))
+                process = subprocess.Popen(run_command, cwd=work,
                                            env=scanners.environment(work), stdout=log,
-                                           stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+                                           stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, **low)
                 deadline = datetime.datetime.now().timestamp() + TIMEOUT
                 while process.poll() is None:
                     if event.wait(0.5):
@@ -176,6 +177,8 @@ def execute(rid, target, event):
             if process.returncode != 0:
                 raise ValueError('Trivy config bajarilmadi; tool.log faylini tekshiring.')
             report.update(normalize(json.loads(output.read_text(encoding='utf-8')), work / 'source'))
+            # Diffs are made from the snapshot while it still exists (zanjir/fixes.py).
+            report['fix_plan'] = fixes.iac_plan(report['findings'], work / 'source')
         report['verification_summary'] = verification_mod.summarize(report['findings'])
         report['severity_counts'] = {level: sum(1 for f in report['findings'] if f['severity'] == level)
                                      for level in ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN')}

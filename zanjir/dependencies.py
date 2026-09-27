@@ -5,11 +5,11 @@ import json
 from pathlib import Path
 import threading
 import uuid
-from .engine import ROOT
-from . import inventory, advisories, scanners, repo_store, run_index, triage
+from .engine import ROOT, DATA
+from . import inventory, advisories, scanners, repo_store, run_index, triage, fixes
 from . import verification as verification_mod
 
-RUNS=ROOT/'dependency-runs'
+RUNS=DATA/'dependency-runs'
 LOCK=threading.Lock()
 REVIEW_LOCK=threading.Lock()
 CANCEL={}
@@ -39,7 +39,12 @@ def execute(rid):
     try:
         report=read(rid)
         report['state']='running';progress('Kutubxona ro‘yxati yig‘ilmoqda')
-        collected=inventory.collect(scanners.target_root(report['target']))
+        # A remote repository is cloned for this scan only and removed after the
+        # inventory is read; the manifests are copied into inventory.json first.
+        with scanners.source_for(report['target']) as (root,provenance):
+            collected=inventory.collect(root)
+            manifest_texts=fixes.read_manifests(root)
+        report['source']=provenance
         repo_store.write_json(folder/'inventory.json',collected)
         report.update(inventory_sha256=collected['sha256'],coverage={k:v for k,v in collected.items() if k!='packages'})
         if not collected['packages']:
@@ -51,6 +56,8 @@ def execute(rid):
             kev,kev_meta=advisories.kev_catalog()
             findings=advisories.normalize(collected['packages'],matches,details,kev,kev_meta['state']=='available')
             advisories.enrich(findings,progress=progress)
+            progress('Tuzatish rejasi: maqsad versiyalar OSV’da qayta tekshirilmoqda')
+            report['fix_plan']=fixes.dependency_plan(findings,manifest_texts,advisories.query_packages)
             report.update(findings=findings,count=len(findings),query_errors=errors,
                           feeds={'osv':{'checked_packages':len(matches),'requested_packages':collected['unique_packages'],
                                         'responses':len(provenance),'oldest_retrieved_at':min((p['retrieved_at'] for p in provenance),default=None),
@@ -75,7 +82,7 @@ def execute(rid):
 
 
 def start(target,background=True):
-    scanners.target_root(target)
+    scanners.check_target(target)
     if not LOCK.acquire(blocking=False):raise ValueError('Boshqa kutubxona tekshiruvi davom etmoqda.')
     rid=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S')+'-'+uuid.uuid4().hex[:8]
     CANCEL[rid]=threading.Event()

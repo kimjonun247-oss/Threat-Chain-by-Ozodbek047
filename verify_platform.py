@@ -86,9 +86,16 @@ def code_scan():
     done = run(['scan_code.py', '--target', 'chain-demo'])
     report = json.loads(done.stdout)
     tools = {name: t['state'] for name, t in report['tools'].items()}
-    if report['state'] != 'completed' or report['count'] < 3:
-        raise AssertionError(f"kutilgan: completed, >=3 topilma; olindi: {report['state']}, {report['count']}")
-    return {'count': report['count'], 'tools': tools}
+    # The demo yields 3+ findings only with the official semgrep-rules pack; with
+    # the local rules alone Gitleaks' planted key is the one guaranteed match.
+    # Requiring 3 without the pack failed every machine where the optional pack
+    # could not be downloaded, which said nothing about the platform itself.
+    from zanjir import readiness
+    pack = bool(readiness.status().get('semgrep_rule_pack', {}).get('installed'))
+    expected = 3 if pack else 1
+    if report['state'] != 'completed' or report['count'] < expected:
+        raise AssertionError(f"kutilgan: completed, >={expected} topilma; olindi: {report['state']}, {report['count']}")
+    return {'count': report['count'], 'tools': tools, 'semgrep_rule_pack': pack}
 
 
 def chain_rules():
@@ -188,7 +195,7 @@ def remote_targets():
         if not (path / 'README').is_file():
             raise AssertionError('klon bo‘sh')
     finally:
-        shutil_mod.rmtree(path.parent, ignore_errors=True)
+        remote_source.remove(path.parent)
     if path.exists():
         raise AssertionError('klon o‘chirilmadi')
 

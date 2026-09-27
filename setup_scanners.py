@@ -21,7 +21,6 @@ import io
 import os
 import json
 import platform
-import ssl
 import subprocess
 import sys
 import tarfile
@@ -31,11 +30,8 @@ import zipfile
 from zanjir.engine import ROOT
 from zanjir.repo_store import write_json
 
-try:
-    import certifi
-    _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
-except ImportError:
-    _SSL_CONTEXT = ssl.create_default_context()
+from zanjir import nettrust
+
 
 GITLEAKS_VERSION = '8.30.1'
 SEMGREP_VERSION = '1.177.0'
@@ -53,7 +49,7 @@ def gitleaks_archive():
 
 
 def download(url, limit):
-    opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=_SSL_CONTEXT))
+    opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=nettrust.ssl_context()))
     with opener.open(urllib.request.Request(url, headers={'User-Agent': 'threatchain-setup'}), timeout=120) as response:
         raw = response.read(limit + 1)
     if len(raw) > limit:

@@ -106,13 +106,21 @@ class GroupingTests(Base):
         self.assertIn('app', projects)
         self.assertTrue(projects['app']['derived'])
 
-    def test_an_id_known_to_only_one_stage_is_not_a_project(self):
-        self.assertEqual(self.overview({'web': ['lonely']}, {}), {})
+    def test_an_id_known_to_only_one_stage_is_a_single_stage_project(self):
+        # It used to be left out: a scanned image or web target registered on its
+        # own was simply absent from the portfolio.
+        projects = self.overview({'web': ['lonely']}, {})
+        self.assertEqual(sorted(projects), ['lonely'])
+        self.assertTrue(projects['lonely']['single_stage'])
+        self.assertEqual(projects['lonely']['stages']['web']['targets'], ['lonely'])
+        self.assertEqual(projects['lonely']['stages']['code']['state'], 'not_registered')
 
     def test_ids_are_never_grouped_by_resemblance(self):
         # 'shop' and 'shop-web' are different projects until someone says otherwise.
         projects = self.overview({'code': ['shop'], 'dependencies': ['shop'], 'web': ['shop-web']}, {})
-        self.assertEqual(sorted(projects), ['shop'])
+        self.assertEqual(sorted(projects), ['shop', 'shop-web'])
+        self.assertEqual(projects['shop']['stages']['web']['targets'], [])
+        self.assertFalse(projects['shop']['single_stage'])
 
     def test_a_bundled_group_claims_its_targets_so_they_are_not_listed_twice(self):
         bundled = {'demo': {'name': 'Demo', 'owner': '', 'bundled': True,

@@ -18,8 +18,8 @@
     },
     {
       "file": "zanjir-env.yaml",
-      "sha256": "887b944d4c76e970d77e7f4c70679a989e38fc5f30a920f7e02317fdc0a7d094",
-      "origin": "Zanjir local rule v1"
+      "sha256": "1af24c4ae638fac31a543e65477dd1891a2068cac31dcdb75c41a0f080d3e8da",
+      "origin": "Zanjir local rule v2"
     },
     {
       "file": "zanjir-openapi.yaml",
@@ -28,8 +28,8 @@
     },
     {
       "file": "zanjir-sql-backup.yaml",
-      "sha256": "31ad6ef9176b4dd987a37a57f100cfea93907ae655a739fb6c0ddf777741471d",
-      "origin": "Zanjir local rule v1"
+      "sha256": "dfba1f970cc3b91e2ed27a91e6af50f3317c69c16ee681ddc8850a850e8a92a3",
+      "origin": "Zanjir local rule v2"
     }
   ]
 }

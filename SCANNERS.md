@@ -78,7 +78,14 @@ Paket ro'yxati yo'q (eski) hisobot uchun bo'sh SBOM emas, `409` va sabab qaytadi
 
 ## Qamrov
 
-Semgrep CE uchun Zanjir yozgan 7 ta lokal qoida ishlatiladi: Python shell/dinamik kod/TLS, JavaScript yoki TypeScript dinamik kod va child_process.exec, Go TLS tekshiruvi, Java Runtime.exec. Bu to‘liq Semgrep Registry qoidalar to‘plami, taint tahlili yoki barcha zaifliklar qamrovi emas. Ko‘rsatilgan amaldan foydalanishning o‘zi zaiflik isboti emas.
+Semgrep CE uchun ThreatChain yozgan 29 ta lokal qoida ishlatiladi (rasmiy paket o'rnatilmagan bo'lsa ham ishlaydi):
+
+- **Taint (ERROR, CI gate'ni to'xtatadi):** HTTP so'rovidan (Flask/Django `request`, Express `req.query/body/params`, Java servlet, Go `http.Request`, PHP `$_GET/$_POST/$_REQUEST`) kelgan qiymat buyruq bajarishga (CWE-78), SQL matniga (CWE-89), deserializatsiyaga (CWE-502), shablon matniga (SSTI, CWE-1336) yoki PHP'da HTML chiqishiga (XSS, CWE-79) yetib borsa; shuningdek `yaml.load` xavfsiz Loader'siz va lxml XXE (CWE-611).
+- **Naqsh (WARNING):** shell/dinamik kod/TLS o'chirilishi (Python, JS/TS, Go, Java), SQL matnini satr birlashtirish yoki formatlash bilan qurish (Python, Java, Go), `pickle.load(s)`, Flask `debug=True` (CWE-489), MD5/SHA1 (CWE-328, `usedforsecurity=False` bundan mustasno), JS prototype pollution (CWE-1321).
+
+**Benchmark (2026-09-25, 5 til, 30 ta ma'lum zaiflik + xavfsiz fayllar):** rasmiy paket bilan 30/30 topiladi, CI gate 24 tasida to'xtaydi (qolgan 6 tasi TLS, zaif shifr, debug, prototype pollution — o'rta toifa, ataylab to'xtatmaydi), xavfsiz fayllarda gate noto'g'ri signali 0. Gitleaks 10/10 (ulanish URL'idagi parol va git tarixidagi sir bilan).
+
+ERROR faqat manba va xavfli amal bitta oqimda ko'ringanda beriladi. Bu to'liq Semgrep Registry to'plami yoki barcha zaifliklar qamrovi emas; to'liqroq qamrov uchun `setup_semgrep_rules.py`. Ko'rsatilgan amaldan foydalanishning o'zi zaiflik isboti emas.
 
 Gitleaks ichki qoidalari `dir` rejimida joriy fayllarga qo‘llanadi. Git tarixi tekshirilmaydi. `.git`, `.tools`, virtual muhitlar, `node_modules`, `vendor`, natijalar va pilot papkalari; binar fayllar va 1 MB dan katta fayllar chiqarib tashlanadi. Nusxa chegarasi: 10000 fayl va 50 MB. Cheklovga yetish xato holatini beradi. O‘tkazilgan fayl/papka sonlari hisobotda saqlanadi. `snapshot-manifest.json` aynan nusxalangan fayllarning yo‘llari va xeshlarini saqlaydi; bu butun repositoryning bitta atomik vaqt holati degani emas.
 

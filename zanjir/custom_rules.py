@@ -19,8 +19,9 @@ scanning. Adding a declarative rule is no more privileged than that. The checks
 below are therefore about keeping bad rules from silently corrupting scan
 results, not about defending against a remote attacker.
 
-Every rule is validated twice: structurally here, then by Semgrep's own
-`--validate`, which is the only thing that truly knows whether a pattern parses.
+Every rule is validated twice: structurally here, then by Semgrep's
+its own rule parser (a scan of an empty folder, fully offline), which is the only
+thing that truly knows whether a pattern parses.
 """
 import datetime
 import json
@@ -132,7 +133,13 @@ def check_rule(rule, index):
 
 
 def semgrep_validate(text):
-    """Semgrep's own validator -- the only check that knows if a pattern parses."""
+    """Semgrep's own parser -- the only check that knows if a pattern parses.
+
+    `semgrep --validate` was used before, but it also downloads a lint rule set
+    from semgrep.dev: offline or behind a proxy that blocks it, every call hung for
+    about 100 seconds and the request handler with it. Loading the rule for a scan
+    of an empty folder runs the same rule parser, fully offline, in ~2 seconds.
+    """
     from . import scanners
     binary = scanners.semgrep_exe()
     if not binary.is_file():
@@ -140,23 +147,30 @@ def semgrep_validate(text):
     with tempfile.TemporaryDirectory(prefix='rule-') as temp:
         path = Path(temp) / 'candidate.yml'
         path.write_text(text, encoding='utf-8')
+        empty = Path(temp) / 'empty'
+        empty.mkdir()
         try:
             process = subprocess.run(
-                [str(binary), '--validate', '--config', str(path), '--metrics', 'off',
-                 '--disable-version-check', '--json', '--quiet'],
+                [str(binary), 'scan', '--config', str(path), '--metrics', 'off',
+                 '--disable-version-check', '--json', '--quiet', str(empty)],
                 cwd=temp, env=scanners.environment(Path(temp)), capture_output=True,
                 text=True, encoding='utf-8', errors='replace', timeout=120)
         except (OSError, subprocess.TimeoutExpired):
             raise ValueError('Semgrep tekshiruvi bajarilmadi.')
-    if process.returncode == 0:
-        return
-    detail = ''
+    errors = None
     try:
         errors = json.loads(process.stdout).get('errors') or []
-        detail = ' '.join(str(e.get('message') or '') for e in errors)
     except (ValueError, AttributeError):
+        pass
+    if process.returncode == 0 and errors == []:
+        return
+    if errors:
+        detail = ' '.join(str(e.get('message') or e.get('long_msg') or e.get('type') or '') for e in errors
+                          if isinstance(e, dict))
+    else:
         detail = process.stderr
-    raise ValueError('Semgrep qoidani qabul qilmadi: ' + ' '.join(detail.split())[:400])
+    raise ValueError('Semgrep qoidani qabul qilmadi: ' + (' '.join(detail.split())[:400] or
+                                                          f'chiqish kodi {process.returncode}'))
 
 
 def taken_ids(exclude=None):

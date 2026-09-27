@@ -6,6 +6,7 @@ the aggregation the board reads, the boundary on what a browser may register,
 and the promise that the pages stay free of inline script and style.
 """
 import json
+import os
 import re
 import shutil
 import tempfile
@@ -179,6 +180,7 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(status['nvd_api_key']['masked'], '…5678')
         self.assertNotIn('abcd1234efgh5678', json.dumps(status))
 
+    @unittest.skipIf(os.name == 'nt', 'Windows: POSIX ruxsat bitlari yo‘q (himoya papkaning ACL ruxsatlariga bog‘liq)')
     def test_b_the_file_is_owner_only(self):
         settings.set_nvd_key('abcd1234')
         import stat as stat_module

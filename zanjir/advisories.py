@@ -4,19 +4,14 @@ import datetime
 import hashlib
 import json
 import re
-import ssl
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from .engine import ROOT
-from . import repo_store, taxonomy, threatfeeds, findings as findings_mod
+from . import nettrust, repo_store, taxonomy, threatfeeds, findings as findings_mod
 
-try:
-    import certifi
-    _SSL_CONTEXT=ssl.create_default_context(cafile=certifi.where())
-except ImportError:
-    _SSL_CONTEXT=ssl.create_default_context()
+_SSL_CONTEXT = nettrust.ssl_context()
 
 CACHE=ROOT/'advisory-cache'
 OSV='https://api.osv.dev/v1/'
@@ -47,8 +42,9 @@ def fetch(url,payload=None,salt=''):
         if 0<=age<TTL:return cached['data'],{'retrieved_at':cached['retrieved_at'],'cache':'fresh','url':url}
     except (OSError,ValueError,TypeError,KeyError):pass
     request=urllib.request.Request(url,data=request_bytes,headers={'Content-Type':'application/json','Accept':'application/json','User-Agent':'Zanjir/0.4'})
-    # Deliberately do not forward ambient proxy credentials or user auth headers.
-    opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect(),urllib.request.HTTPSHandler(context=_SSL_CONTEXT))
+    # Ambient proxy settings are not used unless the operator opts in
+    # (THREATCHAIN_USE_PROXY, see nettrust); user auth headers never are.
+    opener=urllib.request.build_opener(nettrust.proxy_handler(),NoRedirect(),urllib.request.HTTPSHandler(context=_SSL_CONTEXT))
     for attempt in range(2):
         try:
             with opener.open(request,timeout=20) as response:

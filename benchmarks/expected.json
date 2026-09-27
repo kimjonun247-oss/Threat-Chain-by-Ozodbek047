@@ -1,0 +1,220 @@
+{
+  "_comment": "ThreatChain accuracy and impact benchmarks. Thresholds, not exact counts, where an upstream rule update may legitimately add findings; exact where the corpus fully determines the answer. Measured 2026-09-25/26 (Semgrep 1.177.0, Gitleaks 8.30.1, Trivy 0.74.0, Nuclei per setup_nuclei.py, semgrep-rules 40b8c63f).",
+  "sast": {
+    "positives": 30,
+    "with_rule_pack": {
+      "min_found": 30,
+      "min_gate": 24
+    },
+    "local_rules_only": {
+      "min_found": 18,
+      "min_gate": 12
+    },
+    "max_gate_on_safe_files": 0,
+    "max_error_or_warning_on_safe_files": 0
+  },
+  "secrets": {
+    "must_find": [
+      "aws.py",
+      "github.js",
+      "slack.py",
+      "stripe.rb",
+      "google.java",
+      "sendgrid.env",
+      "db.yaml",
+      "generic.py",
+      "gitlab.sh",
+      "id_rsa",
+      "history.py"
+    ],
+    "must_not_find": [
+      "neg_placeholder.py",
+      "neg_env.py",
+      "neg_example.py"
+    ]
+  },
+  "apex": {
+    "must_find_rules": [
+      "ApexSOQLInjection",
+      "ApexSharingViolations",
+      "ApexBadCrypto"
+    ],
+    "clean_files": [
+      "Safe.cls"
+    ]
+  },
+  "iac": {
+    "min_findings": 41,
+    "must_find": [
+      "DS-0001",
+      "DS-0002",
+      "KSV-0017",
+      "KSV-0009",
+      "AWS-0107",
+      "AWS-0180"
+    ]
+  },
+  "compose": {
+    "rules": [
+      "RP-001",
+      "RP-002",
+      "RP-003",
+      "RP-004",
+      "RP-005",
+      "RP-006",
+      "RP-007",
+      "RP-008",
+      "RP-009",
+      "RP-010",
+      "RP-011"
+    ],
+    "rp005_findings": 1,
+    "safe_findings": 0
+  },
+  "fixes": {
+    "_comment": "(rule, service/file) pairs whose diff, applied with patch, must remove the finding on rescan.",
+    "min_rules_fixed": {
+      "iac": 5,
+      "compose": 12
+    }
+  },
+  "deep": {
+    "_comment": "Inter-file taint (CodeQL): each flow starts in one file and reaches its sink in another. Semgrep OSS does not report the SQL injection at all.",
+    "must_find": [
+      "py/sql-injection",
+      "py/command-line-injection",
+      "js/reflected-xss"
+    ]
+  },
+  "web": {
+    "vulnerable_must_find": [
+      "zanjir-env",
+      "zanjir-sql-backup",
+      "git-config",
+      "zanjir-compose",
+      "zanjir-openapi",
+      "cors-reflected-origin-credentials",
+      "cookie-missing-httponly",
+      "error-disclosure",
+      "http-dir-listing",
+      "server-fingerprint"
+    ],
+    "fixed_exactly": [
+      "http-transport"
+    ],
+    "min_confirmed": 7
+  },
+  "impact": {
+    "keepalive_max_connections": 1,
+    "overloaded_max_requests": 6,
+    "overloaded_stop": "server_busy",
+    "slow_max_slowdowns": 1,
+    "slow_state": "completed"
+  },
+  "gate": {
+    "web-fixed": 0,
+    "web-vulnerable": 1,
+    "sast": 1
+  },
+  "lockfiles": [
+    {
+      "name": "npm (NodeGoat)",
+      "file": "package-lock.json",
+      "packages": 1479,
+      "gaps": 0,
+      "url": "https://raw.githubusercontent.com/OWASP/NodeGoat/c5cb68a7084e4ae7dcc60e6a98768720a81841e8/package-lock.json"
+    },
+    {
+      "name": "pnpm v9, multi-document (vite)",
+      "file": "pnpm-lock.yaml",
+      "url": "https://raw.githubusercontent.com/vitejs/vite/bc598a6a8a6b7d6e157e9f19c16911cff8d2360c/pnpm-lock.yaml",
+      "packages": 1304,
+      "gaps": 110
+    },
+    {
+      "name": "Poetry",
+      "file": "poetry.lock",
+      "url": "https://raw.githubusercontent.com/python-poetry/poetry/94b6e35b9091991887aa54feeb3771a86d3bd692/poetry.lock",
+      "packages": 78,
+      "gaps": 0
+    },
+    {
+      "name": "Cargo (ripgrep workspace)",
+      "file": "Cargo.lock",
+      "url": "https://raw.githubusercontent.com/BurntSushi/ripgrep/3fce3b5bb0236da2df6d99672afb8a719642eca7/Cargo.lock",
+      "packages": 52,
+      "gaps": 11
+    },
+    {
+      "name": "Go modules (gin)",
+      "file": "go.mod",
+      "url": "https://raw.githubusercontent.com/gin-gonic/gin/1bd0ecf2d3e08da37efa270bb7be20c1eddb0d68/go.mod",
+      "packages": 32,
+      "gaps": 0
+    },
+    {
+      "name": "yarn v1 (react)",
+      "file": "yarn.lock",
+      "url": "https://raw.githubusercontent.com/facebook/react/d083ec1da1e5252abd3ddfdde6dfbc09701a2c51/yarn.lock",
+      "packages": 2388,
+      "gaps": 0
+    },
+    {
+      "name": "yarn Berry",
+      "file": "yarn.lock",
+      "url": "https://raw.githubusercontent.com/yarnpkg/berry/e4e423a1eb117b5129f20ac626a03eb7a97aedff/yarn.lock",
+      "packages": 2058,
+      "gaps": 50
+    },
+    {
+      "name": "Composer",
+      "file": "composer.lock",
+      "url": "https://raw.githubusercontent.com/composer/composer/a971f4e8cb714d7c1234e6e610bfe540e2269ae6/composer.lock",
+      "packages": 36,
+      "gaps": 0
+    },
+    {
+      "name": "Pipfile.lock (pipenv)",
+      "file": "Pipfile.lock",
+      "url": "https://raw.githubusercontent.com/pypa/pipenv/226bc1342043f387eec027fb07a8254768b3f718/Pipfile.lock",
+      "packages": 110,
+      "gaps": 0
+    }
+  ],
+  "jvm_dotnet": {
+    "_comment": "Real `mvn dependency:tree` (text + JSON) and `gradle dependencies` output generated 2026-09-26 with Maven 3 / Gradle 8, plus a NuGet packages.lock.json. The CVEs are the well-known ones for these pinned versions.",
+    "projects": {
+      "maven": {
+        "packages": 9,
+        "gaps": [],
+        "must_find": [
+          "CVE-2021-44228",
+          "CVE-2021-45046",
+          "CVE-2019-12384"
+        ]
+      },
+      "gradle": {
+        "packages": 15,
+        "gaps": [],
+        "must_find": [
+          "CVE-2021-44228",
+          "CVE-2023-2976"
+        ]
+      },
+      "nuget": {
+        "packages": 2,
+        "gaps": [
+          "nuget_lockfile_missing"
+        ],
+        "must_find": [
+          "CVE-2024-21907"
+        ]
+      }
+    }
+  },
+  "image": {
+    "reference": "python:3.9.0-alpine",
+    "must_equal_direct_trivy": true,
+    "min_findings": 80
+  }
+}

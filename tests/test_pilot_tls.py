@@ -23,6 +23,19 @@ def successful_results():
 LOG='upstream SSL certificate verify error (20:unable to get local issuer certificate), request: "GET /fixed_bad/ HTTP/1.1"\nupstream SSL certificate does not match "wrong-name.zanjir.test", request: "GET /fixed_wrong_name/ HTTP/1.1"'
 
 
+
+def _cryptography_usable():
+    """cryptography is optional (pilot_tls only). A broken system build can even
+    panic inside its Rust extension on import, which is a BaseException and would
+    take the suite down with it, so the probe runs in a child interpreter."""
+    import subprocess
+    import sys
+    return subprocess.run([sys.executable, '-c', 'import cryptography.x509'],
+                          capture_output=True, timeout=60).returncode == 0
+
+
+CRYPTOGRAPHY_USABLE = _cryptography_usable()
+
 class TLSTests(unittest.TestCase):
     def test_all_four_controls_and_error_cause_are_required(self):
         self.assertTrue(tls.evaluate(successful_results(),LOG,'test')['passed'])
@@ -62,6 +75,7 @@ class TLSTests(unittest.TestCase):
         self.assertFalse(any(arg in docker_options for arg in ('-p','--publish','--privileged','--volume')))
         self.assertIn('target=/lab,readonly',command[command.index('--mount')+1])
 
+    @unittest.skipUnless(CRYPTOGRAPHY_USABLE, 'cryptography paketi yo‘q yoki bu muhitda ishlamaydi (ixtiyoriy bog‘liqlik)')
     def test_generated_certificates_distinguish_trust_and_hostname(self):
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):

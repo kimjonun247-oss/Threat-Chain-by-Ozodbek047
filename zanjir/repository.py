@@ -520,15 +520,24 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
     for target in inventory:
         if target['ports'] or not DATASTORE_IMAGE.search(target['image']):
             continue
+        # One finding per data store, naming every exposed service that can reach
+        # it. It used to be one finding per (service, store) pair: a single
+        # Postgres reachable from six exposed services produced six findings for
+        # one fix (put the store on an internal network).
+        reaching=[]
         for exposed in exposed_services:
             if exposed['id']==target['id']:
                 continue
             shared=sorted(set(exposed['networks']) & set(target['networks']))
-            if not shared:
-                continue
-            finding('RP-005',target['id'],f"{exposed['id']}:{','.join(shared)}",
-                    f"{exposed['id']} xizmati host portidan ochiq va {target['id']} (image: {target['image']}) bilan bir xil Docker tarmog‘ida ({', '.join(shared)}) ishlaydi. Ikkalasi ham alohida to‘g‘ri: {exposed['id']}ni tashqariga ochish va standart Compose tarmog‘idan foydalanish odatiy holat. Ammo birgalikda: {exposed['id']} buzilsa, gateway yoki ilova darajasidagi autentifikatsiyasiz, to‘g‘ridan-to‘g‘ri Docker ichki DNS orqali {target['id']} portiga yetish mumkin.",
-                    [exposed['evidence_id'],target['evidence_id']],'warning')
+            if shared:
+                reaching.append((exposed,shared))
+        if not reaching:
+            continue
+        names=', '.join(e['id'] for e,_ in reaching)
+        networks=sorted({n for _,shared in reaching for n in shared})
+        finding('RP-005',target['id'],f"{'+'.join(e['id'] for e,_ in reaching)}:{','.join(networks)}",
+                f"Host portidan ochiq {len(reaching)} ta xizmat ({names}) {target['id']} (image: {target['image']}) bilan bir xil Docker tarmog‘ida ({', '.join(networks)}) ishlaydi. Har biri alohida to‘g‘ri: xizmatni tashqariga ochish va standart Compose tarmog‘idan foydalanish odatiy holat. Ammo birgalikda: shu xizmatlardan biri buzilsa, gateway yoki ilova darajasidagi autentifikatsiyasiz, to‘g‘ridan-to‘g‘ri Docker ichki DNS orqali {target['id']} portiga yetish mumkin. Tuzatish bitta: {target['id']}ni faqat kerakli xizmatlar ulangan ichki (internal) tarmoqqa o‘tkazing.",
+                [e['evidence_id'] for e,_ in reaching]+[target['evidence_id']],'warning')
     for binding in bindings:
         if not isinstance(binding,dict) or binding.get('service_id') not in by_id:
             unknowns.append('Proxy faylini xizmatga bog‘lash noto‘g‘ri.')
@@ -601,7 +610,7 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
         except (ValueError,OSError,TypeError) as error:
             unknowns.append(f'{path}: proxy adapteri — {error}')
     now=datetime.datetime.now(datetime.timezone.utc)
-    return {'schema_version':2,'kind':'repository','id':now.strftime('%Y%m%dT%H%M%S')+'-'+uuid.uuid4().hex[:8],
+    report={'schema_version':2,'kind':'repository','id':now.strftime('%Y%m%dT%H%M%S')+'-'+uuid.uuid4().hex[:8],
             'created_at':now.isoformat(),'engine_version':VERSION,'duration_ms':round((time.perf_counter()-started)*1000,2),
             'repository':provenance or {'repository':root.name,'commit':None}, 'profile':{'compose':compose,'env_file':env_file,'bindings':bindings},
             'input_sha256':digest(canonical({'files':files,'bindings':bindings,'compose':compose,'env_file':env_file})), 'files':files,'services':inventory,'edges':edges,
@@ -616,6 +625,11 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
                       'Nginx Lua va murakkab dinamik marshrutlar bajarilmaydi. Proxy grafigi hujum grafigi emas.',
                       'Boshqa override fayllari va shell environment qo‘llanmaydi; .env faqat literal qiymatlarni qo‘llaydi.',
                       'Ogohlantirishlar review talab qiladi; bu audit muvofiqligi yoki real ekspluatatsiya isboti emas.']}
+    # Ready diffs for the Compose/nginx fixes that are one deterministic edit,
+    # made now while the files are at hand (zanjir/fixes.py).
+    from . import fixes
+    report['fix_plan']=fixes.repository_plan(report,lambda relative:safe_read(root,relative))
+    return report
 
 
 def sarif(report):

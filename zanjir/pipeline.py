@@ -4,11 +4,11 @@ import hashlib
 import json
 import threading
 import uuid
-from .engine import ROOT
+from .engine import ROOT, DATA
 from . import scanners, dependencies, iac, images, webscan, repo_store, chains, portfolio, sarif_export, run_index, triage
 from . import verification as verification_mod
 
-RUNS = ROOT / 'assessment-runs'
+RUNS = DATA / 'assessment-runs'
 LOCK = threading.Lock()
 CANCEL = {}
 # The selection a caller must supply, as one source of truth. Every CLI that
@@ -73,7 +73,9 @@ def validate(payload):
     if not any(payload[k] for k in fields):
         raise ValueError('Kamida bitta manba yoki nishonni tanlang.')
     if payload['target']:
-        scanners.target_root(payload['target'])
+        # check_target, not target_root: a remote repository has no local root
+        # until a stage clones it, and validating must not clone anything.
+        scanners.check_target(payload['target'])
     if payload['web_target']:
         webscan.target_for(payload['web_target'])
     if payload['image_target'] and payload['image_target'] not in {t['id'] for t in images.targets()}:
@@ -81,7 +83,7 @@ def validate(payload):
     if payload['repository_target']:
         repo_store.profile_for(payload['repository_target'])
     if payload.get('iac_target'):
-        scanners.target_root(payload['iac_target'])
+        scanners.check_target(payload['iac_target'])
     if (payload['web_target'] or payload['image_target']) and not payload['online']:
         raise ValueError('Web/image uchun online rejimni belgilang.')
 
@@ -206,6 +208,9 @@ def image_links(repository, images_by_target):
         return {}
 
 
+FINISHED_STAGE_STATES = {'completed', 'no_supported_packages'}
+
+
 def execute(rid, event):
     report = read(rid)
     path = RUNS / rid / 'report.json'
@@ -259,7 +264,10 @@ def execute(rid, event):
             if stage['kind'] not in PASSIVE_STAGES:
                 run(stage)
         selected = [s for s in report['stages'] if s['target']]
-        report['state'] = ('cancelled' if event.is_set() else 'completed' if all(s['state'] == 'completed' for s in selected)
+        # A dependency stage that found no lockfile finished its work; the gap is
+        # on its own row. Counting it as unfinished made every assessment of such
+        # a project "partial", so `--baseline last-green` could never find one.
+        report['state'] = ('cancelled' if event.is_set() else 'completed' if all(s['state'] in FINISHED_STAGE_STATES for s in selected)
                            else 'failed' if all(s['state'] == 'failed' for s in selected) else 'partial')
         chain = correlate_stages(report)
         chain_findings = chain['findings']

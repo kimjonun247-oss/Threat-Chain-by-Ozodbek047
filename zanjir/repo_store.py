@@ -1,32 +1,77 @@
 from __future__ import annotations
+import copy
+import threading
 import json
 import os
 import re
 import uuid
 import time
 from pathlib import Path
-from .engine import ROOT, canonical, digest
+from .engine import ROOT, canonical, digest, DATA
 from .repository import scan_repository, safe_read
 
-REPO_RUNS=ROOT/'repository-runs'
+REPO_RUNS=DATA/'repository-runs'
 # Profiles that ship with the application: their root is a path inside this
 # folder, checked for containment rather than against a registered_root.
 ALLOWED_PROFILES={'crapi','chain-demo'}
-LOCAL_PROFILES=ROOT/'profiles'/'local'
+LOCAL_PROFILES=DATA/'profiles'/'local'
 PROFILE_ID=re.compile(r'^[a-z][a-z0-9_-]{1,39}$')
 REPORT_ID=re.compile(r'^\d{8}T\d{6}-[0-9a-f]{8}$')
+
+
+_MEMO={}
+_MEMO_LOCK=threading.Lock()
+
+
+def folder_signature(*folders):
+    """What a listing of these folders depends on: names, sizes and mtimes.
+
+    One stat per file -- far cheaper than reading and parsing every JSON profile,
+    which the dashboard did 3436 times per request. A write through write_json()
+    renames a temp file into place, so it always changes the signature.
+    """
+    signature=[]
+    for folder in folders:
+        try:
+            with os.scandir(folder) as entries:
+                signature.append((str(folder),tuple(sorted((e.name,e.stat().st_mtime_ns,e.stat().st_size)
+                                                         for e in entries if e.is_file()))))
+        except OSError:
+            signature.append((str(folder),None))
+    return tuple(signature)
+
+
+def memo(key,signature,compute):
+    """compute() once per signature; callers get their own copy to mutate."""
+    with _MEMO_LOCK:
+        hit=_MEMO.get(key)
+    if hit is not None and hit[0]==signature:
+        return copy.deepcopy(hit[1])
+    value=compute()
+    with _MEMO_LOCK:
+        _MEMO[key]=(signature,value)
+    return copy.deepcopy(value)
 
 
 def profile_for(profile_id):
     if not isinstance(profile_id,str) or not PROFILE_ID.fullmatch(profile_id):
         raise ValueError('Noma’lum repository profili.')
     path=ROOT/'profiles'/f'{profile_id}.json' if profile_id in ALLOWED_PROFILES else LOCAL_PROFILES/f'{profile_id}.json'
+    try:
+        stat=path.stat()
+    except OSError:
+        raise ValueError('Loyiha ro‘yxatdan o‘tkazilmagan.') from None
     if not path.is_file():
         raise ValueError('Loyiha ro‘yxatdan o‘tkazilmagan.')
-    return json.loads(path.read_text(encoding='utf-8'))
+    return memo(('profile',str(path)),(stat.st_mtime_ns,stat.st_size),
+                lambda:json.loads(path.read_text(encoding='utf-8')))
 
 
 def list_profiles():
+    return memo(('list_profiles',str(LOCAL_PROFILES)),folder_signature(ROOT/'profiles',LOCAL_PROFILES),_list_profiles)
+
+
+def _list_profiles():
     ids=sorted(ALLOWED_PROFILES)
     if LOCAL_PROFILES.exists():
         ids += [p.stem for p in sorted(LOCAL_PROFILES.glob('*.json')) if PROFILE_ID.fullmatch(p.stem) and p.stem not in ALLOWED_PROFILES]
@@ -44,9 +89,13 @@ def list_profiles():
 
 def register_project(profile_id, root, compose, env_file=None, bindings=None, name=None, owner=''):
     """Explicit local CLI onboarding, never available as an arbitrary-path browser API."""
-    from . import code_targets
-    if not isinstance(profile_id,str) or not PROFILE_ID.fullmatch(profile_id) or profile_id in ALLOWED_PROFILES|{'crapi-full'} or profile_id in {row['id'] for row in code_targets.profiles()}:
-        raise ValueError('Loyiha ID: 2–40 ta kichik lotin harfi, raqam, _ yoki -. crapi nomi band.')
+    # A code target with the same id is allowed: one project, several stages,
+    # grouped by id in the portfolio. It used to be refused with a message about
+    # the crapi name that had nothing to do with the real reason.
+    if not isinstance(profile_id,str) or not PROFILE_ID.fullmatch(profile_id):
+        raise ValueError('Loyiha ID: 2–40 ta kichik lotin harfi, raqam, _ yoki - (harf bilan boshlansin).')
+    if profile_id in ALLOWED_PROFILES|{'crapi-full'}:
+        raise ValueError(f'“{profile_id}” ID namuna loyiha uchun band; boshqa ID tanlang.')
     path=LOCAL_PROFILES/f'{profile_id}.json'
     if path.exists():
         raise ValueError('Bu loyiha ID allaqachon mavjud; boshqa ID tanlang.')
@@ -93,6 +142,9 @@ def write_json(path,value):
                 time.sleep(0.02 * (attempt + 1))
     finally:
         if temp.exists():temp.unlink()
+    # Keep the run index current without re-walking the folder (run_index.written).
+    from . import run_index
+    run_index.written(path,value)
 
 
 def read_json(path):
@@ -201,3 +253,14 @@ def compare_reports(before,after):
             'absent':sorted(left.keys()-right.keys()),'unchanged':sorted(left.keys()&right.keys()),
             'caution':'Yo‘qolgan topilma faqat joriy statik qamrovda ko‘rinmaydi; avtomatik ravishda tuzatilgan deb hisoblanmaydi.',
             'coverage_changed':before.get('unknowns')!=after.get('unknowns') or {f['path'] for f in before['files']}!={f['path'] for f in after['files']}}
+
+
+def remove_project(profile_id):
+    """Drop a registered Compose profile. Bundled samples stay; reports stay."""
+    if not isinstance(profile_id,str) or not PROFILE_ID.fullmatch(profile_id) or profile_id in ALLOWED_PROFILES:
+        raise ValueError('Bu repository profilini o‘chirib bo‘lmaydi.')
+    path=LOCAL_PROFILES/f'{profile_id}.json'
+    if not path.is_file():
+        raise ValueError('Bunday ro‘yxatdagi repository profili yo‘q.')
+    path.unlink()
+    return {'id':profile_id,'removed':True,'note':'Manba papkasiga tegilmadi; oldingi hisobotlar tarixda qoldi.'}

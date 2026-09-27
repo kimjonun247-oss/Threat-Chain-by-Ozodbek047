@@ -9,8 +9,11 @@ judge only what the change introduced:
     python3 ci_gate.py --target myapp --baseline last-green --fail-on new-high
     python3 ci_gate.py --target myapp --respect-triage
 
-Exit codes are unchanged: 0 passed, 1 the gate stopped the build, 2 the scan
-itself did not finish (which is not a pass).
+Exit codes: 0 passed, 1 the gate stopped the build, 2 the scan itself did not
+finish (which is not a pass). A selected stage that ended failed, partial or
+cancelled -- e.g. OSV was unreachable for some packages -- counts as "did not
+finish" too; --allow-partial restores the old behaviour of judging whatever
+findings did arrive.
 """
 import sys
 import argparse
@@ -36,6 +39,9 @@ def main():
                         'shu o‘zgarish kiritganlari (asos skan talab qilinadi)')
     p.add_argument('--respect-triage', action='store_true',
                    help='false_positive va accepted_risk deb yopilganlarni sanamaslik')
+    p.add_argument('--allow-partial', action='store_true',
+                   help='Tugamagan (failed/partial/cancelled) bosqich bo‘lsa ham topilmalar bo‘yicha qaror qilish. '
+                        'Standart: bunday skan o‘tkazilmaydi (chiqish kodi 2).')
     args = p.parse_args()
     if args.fail_on != 'any' and not args.baseline:
         p.error('--fail-on new* uchun --baseline kerak (masalan: --baseline last-green).')
@@ -69,16 +75,36 @@ def main():
     except ValueError as error:
         print(json.dumps({'error': str(error)}, ensure_ascii=False))
         raise SystemExit(2)
+    unfinished = gate.incomplete_stages(report)
     print(json.dumps({'pipeline_state': report['state'],
                       'gate': {k: v for k, v in result.items() if k != 'hits'},
+                      'incomplete_stages': unfinished,
+                      'coverage_gaps': gate.coverage_gaps(report),
+                      'allow_partial': args.allow_partial,
                       'sarif': args.sarif_out}, ensure_ascii=False, indent=2))
     for hit in result['hits']:
         why = f" · {hit['why']}" if hit.get('why') else ''
         print(f" - [{hit['stage']}] {hit['rule_id']} · {hit['subject']} · {hit['detail']}{why}", file=sys.stderr)
     if report['state'] == 'failed':
         raise SystemExit(2)
+    if unfinished and not args.allow_partial:
+        names = ', '.join(f"{row['kind']}/{row['target']} ({row['reason']})" for row in unfinished)
+        print('Skan to‘liq tugamadi: ' + names + '. Tekshirilmagan narsa "toza" deb o‘tkazilmaydi; '
+              'ataylab ruxsat berish uchun --allow-partial.', file=sys.stderr)
+        raise SystemExit(2)
     raise SystemExit(0 if result['passed'] else 1)
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as error:  # noqa: BLE001
+        # An unexpected crash is "the scan did not run" (2), never "the gate
+        # stopped the build" (1): Python's own exit code for a traceback is 1,
+        # which CI would read as a real finding.
+        import traceback
+        traceback.print_exc()
+        print(json.dumps({'error': f'Kutilmagan xato: {type(error).__name__}: {error}'}, ensure_ascii=False))
+        raise SystemExit(2)

@@ -4,6 +4,7 @@ Nuclei talks to an ephemeral loopback gateway. Only reviewed template paths are
 forwarded. Response bodies remain in memory; the report contains hashes, not secrets.
 """
 import collections
+import email.utils
 import datetime
 import hashlib
 import http.client
@@ -23,13 +24,14 @@ import time
 import uuid
 from urllib.parse import urlsplit, urljoin
 
-from .engine import ROOT
-from . import repo_store, scanners, taxonomy, run_index, findings as findings_mod, triage
+from .engine import ROOT, DATA
+from . import priority, repo_store, scanners, taxonomy, run_index, findings as findings_mod, triage
 from . import verification as verification_mod
+from . import scan_window as scan_window_mod
 from vendor import yaml
 
-RUNS = ROOT / 'web-runs'
-PROFILES = ROOT / 'profiles/web'
+RUNS = DATA / 'web-runs'
+PROFILES = DATA / 'profiles/web'
 RULES = ROOT / 'scanner-rules/nuclei'
 # Windows keeps the original .tools/nuclei/nuclei.exe; every other platform
 # uses the vendored posix/ build installed by setup_nuclei.py.
@@ -53,6 +55,22 @@ MAX_CRAWL_DEPTH = 2
 TIMEOUT = 8
 DEADLINE = 180
 CORS_PROBE_ORIGIN = 'https://zanjir-cors-probe.invalid'
+STOP_MESSAGES = {
+    'rate_limited': 'Nishon so‘rovlarni cheklashni so‘radi (429). Nishonni himoya qilish uchun skan to‘xtatildi; '
+                    'kechikishni oshirib (rate_delay) keyinroq qayta urinib ko‘ring.',
+    'server_busy': 'Nishon band ekanini bildirdi (503). Nishonni himoya qilish uchun skan to‘xtatildi; '
+                   'yuk kamroq vaqtda qayta urinib ko‘ring.',
+    'target_unreachable': 'Nishonga ketma-ket ulanib bo‘lmadi. Uni urishda davom etmaslik uchun skan to‘xtatildi.',
+    'daily_budget': 'Nishonning kunlik so‘rov limiti tugadi. Skan to‘xtatildi; limit ertaga yangilanadi.',
+    'window_closed': 'Ruxsat etilgan skan oynasi yopildi. Skan to‘xtatildi; keyingi oynada davom ettiring.'}
+# Target impact controls (see Collector._react).
+THROTTLE_STATUSES = (429, 503)
+MAX_THROTTLES = 2               # a second "slow down" answer ends the scan
+MAX_RETRY_AFTER = 30.0          # longer waits are not waited out: the scan stops instead
+MAX_CONSECUTIVE_FAILURES = 3    # connection errors/timeouts in a row: stop, do not hammer
+BASELINE_SAMPLES = 3            # first responses define the target's normal latency
+SLOW_FACTOR = 3.0
+SLOW_FLOOR = 1.0                # seconds; below this a slower answer is not "struggling"
 LIMITS = ('Cheklangan GET profili: kirishsiz javoblar, ochiq konfiguratsiya/fayl naqshlari, HTTP himoya sarlavhalari, '
           'CORS Origin aks ettirilishi, cookie bayroqlari va server xatosi orqali texnik ma’lumot sizishi tekshiriladi. '
           'Bir sahifadagi bir nechta Set-Cookie javobidan faqat oxirgisi tahlil qilinadi. '
@@ -93,6 +111,20 @@ def auth_for(profile):
             {'mode': 'environment', 'credentials_present': True, 'variable': variable,
              'note': ('Authorization sarlavhasi faqat shu jarayonning muhitidan olindi. Qiymat hech qayerda '
                       'saqlanmaydi va hisobotda faqat o\u2018zgaruvchi nomi ko\u2018rinadi.')})
+
+
+def retry_after(value):
+    """Seconds from a Retry-After header (delta or HTTP date), or None if absent,
+    unreadable or longer than MAX_RETRY_AFTER -- then the scan stops instead."""
+    if not value:
+        return None
+    value = str(value).strip()
+    try:
+        seconds = float(value) if re.fullmatch(r'\d{1,6}(\.\d+)?', value) else \
+            (email.utils.parsedate_to_datetime(value) - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return max(0.0, seconds) if seconds <= MAX_RETRY_AFTER else None
 
 
 def rate_delay(profile):
@@ -153,7 +185,8 @@ def canonical_url(value):
     return f'{parts.scheme}://{authority}{path}'
 
 
-def register(target, url, owner, allow_private=False, authenticated=False, rate_delay_seconds=None):
+def register(target, url, owner, allow_private=False, authenticated=False, rate_delay_seconds=None, replace=False,
+             scan_window=None, daily_request_budget=None):
     if not isinstance(target, str) or not repo_store.PROFILE_ID.fullmatch(target) or target.startswith('pilot-'):
         raise ValueError('2–40 belgili loyiha ID kerak; pilot- nomlari band.')
     if not isinstance(owner, str) or not 1 <= len(owner.strip()) <= 120 or type(allow_private) is not bool:
@@ -164,15 +197,34 @@ def register(target, url, owner, allow_private=False, authenticated=False, rate_
            'allow_private': allow_private, 'authorized_at': now(),
            'authenticated': authenticated,
            'rate_delay': rate_delay({'rate_delay': rate_delay_seconds})}
+    # When the owner allows scanning and how much load a day: recorded with the
+    # authorisation itself, and enforced before and during every scan.
+    window = scan_window_mod.parse_window(scan_window)
+    budget = scan_window_mod.parse_budget(daily_request_budget)
+    if window:
+        row['scan_window'] = window
+    if budget:
+        row['daily_request_budget'] = budget
     if authenticated:
         # The variable name is stored so the operator can see what to export;
         # the value itself never is.
         row['auth_variable'] = auth_variable(target)
     # A CLI confirmation records scope; this is not independent proof of ownership.
-    PROFILES.mkdir(parents=True, exist_ok=True)
-    with (PROFILES / (target + '.json')).open('x', encoding='utf-8') as file:
-        json.dump(row, file, ensure_ascii=False, indent=2)
+    path = PROFILES / (target + '.json')
+    if path.exists() and not replace:
+        raise ValueError('Bu nishon ID allaqachon ro‘yxatda. Yangilash uchun “Mavjud bo‘lsa yangilash”ni belgilang '
+                         '(API: "replace": true); ruxsat qaytadan qayd etiladi.')
+    repo_store.write_json(path, row)
     return row
+
+
+def remove(target):
+    """Drop a registration; past reports stay in the history."""
+    path = PROFILES / (str(target) + '.json')
+    if not repo_store.PROFILE_ID.fullmatch(str(target)) or str(target).startswith('pilot-') or not path.is_file():
+        raise ValueError('Bunday ro‘yxatdagi web nishon yo‘q (pilot- nishonlari o‘chirilmaydi).')
+    path.unlink()
+    return {'id': target, 'removed': True, 'note': 'Oldingi hisobotlar tarixda saqlanib qoldi.'}
 
 
 def targets():
@@ -286,11 +338,92 @@ class Collector:
         self.errors = []
         self.requests = 0
         self.blocked = 0
+        self.wire = None
+        self.connections = 0
+        self.failures = 0
+        self.latencies = []
+        self.baseline = None
+        self.throttles = []
+        self.slowdowns = []
+        self.stopped = None
+        # Set by execute() from the target's permission (scan_window module).
+        self.request_budget = None
+        self.window_closes = None
+
+    def impact(self):
+        """What the scan cost the target -- kept in the report next to the findings."""
+        return {'requests': self.requests, 'connections': self.connections, 'max_parallel_requests': 1,
+                'initial_delay_seconds': rate_delay(self.profile), 'final_delay_seconds': self.delay,
+                'slowdowns': self.slowdowns, 'throttle_responses': self.throttles, 'stopped': self.stopped,
+                'max_body_bytes': MAX_BODY, 'method': 'GET'}
 
     def allow(self, path):
         """Let the bounded same-origin crawler register a newly discovered path."""
         with self.lock:
             self.paths.add(path)
+
+    # ---- target impact controls -------------------------------------------
+    # Measured against a counting target (2026-09-25): every request opened its
+    # own TCP (and, on https, TLS) connection -- 17 handshakes for 17 requests --
+    # a 503 with Retry-After was answered with 13 more requests, and a server
+    # that slowed to 1.5 s per response was not given more room. Now the scan
+    # reuses one connection, obeys Retry-After, backs off when the target slows
+    # down and stops when it keeps failing. Requests stay strictly sequential.
+
+    def _open(self):
+        wire = socket.create_connection((self.ip, self.port), timeout=TIMEOUT)
+        if self.context:
+            wire = self.context.wrap_socket(wire, server_hostname=self.parts.hostname)
+            if self.tls is None:
+                self.tls = tls_state(wire)
+        self.connections += 1
+        return wire
+
+    def _drop(self):
+        if self.wire is not None:
+            try:
+                self.wire.close()
+            except OSError:
+                pass
+        self.wire = None
+
+    def close(self):
+        with self.lock:
+            self._drop()
+
+    def _slow_down(self, reason):
+        self.delay = min(MAX_RATE_DELAY, max(self.delay * 2, 1.0))
+        self.slowdowns.append({'reason': reason, 'delay_seconds': self.delay})
+
+    def _stop(self, reason, path):
+        self.stopped = reason
+        self.errors.append({'path': path, 'type': reason})
+        self.cancel.set()
+
+    def _react(self, path, status, headers, elapsed):
+        """Adapt to how the target is coping, after every answered request."""
+        self.failures = 0
+        if status in THROTTLE_STATUSES:
+            wait = retry_after(headers.get('retry-after'))
+            self.throttles.append({'path': path, 'status': status, 'retry_after': wait})
+            if len(self.throttles) >= MAX_THROTTLES or (status == 429 and wait is None):
+                return self._stop('rate_limited' if status == 429 else 'server_busy', path)
+            self._slow_down('http_' + str(status))
+            if wait is not None:
+                self.next_request = max(self.next_request, time.monotonic() + wait)
+            return None
+        self.latencies.append(elapsed)
+        if self.baseline is None:
+            if len(self.latencies) >= BASELINE_SAMPLES:
+                self.baseline = sorted(self.latencies[:BASELINE_SAMPLES])[BASELINE_SAMPLES // 2]
+            return None
+        if elapsed > max(SLOW_FLOOR, SLOW_FACTOR * self.baseline):
+            # Back off once per new level of slowness, then treat that level as
+            # the target's normal: a server that is steadily slow gets more room,
+            # not an ever-growing delay that runs the scan into its deadline.
+            self._slow_down('slow_response')
+            self.baseline = elapsed
+        return None
 
     def fetch(self, path, extra_headers=None):
         variant = tuple(sorted((extra_headers or {}).items()))
@@ -301,91 +434,121 @@ class Collector:
             if path not in self.paths:
                 self.blocked += 1
                 raise ValueError('Yo‘l profilga kirmaydi.')
+            if self.request_budget is not None and self.requests >= self.request_budget and not self.cancel.is_set():
+                self._stop('daily_budget', path)
+            if self.window_closes is not None and not self.cancel.is_set() and \
+                    datetime.datetime.now(datetime.timezone.utc) >= self.window_closes:
+                self._stop('window_closed', path)
             if self.cancel.is_set() or time.monotonic() - self.started > DEADLINE or self.requests >= MAX_REQUESTS:
                 raise ValueError('Jarayon to‘xtatilgan yoki so‘rov/vaqt chegarasiga yetdi.')
             if self.cancel.wait(max(0, self.next_request - time.monotonic())):
                 raise ValueError('Jarayon bekor qilingan.')
-            self.next_request = time.monotonic() + self.delay
+            if time.monotonic() - self.started > DEADLINE:
+                raise ValueError('Jarayon vaqt chegarasiga yetdi.')
             self.requests += 1
             upstream_path = self.parts.path + path if path != '/' else (self.parts.path or '/')
-            conn = http.client.HTTPConnection(self.parts.hostname, self.port, timeout=TIMEOUT)
-            wire = None
-            response = None
-            watchdog = None
+            reused = self.wire is not None
+            sent_at = time.monotonic()
             try:
-                wire = socket.create_connection((self.ip, self.port), timeout=TIMEOUT)
-                if self.context:
-                    wire = self.context.wrap_socket(wire, server_hostname=self.parts.hostname)
-                    if self.tls is None:
-                        self.tls = tls_state(wire)
-                def abort_slow_response():
-                    try:
-                        wire.shutdown(socket.SHUT_RDWR)
-                    except OSError:
-                        pass
-                # Header parsing also needs a total deadline against slow trickle responses.
-                watchdog = threading.Timer(min(TIMEOUT, max(0.01, self.started + DEADLINE - time.monotonic())), abort_slow_response)
-                watchdog.daemon = True
-                watchdog.start()
-                conn.sock = wire
-                request_headers = {'Host': self.parts.netloc, 'User-Agent': USER_AGENT,
-                                    'Accept-Encoding': 'identity', 'Range': f'bytes=0-{MAX_BODY - 1}', 'Connection': 'close'}
-                # The operator's own credential for this target, read from the
-                # process environment at request time. It is never stored and
-                # never written into a report -- only the variable's name is.
-                request_headers.update(self.auth_headers)
-                if extra_headers:
-                    request_headers.update(extra_headers)
-                conn.request('GET', upstream_path, headers=request_headers)
-                # Keep the socket object alive until our bounded read ends. getresponse()
-                # closes HTTP/1.0 sockets early (the response file still owns its handle).
-                response = http.client.HTTPResponse(wire)
-                response.begin()
-                # Read incrementally with a total deadline, not an unbounded trickle timeout.
-                body = bytearray()
-                stop = min(self.started + DEADLINE, time.monotonic() + TIMEOUT)
-                while len(body) <= MAX_BODY:
-                    remaining = stop - time.monotonic()
-                    if remaining <= 0 or self.cancel.is_set():
-                        raise TimeoutError('Response deadline')
-                    wire.settimeout(min(TIMEOUT, remaining))
-                    chunk = response.read1(min(8192, MAX_BODY + 1 - len(body)))
-                    if not chunk:
-                        break
-                    body.extend(chunk)
-                byte_range = response_range(response)
-                # A requested prefix may contain the entire small resource (RFC 9110
-                # 14.1.2). A 206 status alone does not prove a truncated body.
-                full_range = byte_range is not None and byte_range['start'] == 0 and byte_range['end'] + 1 == byte_range['total'] == len(body)
-                truncated = len(body) > MAX_BODY or bool(response.length) or (response.status == 206 and not full_range)
-                raw = bytes(body[:MAX_BODY])
-                headers = {k.lower(): v for k, v in response.getheaders()}
-                row = {'path': path, 'status': response.status, 'bytes_read': len(raw), 'truncated': truncated,
-                       'unsupported_encoding': headers.get('content-encoding', '').lower() not in {'', 'identity'},
-                       'body_sha256': hashlib.sha256(raw).hexdigest(), 'observed_at': now()}
-                if byte_range is not None:
-                    row['content_range'] = byte_range
-                if variant:
-                    row['probe'] = 'cors_origin_reflection'
-                self.evidence.append(row)
-                result = (response.status, headers, raw)
-                self.cache[cache_key] = result
-                if response.status == 429:
-                    self.cancel.set()
-                    self.errors.append({'path': path, 'type': 'rate_limited'})
-                return result
+                try:
+                    result = self._exchange(path, upstream_path, extra_headers, variant)
+                except (http.client.RemoteDisconnected, ConnectionResetError, BrokenPipeError) as error:
+                    # An idle kept-alive connection may have been closed by the
+                    # server in between; one fresh connection, same GET, once.
+                    if not reused or getattr(error, 'response_started', False):
+                        raise
+                    self._drop()
+                    sent_at = time.monotonic()
+                    result = self._exchange(path, upstream_path, extra_headers, variant)
             except (OSError, http.client.HTTPException, ValueError) as error:
+                self._drop()
                 # Never export response content, headers, or exception strings containing secrets.
                 self.errors.append({'path': path, 'type': type(error).__name__})
+                self.failures += 1
+                if self.failures >= MAX_CONSECUTIVE_FAILURES:
+                    self._stop('target_unreachable', path)
+                else:
+                    self._slow_down('request_failed')
                 raise
             finally:
-                if watchdog is not None:
-                    watchdog.cancel()
-                if response is not None:
-                    response.close()
-                conn.close()
-                if wire is not None:
-                    wire.close()
+                self.next_request = time.monotonic() + self.delay
+            self._react(path, result[0], result[1], time.monotonic() - sent_at)
+            self.cache[cache_key] = result
+            return result
+
+    def _exchange(self, path, upstream_path, extra_headers, variant):
+        """One GET over the kept-alive connection; closes it when it cannot be reused."""
+        if self.wire is None:
+            self.wire = self._open()
+        wire = self.wire
+        conn = http.client.HTTPConnection(self.parts.hostname, self.port, timeout=TIMEOUT)
+        response = None
+        watchdog = None
+        keep = False
+        try:
+            def abort_slow_response():
+                try:
+                    wire.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+            # Header parsing also needs a total deadline against slow trickle responses.
+            watchdog = threading.Timer(min(TIMEOUT, max(0.01, self.started + DEADLINE - time.monotonic())), abort_slow_response)
+            watchdog.daemon = True
+            watchdog.start()
+            wire.settimeout(TIMEOUT)
+            conn.sock = wire
+            request_headers = {'Host': self.parts.netloc, 'User-Agent': USER_AGENT,
+                               'Accept-Encoding': 'identity', 'Range': f'bytes=0-{MAX_BODY - 1}', 'Connection': 'keep-alive'}
+            # The operator's own credential for this target, read from the
+            # process environment at request time. It is never stored and
+            # never written into a report -- only the variable's name is.
+            request_headers.update(self.auth_headers)
+            if extra_headers:
+                request_headers.update(extra_headers)
+            conn.request('GET', upstream_path, headers=request_headers)
+            response = http.client.HTTPResponse(wire)
+            response.begin()
+            # Read incrementally with a total deadline, not an unbounded trickle timeout.
+            body = bytearray()
+            stop = min(self.started + DEADLINE, time.monotonic() + TIMEOUT)
+            while len(body) <= MAX_BODY:
+                remaining = stop - time.monotonic()
+                if remaining <= 0 or self.cancel.is_set():
+                    raise TimeoutError('Response deadline')
+                wire.settimeout(min(TIMEOUT, remaining))
+                chunk = response.read1(min(8192, MAX_BODY + 1 - len(body)))
+                if not chunk:
+                    break
+                body.extend(chunk)
+            byte_range = response_range(response)
+            # A requested prefix may contain the entire small resource (RFC 9110
+            # 14.1.2). A 206 status alone does not prove a truncated body.
+            full_range = byte_range is not None and byte_range['start'] == 0 and byte_range['end'] + 1 == byte_range['total'] == len(body)
+            truncated = len(body) > MAX_BODY or bool(response.length) or (response.status == 206 and not full_range)
+            raw = bytes(body[:MAX_BODY])
+            headers = {k.lower(): v for k, v in response.getheaders()}
+            row = {'path': path, 'status': response.status, 'bytes_read': len(raw), 'truncated': truncated,
+                   'unsupported_encoding': headers.get('content-encoding', '').lower() not in {'', 'identity'},
+                   'body_sha256': hashlib.sha256(raw).hexdigest(), 'observed_at': now()}
+            if byte_range is not None:
+                row['content_range'] = byte_range
+            if variant:
+                row['probe'] = 'cors_origin_reflection'
+            self.evidence.append(row)
+            # Reuse only a connection whose response was read to its end.
+            keep = not response.will_close and not truncated and response.isclosed()
+            return response.status, headers, raw
+        except (http.client.RemoteDisconnected, ConnectionResetError, BrokenPipeError) as error:
+            error.response_started = response is not None and response.status is not None and response.status != http.client._UNKNOWN
+            raise
+        finally:
+            if watchdog is not None:
+                watchdog.cancel()
+            if response is not None:
+                response.close()
+            conn.sock = None          # the connection object must not close the shared socket
+            if not keep:
+                self._drop()
 
 
 def finding(rule, title, severity, path, evidence, fix, tool='ThreatChain HTTP', verified=True):
@@ -443,10 +606,15 @@ def extract_links(base_path, content_type, body):
         if raw.startswith(('http://', 'https://', '//', 'mailto:', 'tel:', 'javascript:', 'data:')):
             continue
         path = urlsplit(urljoin(base_path, raw)).path or '/'
-        path = path.rstrip('/') or '/'
-        if not re.fullmatch(r'(?:/[A-Za-z0-9._~-]+)*', path) or any(part in {'.', '..'} for part in path.split('/')):
+        core = path.rstrip('/') or '/'
+        if not re.fullmatch(r'(?:/[A-Za-z0-9._~-]+)*', core) or any(part in {'.', '..'} for part in core.split('/')):
             continue
-        links.append(path)
+        # The trailing slash is part of the address: `/files/` and `/files` are
+        # different resources, and on most servers only the first is the
+        # directory. Stripping it turned every directory link into a 404, so a
+        # directory listing linked from the site was never seen. The query string
+        # is still dropped on purpose -- a GET with parameters may change state.
+        links.append(core + '/' if path.endswith('/') and core != '/' else core)
     return links
 
 
@@ -523,6 +691,7 @@ def cookie_findings(collector, pages):
 
 
 FINGERPRINT_HEADERS = ('server', 'x-powered-by', 'x-aspnet-version', 'x-generator')
+VERSION_TOKEN = re.compile(r'\d+(?:\.\d+)+|/\d+')
 
 
 def fingerprint_findings(collector, pages):
@@ -535,6 +704,10 @@ def fingerprint_findings(collector, pages):
         _, headers, _ = cached
         for name in FINGERPRINT_HEADERS:
             value = headers.get(name, '').strip()
+            # `Server: web` or `Server: nginx` names no version; only the headers
+            # that exist to name technology count without a version number.
+            if name == 'server' and not VERSION_TOKEN.search(value):
+                continue
             if value and (name, value) not in seen:
                 seen.add((name, value))
                 result.append(finding('server-fingerprint', 'Server/texnologiya versiyasi sarlavhada oshkor qilingan', 'LOW', path,
@@ -546,6 +719,33 @@ ERROR_PATTERN = re.compile(rb'(?i)(traceback \(most recent|fatal error:|exceptio
                             rb'stack trace:|django\.core\.exceptions|unhandled exception|internal server error.{0,40}(line|file) )')
 
 
+# A stack trace is unmistakable even when the framework answers 200 (debug
+# pages, APIs that wrap errors in a success status). Only these specific shapes
+# count below 500, so documentation that merely mentions "stack trace" does not.
+STRONG_ERROR_PATTERN = re.compile(rb'(traceback \(most recent call last\):\s*\n\s*file "|'
+                                  rb'exception in thread "[^"\n]*" [a-z.]+(exception|error)|'
+                                  rb'\n\s+at [a-z][a-z0-9_.$]+\([a-z0-9_]+\.java:\d+\)|'
+                                  rb'(fatal error|parse error|warning)</b>:.{0,200} on line <b>\d+)', re.IGNORECASE)
+DIRECTORY_LISTING = re.compile(rb'<title>\s*(index of /|directory listing for /)|<h1>\s*(index of /|directory listing for /)',
+                               re.IGNORECASE)
+
+
+def directory_listing_findings(collector, pages):
+    """A crawled page that is an auto-generated directory index (CWE-548).
+
+    Nuclei's dir-listing template probes only the site root; a listing under a
+    linked folder (`/files/`, `/uploads/`) was invisible.
+    """
+    result = []
+    for path in pages:
+        cached = collector.cache.get((path, ()))
+        if cached and 200 <= cached[0] < 300 and DIRECTORY_LISTING.search(cached[2][:4096]):
+            result.append(finding('http-dir-listing', 'Papka tarkibi ochiq ro‘yxat sifatida ko‘rsatiladi', 'MEDIUM', path,
+                                  'Javob avtomatik papka indeksiga mos keladi (fayl nomlari hisobotga kiritilmaydi).',
+                                  'Veb-serverda papka indeksini o‘chiring (nginx: autoindex off; Apache: Options -Indexes).'))
+    return result
+
+
 def error_disclosure_findings(collector, pages):
     result = []
     for path in pages:
@@ -553,7 +753,7 @@ def error_disclosure_findings(collector, pages):
         if not cached:
             continue
         status, _, body = cached
-        if status >= 500 and ERROR_PATTERN.search(body):
+        if (status >= 500 and ERROR_PATTERN.search(body)) or STRONG_ERROR_PATTERN.search(body):
             result.append(finding('error-disclosure', 'Server xatosi ichki texnik tafsilotlarni oshkor qilishi mumkin', 'MEDIUM', path,
                           f'HTTP {status} javobida stek-iz/texnik xato belgilariga o‘xshash matn topildi (qiymat hisobotga kiritilmaydi).',
                           'Ishlab chiqarish muhitida umumiy xato sahifasini qaytaring; texnik tafsilotlarni faqat serverning o‘z logiga yozing.'))
@@ -632,8 +832,161 @@ def normalize_nuclei(raw, base, templates, collector, missing_hash):
                     'Mavjud bo‘lmagan yo‘l ham ayni mazmunni qaytardi. Aniq fayl ochiqligi tasdiqlanmagan. Mos qoidalar: ' + ', '.join(sorted(ambiguous)),
                     'Fallback javobini ko‘rib chiqing: namunaviy matnmi yoki haqiqiy maxfiy konfiguratsiyami? Haqiqiy sir bo‘lsa almashtiring.',
                     verified=False)
+        f['matched_rules'] = sorted(ambiguous)
         findings[f['id']] = f
     return list(findings.values()), suppressed
+
+
+# ---- confirmation pass -----------------------------------------------------------
+# One matching response is an observation, not a confirmation: a CORS header can
+# echo one allow-listed origin, a ".env" match can be text inside an HTML error
+# page, a listing can be a one-off. Each such finding gets at most two more GETs
+# -- same safety rules, same budget, same origin -- designed to tell the two
+# apart, and the outcome is recorded next to the finding:
+#   confirmed       the second, independent look shows the same thing and the
+#                   content has the structure the rule claims (it IS an env file,
+#                   a git config, SQL, a compose file, an API description);
+#   not_reproduced  it did not; the finding stays, marked for manual review;
+#   inconclusive    the extra request could not be made (budget, window, error).
+CONFIRM_BUDGET = 10
+ENV_LINE = re.compile(r'^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=')
+
+
+def looks_like_html(body):
+    return body.lstrip()[:15].lower().startswith((b'<!doctype', b'<html', b'<head', b'<body'))
+
+
+def env_file(body):
+    lines = [l for l in body.decode('utf-8', 'replace').splitlines() if l.strip() and not l.lstrip().startswith('#')]
+    hits = sum(bool(ENV_LINE.match(l)) for l in lines)
+    return not looks_like_html(body) and hits >= 1 and hits >= 0.6 * len(lines)
+
+
+def structured(body, kind):
+    text = body.decode('utf-8', 'replace')
+    if kind == 'env':
+        return env_file(body)
+    if kind == 'git':
+        return '[core]' in text and 'repositoryformatversion' in text
+    if kind == 'sql':
+        return not looks_like_html(body) and bool(re.search(r'(?im)^\s*(create table|insert into|drop table|copy .* from stdin)', text))
+    if kind in ('compose', 'openapi'):
+        try:
+            document = json.loads(text) if text.lstrip().startswith('{') else yaml.safe_load(text)
+        # The body is the target's, not ours: any parse failure means "not that file".
+        except (ValueError, yaml.YAMLError, RecursionError):
+            return False
+        if not isinstance(document, dict):
+            return False
+        if kind == 'compose':
+            return isinstance(document.get('services'), dict)
+        return bool(document.get('openapi') or document.get('swagger')) and isinstance(document.get('paths'), dict)
+    if kind == 'listing':
+        return bool(DIRECTORY_LISTING.search(body[:4096])) and body.lower().count(b'<a href') >= 1
+    return False
+
+
+STRUCTURE = {'zanjir-env': 'env', 'git-config': 'git', 'zanjir-sql-backup': 'sql', 'zanjir-compose': 'compose',
+             'zanjir-openapi': 'openapi', 'dir-listing': 'listing', 'http-dir-listing': 'listing'}
+
+
+def resolve_fallback(collector, item):
+    """The site answers every path with the same body, and that body matched a
+    sensitive-file rule. Either the fallback really is such a file (every URL
+    leaks it) or the rule matched text inside an ordinary page."""
+    probe = '/zanjir-confirm-' + uuid.uuid4().hex
+    collector.allow(probe)
+    status, _, body = collector.fetch(probe)
+    kinds = sorted({STRUCTURE[r] for r in item.get('matched_rules') or [] if r in STRUCTURE})
+    if status not in (200, 206):
+        return 'not_reproduced', f'yangi tasodifiy yo‘l {status} qaytardi — fallback barqaror emas'
+    matching = [kind for kind in kinds if structured(body, kind)]
+    if matching:
+        return 'confirmed', 'har qanday yo‘l ' + ', '.join(matching) + ' tuzilmali mazmun qaytaradi'
+    return 'dismissed', 'fallback oddiy sahifa (' + ('HTML' if looks_like_html(body) else 'config tuzilmasi yo‘q') + \
+        '); qoida matni sahifa ichida uchragan, fayl ochiqligi yo‘q'
+
+
+def confirm_findings(collector, findings):
+    """Re-check theoretical findings with a second, independent GET. Returns a summary.
+
+    A dismissed finding is removed from `findings` (in place) and returned in
+    summary['dismissed_findings'] with the reason, so it stays in the report.
+    """
+    summary = {'checked': 0, 'confirmed': 0, 'not_reproduced': 0, 'inconclusive': 0, 'dismissed': 0, 'requests': 0,
+               'dismissed_findings': []}
+    for item in list(findings):
+        rule = item.get('rule_id')
+        if rule == 'ambiguous-fallback' and summary['requests'] < CONFIRM_BUDGET:
+            summary['checked'] += 1
+            before = collector.requests
+            try:
+                outcome, method = resolve_fallback(collector, item)
+            except (ValueError, OSError, http.client.HTTPException, TimeoutError) as error:
+                outcome, method = 'inconclusive', f'qo‘shimcha so‘rov bajarilmadi ({type(error).__name__})'
+            summary['requests'] += collector.requests - before
+            summary[outcome] += 1
+            item['confirmation'] = {'state': outcome, 'method': method, 'at': now()}
+            if outcome == 'dismissed':
+                findings.remove(item)
+                summary['dismissed_findings'].append(item)
+            elif outcome == 'confirmed':
+                item.update(verified=True, severity='HIGH', title='Har qanday yo‘l sezgir fayl mazmunini qaytaradi',
+                            verification_note='Ikkinchi mustaqil GET bilan tasdiqlandi: ' + method + '.')
+            continue
+        if rule not in STRUCTURE and not rule.startswith('cors-'):
+            continue
+        if summary['requests'] >= CONFIRM_BUDGET:
+            outcome, method = 'inconclusive', 'tasdiqlash so‘rovlari chegarasi tugadi'
+        else:
+            summary['checked'] += 1
+            before = collector.requests
+            try:
+                outcome, method = confirm_one(collector, item)
+            except (ValueError, OSError, http.client.HTTPException, TimeoutError) as error:
+                outcome, method = 'inconclusive', f'qo‘shimcha so‘rov bajarilmadi ({type(error).__name__})'
+            summary['requests'] += collector.requests - before
+        summary[outcome] += 1
+        item['confirmation'] = {'state': outcome, 'method': method, 'at': now()}
+        if outcome == 'confirmed':
+            item['verified'] = True
+            item['verification_note'] = ('Ikkinchi mustaqil GET bilan tasdiqlandi: ' + method +
+                                         '. Amaliy xavf va biznes ta’siri baribir mutaxassis tomonidan baholanadi.')
+        elif outcome == 'not_reproduced':
+            item['verified'] = False
+            item['verification_note'] = 'Birinchi javob takrorlanmadi yoki mazmun kutilgan tuzilmaga mos emas: ' + method + '. Qo‘lda tekshiring.'
+    return summary
+
+
+def confirm_one(collector, item):
+    rule, path = item['rule_id'], item['path']
+    if rule.startswith('cors-'):
+        # A different, random origin: an allow-list that happened to include the
+        # first probe does not reflect this one; blind reflection does.
+        origin = 'https://zanjir-confirm-' + uuid.uuid4().hex[:10] + '.invalid'
+        _, headers, _ = collector.fetch('/', extra_headers={'Origin': origin})
+        acao = headers.get('access-control-allow-origin', '')
+        acac = headers.get('access-control-allow-credentials', '').strip().lower() == 'true'
+        if acac and (acao == origin or (acao == '*' and rule == 'cors-wildcard-credentials')):
+            return 'confirmed', 'boshqa tasodifiy Origin ham credentials bilan qabul qilindi'
+        return 'not_reproduced', 'ikkinchi tasodifiy Origin aks ettirilmadi (ehtimol ruxsat ro‘yxati)'
+    kind = STRUCTURE[rule]
+    status, _, body = collector.fetch(path, extra_headers={'Cache-Control': 'no-cache'})
+    first = collector.cache.get((path, ()))
+    if status not in (200, 206):
+        return 'not_reproduced', f'ikkinchi so‘rov {status} qaytardi'
+    if first and hashlib.sha256(first[2]).digest() != hashlib.sha256(body).digest() and kind != 'listing':
+        return 'not_reproduced', 'ikkinchi javob mazmuni birinchisidan farq qildi'
+    if not structured(body, kind):
+        return 'not_reproduced', {'env': 'KEY=VALUE qatorlari yo‘q (HTML yoki boshqa mazmun)', 'git': '[core] bo‘limi yo‘q',
+                                  'sql': 'SQL buyruqlari yo‘q', 'compose': '`services` bo‘limi yo‘q',
+                                  'openapi': '`openapi`/`paths` yo‘q', 'listing': 'papka indeksi emas'}[kind]
+    return 'confirmed', {'env': 'javob barqaror va KEY=VALUE ko‘rinishidagi haqiqiy .env fayli',
+                         'git': 'javob barqaror va haqiqiy git config ([core])',
+                         'sql': 'javob barqaror va SQL dump buyruqlarini o‘z ichiga oladi',
+                         'compose': 'javob barqaror va `services` bo‘limli Compose fayli',
+                         'openapi': 'javob barqaror va `paths` bo‘limli API tavsifi',
+                         'listing': 'qayta so‘rovda ham avtomatik papka indeksi'}[kind]
 
 
 def run_nuclei(collector, templates, folder, cancel, missing_hash):
@@ -656,7 +1009,8 @@ def run_nuclei(collector, templates, folder, cancel, missing_hash):
             for template in templates.values():
                 command += ['-t', str(RULES / template['file'])]
             # Raw output can contain extractors. Keep it in process memory only.
-            process = subprocess.Popen(command, cwd=work, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            run_command, low = priority.gentle(command)
+            process = subprocess.Popen(run_command, cwd=work, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **low)
             started = time.monotonic()
             try:
                 while True:
@@ -701,6 +1055,11 @@ def execute(profile, rid, event):
         templates, paths, profile_hash = rule_profile()
         missing = '/zanjir-missing-' + uuid.uuid4().hex
         collector = Collector(profile, paths | {missing}, event)
+        allowed = report.get('permission') or {}
+        if allowed.get('remaining_today') is not None:
+            collector.request_budget = allowed['remaining_today']
+        if allowed.get('closes_at'):
+            collector.window_closes = datetime.datetime.fromisoformat(allowed['closes_at'])
         report['profile_sha256'] = profile_hash
         report['resolved_ip'] = collector.ip
         report['authentication'] = collector.auth_meta
@@ -716,23 +1075,40 @@ def execute(profile, rid, event):
         report['findings'] += cookie_findings(collector, pages)
         report['findings'] += fingerprint_findings(collector, pages)
         report['findings'] += error_disclosure_findings(collector, pages)
+        report['findings'] += directory_listing_findings(collector, pages)
         missing_status, _, missing_body = collector.fetch(missing)
         report.update(count=len(report['findings']), progress='Nuclei tanlangan GET qoidalarini bajarmoqda.')
         repo_store.write_json(folder / 'report.json', report)
         findings, tool = run_nuclei(collector, templates, folder, event, hashlib.sha256(missing_body).hexdigest())
         report['findings'] += findings
         report['tool'] = tool
+        report['progress'] = 'Topilmalar ikkinchi mustaqil GET bilan tasdiqlanmoqda.'
+        confirmation = confirm_findings(collector, report['findings'])
+        report['dismissed_findings'] = confirmation.pop('dismissed_findings')
+        report['confirmation_summary'] = confirmation
         report['state'] = 'completed'
     except (OSError, ValueError, KeyError, TypeError, http.client.HTTPException, subprocess.SubprocessError) as error:
-        report['state'] = 'cancelled' if event.is_set() else 'partial' if report['findings'] else 'failed'
+        stopped = collector.stopped if collector else None
+        report['state'] = ('partial' if report['findings'] else 'failed') if stopped else \
+            'cancelled' if event.is_set() else 'partial' if report['findings'] else 'failed'
         report['error_type'] = type(error).__name__
         report['message'] = 'Tekshiruv to‘liq tugamadi. Nishon ishlashi, TLS sertifikati va Nuclei o‘rnatilishini tekshiring.'
         if isinstance(error, ConnectionRefusedError):
             report['message'] = 'Tanlangan saytga ulanish rad etildi. Lokal crAPI uchun Docker Desktop va PILOT-START.cmd orqali xizmatlarni ishga tushiring.'
         elif isinstance(error, ssl.SSLCertVerificationError):
             report['message'] = 'Nishon TLS sertifikati tasdiqlanmadi. Sertifikat zanjiri va domenini tuzating; tekshiruv o‘chirilmaydi.'
+        elif stopped:
+            report['message'] = STOP_MESSAGES.get(stopped, 'Nishonni himoya qilish uchun skan to‘xtatildi.')
+        elif type(error) is ValueError and str(error):
+            # This module's own refusals (scope, DNS, template profile) are
+            # ValueErrors with an operator-facing sentence. Replacing it with the
+            # generic text above hid, for example, that a metadata address was
+            # refused on purpose -- the operator could not tell a block from a bug.
+            report['message'] = 'Tekshiruv to‘xtatildi: ' + str(error)[:300]
     finally:
         if collector:
+            collector.close()
+            report['impact'] = collector.impact()
             report['requests'] = collector.requests
             report['evidence'] = collector.evidence
             report['errors'] = collector.errors
@@ -766,8 +1142,68 @@ def execute(profile, rid, event):
     return report
 
 
+def requests_today(target, window=None, now=None):
+    """Requests this target received from ThreatChain since midnight in the window's zone."""
+    since = scan_window_mod.day_start(window, now)
+    total = 0
+    for row in run_index.rows(RUNS, ('id', 'target', 'created_at'), read, limit=10 ** 6):
+        if row.get('target') != target:
+            continue
+        try:
+            created = datetime.datetime.fromisoformat(str(row.get('created_at')))
+        except ValueError:
+            continue
+        if created < since:
+            break                                   # rows are newest first
+        try:
+            report = read(row['id'])
+        except (OSError, ValueError):
+            continue
+        total += int((report.get('impact') or {}).get('requests') or report.get('requests') or 0)
+    return total
+
+
+def permission(profile, now=None):
+    """Whether `profile` may be scanned now, and with how many requests left today.
+
+    Raises ValueError with the reason (window closed, budget spent) so the
+    refusal reaches the operator -- and the scheduler, which waits for the
+    window instead of failing.
+    """
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    # Normalised again: a profile file edited by hand gets the same checks.
+    window = scan_window_mod.parse_window(profile.get('scan_window'))
+    budget = scan_window_mod.parse_budget(profile.get('daily_request_budget'))
+    state = scan_window_mod.status(window, now)
+    result = {'window': window, 'window_text': scan_window_mod.describe(window),
+              'closes_at': state['closes_at'].isoformat() if state['closes_at'] else None,
+              'opens_at': state['opens_at'].isoformat() if state['opens_at'] else None,
+              'daily_request_budget': budget}
+    if not state['open']:
+        when = state['opens_at'].isoformat(timespec='minutes') if state['opens_at'] else 'noma’lum'
+        raise PermissionWindowError(f'Ruxsat oynasidan tashqarida ({result["window_text"]}). Keyingi oyna: {when}.',
+                                    state['opens_at'])
+    if budget:
+        used = requests_today(profile['id'], window, now)
+        result.update(used_today=used, remaining_today=max(0, budget - used))
+        if used >= budget:
+            tomorrow = scan_window_mod.day_start(window, now) + datetime.timedelta(days=1)
+            raise PermissionWindowError(f'Kunlik so‘rov limiti tugadi ({used}/{budget}). Limit {tomorrow.isoformat(timespec="minutes")} da yangilanadi.',
+                                        tomorrow)
+    return result
+
+
+class PermissionWindowError(ValueError):
+    """Not now; `retry_at` says when the target may be scanned again (or None)."""
+
+    def __init__(self, message, retry_at):
+        super().__init__(message)
+        self.retry_at = retry_at
+
+
 def start(target, background=True):
     profile = target_for(target)
+    allowed = permission(profile)
     if not LOCK.acquire(blocking=False):
         raise ValueError('Boshqa web tekshiruvi davom etmoqda.')
     rid = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S') + '-' + uuid.uuid4().hex[:8]
@@ -776,7 +1212,8 @@ def start(target, background=True):
         repo_store.write_json(RUNS / rid / 'report.json', {'id': rid, 'target': target, 'url': profile['url'],
                              'authorization': {'owner': profile['owner'], 'recorded_at': profile['authorized_at']},
                              'created_at': now(), 'state': 'queued', 'count': 0, 'findings': [], 'limits': LIMITS,
-                             'scope': 'Exact registered origin and base path; GET, 2 req/s, 32 requests, 64 KiB/response, 180 s.'})
+                             'scope': 'Exact registered origin and base path; GET, 2 req/s, 32 requests, 64 KiB/response, 180 s.',
+                             'permission': allowed})
         CANCEL[rid] = event
         if background:
             threading.Thread(target=execute, args=(profile, rid, event), daemon=True).start()
@@ -803,13 +1240,20 @@ def markdown(report):
     lines = ['# Zanjir — web tekshiruvi', '', 'Nishon: ' + report['url'], 'Holat: ' + report['state'],
              'Hisobot: ' + report['id'], '', report['limits'], '',
              f"Tasdiqlash: {verification['confirmed_by_evidence']} dalil bilan tasdiqlangan / "
-             f"{verification['manual_review_required']} qo‘lda tekshirish talab qiladi (jami {verification['total']}).", '',
+             f"{verification['manual_review_required']} qo‘lda tekshirish talab qiladi (jami {verification['total']}).",
+             *([f"Ikkinchi GET bilan qayta tekshirildi: {c['checked']} · tasdiqlandi {c['confirmed']} · takrorlanmadi "
+                f"{c['not_reproduced']} · rad etildi {c['dismissed']} · noaniq {c['inconclusive']} ({c['requests']} so‘rov)."]
+               if (c := report.get('confirmation_summary')) else []), '',
              '| Vosita | Og‘irlik | Yo‘l | Topilma | CWE | OWASP Top 10 | Tasdiqlangan | Tuzatish |',
              '|---|---|---|---|---|---|---|---|']
     for f in report['findings']:
         owasp = ', '.join(o['code'] for o in f.get('owasp_top10_2025') or []) or '\u2014'
         lines.append('| ' + ' | '.join(cell(v) for v in (f['tool'], f['severity'], f['path'], f['title'],
                      ', '.join(f.get('cwe_ids') or []) or '\u2014', owasp,
-                     'Ha' if f.get('verified') else 'Yo\u2018q, qo\u2018lda tekshirish kerak', f['remediation'])) + ' |')
+                     ('Ha' if f.get('verified') else 'Yo\u2018q, qo\u2018lda tekshirish kerak') +
+                     (f" ({f['confirmation']['state']}: {f['confirmation']['method']})" if f.get('confirmation') else ''),
+                     f['remediation'])) + ' |')
+    for f in report.get('dismissed_findings') or []:
+        lines.append(f"- Rad etildi: {cell(f['title'])} — {cell(f['confirmation']['method'])}")
     lines += ['', 'Qamrov: ' + cell(json.dumps(report.get('coverage', {}), ensure_ascii=False))]
     return '\n'.join(lines) + '\n'

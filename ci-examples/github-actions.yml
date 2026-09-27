@@ -72,7 +72,11 @@ jobs:
             --repository-target ci-deploy \
             --allow 0 \
             --sarif-out "$GITHUB_WORKSPACE/threatchain.sarif"
-          # Chiqish kodi: 0 = gate o'tdi, 1 = gate to'xtatdi, 2 = skan bajarilmadi.
+          # Chiqish kodi: 0 = gate o'tdi, 1 = gate to'xtatdi, 2 = skan bajarilmadi
+          # yoki bosqich to'liq tugamadi (masalan OSV'ga ulanib bo'lmadi). Qisman
+          # natija bilan ham qaror qilish kerak bo'lsa: --allow-partial.
+          # Tarmoq faqat proxy orqali chiqsa: env ga THREATCHAIN_USE_PROXY: '1'
+          # va (TLS tekshiruvchi proxy uchun) SSL_CERT_FILE qo'shing.
           #
           # MAVJUD LOYIHADA shu qatorni ishlating (tavsiya etiladi):
           #

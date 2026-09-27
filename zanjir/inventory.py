@@ -5,6 +5,9 @@ import os
 from pathlib import Path
 import re
 import stat
+import urllib.parse
+
+from vendor import yaml
 
 EXCLUDED={'.git','.tools','.venv','venv','node_modules','vendor','__pycache__','scanner-runs','dependency-runs','image-runs','web-runs','assessment-runs','validation-runs','advisory-cache','repository-runs','runs','pilot','profiles'}
 MAX_MANIFEST=16*1024*1024
@@ -19,18 +22,25 @@ except ModuleNotFoundError:           # Python 3.10 has no tomllib
 # has to be resolved by running a build tool stays out: this module never runs
 # repository code, so it would have to guess, and a guessed version produces
 # advisory matches that look like evidence but are not.
-SUPPORTED={'package-lock.json','npm-shrinkwrap.json','go.mod',
-           'Pipfile.lock','composer.lock','Gemfile.lock','gradle.lockfile'}
+# Build-tool output is accepted where the build tool itself resolved every
+# version: `mvn dependency:tree` (text or JSON) and `gradle dependencies`. The
+# operator runs the build tool; this module still never does.
+BUILD_TOOL_OUTPUT={'dependency-tree.txt','dependency-tree.json','gradle-dependencies.txt'}
+SUPPORTED={'package-lock.json','npm-shrinkwrap.json','yarn.lock','pnpm-lock.yaml','go.mod',
+           'Pipfile.lock','composer.lock','Gemfile.lock','gradle.lockfile','packages.lock.json'}|BUILD_TOOL_OUTPUT
 TOML_SUPPORTED={'poetry.lock','uv.lock','Cargo.lock'}
-UNSUPPORTED={'yarn.lock','pnpm-lock.yaml','packages.lock.json','pom.xml',
-             'build.gradle','build.gradle.kts'}
+UNSUPPORTED={'pom.xml','build.gradle','build.gradle.kts'}
 # An unsupported manifest is a dead end unless the operator is told how to turn
 # it into one of the formats above.
 UNSUPPORTED_HINTS={
     'build.gradle':'gradle_lockfile_missing','build.gradle.kts':'gradle_lockfile_missing',
     'pom.xml':'maven_lockfile_missing',
-    'yarn.lock':'yarn_lock_unsupported','pnpm-lock.yaml':'pnpm_lock_unsupported',
-    'packages.lock.json':'nuget_lock_unsupported',
+}
+# A build script next to a file that states its resolved versions is covered.
+RESOLVED_BY={
+    'pom.xml':('dependency-tree.txt','dependency-tree.json'),
+    'build.gradle':('gradle.lockfile','gradle-dependencies.txt','dependency-tree.txt'),
+    'build.gradle.kts':('gradle.lockfile','gradle-dependencies.txt','dependency-tree.txt'),
 }
 
 
@@ -88,6 +98,112 @@ def parse_npm(text,path):
             for name,entry in entries.items():
                 location=prefix+'/'+name;add(entry,location,name)
                 if isinstance(entry,dict) and entry.get('dependencies'):stack.append((entry['dependencies'],location+'/dependencies',depth+1))
+    return rows,gaps
+
+
+YARN_ENTRY=re.compile(r'^(?P<key>[^\s#][^\n]*):\s*$')
+YARN_FIELD=re.compile(r'^  (?P<field>version|resolution|resolved):?\s+"?(?P<value>[^"\n]*)"?\s*$')
+
+
+def yarn_descriptor_name(descriptor):
+    """Package name from a yarn v1 descriptor like `lodash@^4`, `@scope/pkg@~1`
+    or an alias `alias@npm:real@^2` (whose installed package is `real`)."""
+    descriptor=descriptor.strip().strip('"')
+    if '@npm:' in descriptor:
+        descriptor=descriptor.split('@npm:',1)[1]
+    at=descriptor.find('@',1)
+    return descriptor[:at] if at>0 else descriptor
+
+
+def parse_yarn_lock(text,path):
+    """yarn.lock, classic (v1) and Berry (v2+), read line by line.
+
+    Both formats give every entry an exact `version`. Yarn records no dev flag,
+    so scope stays 'unknown'. What is not a registry package -- a git or file
+    source, a workspace, a link/portal -- is a named gap, never a guess.
+    """
+    rows=[];gaps=[];berry='__metadata:' in text
+    entries=[];current=None
+    for number,line in enumerate(text.splitlines(),1):
+        if not line.strip() or line.lstrip().startswith('#'):continue
+        head=YARN_ENTRY.match(line)
+        if head and not line.startswith(' '):
+            current={'key':head.group('key'),'line':number,'fields':{}};entries.append(current);continue
+        field=YARN_FIELD.match(line)
+        if field and current is not None:
+            current['fields'].setdefault(field.group('field'),field.group('value').strip())
+    if not entries:raise ValueError('yarn.lock yozuvlari topilmadi.')
+    for entry in entries:
+        key=entry['key'];fields=entry['fields'];locator='line:'+str(entry['line'])
+        if key=='__metadata':continue
+        version=fields.get('version')
+        if berry:
+            resolution=fields.get('resolution','')
+            match=re.fullmatch(r'(?P<name>(?:@[^/@]+/)?[^@]+)@npm:(?P<version>[^#]+)',resolution)
+            patched=re.fullmatch(r'(?P<name>(?:@[^/@]+/)?[^@]+)@patch:.*?@npm%3A(?P<version>[^#]+)#.*',resolution)
+            if match or patched:
+                found=match or patched
+                name,version=found.group('name'),urllib.parse.unquote(found.group('version'))
+            else:
+                gaps.append({'path':path,'reason':'yarn_non_registry_source','locator':locator});continue
+        else:
+            resolved=fields.get('resolved','')
+            # A registry tarball always has the /-/<name>-<version>.tgz shape; a
+            # git, codeload or file source does not, and its "version" is only
+            # what that checkout's package.json claims.
+            if resolved and not re.fullmatch(r'https?://\S+/-/[^/\s]+\.tgz(?:#\S*)?',resolved):
+                gaps.append({'path':path,'reason':'yarn_non_registry_source','locator':locator});continue
+            name=yarn_descriptor_name(key.split(', ')[0])
+        try:rows.append(package('npm',name,version,path,locator,'unknown','lockfile_version'))
+        except ValueError:gaps.append({'path':path,'reason':'yarn_version_unresolved','locator':locator})
+    return rows,gaps
+
+
+def pnpm_key(key,major):
+    """(name, version) from a pnpm `packages` key of lockfile v5, v6 or v9."""
+    text=re.sub(r'\(.*\)$','',key.lstrip('/'))
+    if major<6:
+        name,_,version=text.rpartition('/')
+        return name,version.split('_',1)[0]
+    at=text.find('@',1)
+    if at<0:raise ValueError('pnpm kaliti noto‘g‘ri.')
+    return text[:at],text[at+1:]
+
+
+def parse_pnpm_lock(text,path):
+    """pnpm-lock.yaml v5.x, v6.x and v9.x. Only registry packages are read; a
+    tarball, git or directory resolution is a named gap."""
+    # pnpm 9/10 may write several YAML documents into one file (the first holds
+    # config dependencies, the second the project itself). Reading only one
+    # document failed the whole file: vite's lockfile gave 0 of 1414 packages.
+    try:
+        docs=[doc for doc in yaml.safe_load_all(text) if doc is not None]
+    except yaml.YAMLError as error:
+        raise ValueError('pnpm-lock.yaml o‘qilmadi: '+str(getattr(error,'problem',error))[:120]) from None
+    if not docs or not all(isinstance(doc,dict) for doc in docs):raise ValueError('pnpm-lock.yaml formati noto‘g‘ri.')
+    entries=[]
+    for doc in docs:
+        try:major=int(float(str(doc.get('lockfileVersion','')).strip("'\"")))
+        except ValueError:raise ValueError('pnpm lockfileVersion o‘qilmadi.') from None
+        if major<5 or major>9:raise ValueError('pnpm lockfile versiyasi qo‘llanmaydi.')
+        packages=doc.get('packages') or {}
+        if not isinstance(packages,dict):raise ValueError('pnpm packages ro‘yxati noto‘g‘ri.')
+        entries+=[(key,entry,major) for key,entry in packages.items()]
+    rows=[];gaps=[]
+    for key,entry,major in entries:
+        entry=entry if isinstance(entry,dict) else {}
+        resolution=entry.get('resolution') or {}
+        if isinstance(resolution,dict) and ({'tarball','repo','directory','commit'}&set(resolution)) \
+                and 'integrity' not in resolution:
+            gaps.append({'path':path,'reason':'pnpm_non_registry_source','locator':str(key)});continue
+        try:
+            name,version=pnpm_key(str(key),major)
+            name=entry.get('name') or name
+            version=str(entry.get('version') or version)
+            scope={True:'development',False:'runtime_or_optional'}.get(entry.get('dev'),'unknown')
+            rows.append(package('npm',name,version,path,str(key),scope,'lockfile_version'))
+        except ValueError:
+            gaps.append({'path':path,'reason':'pnpm_version_unresolved','locator':str(key)})
     return rows,gaps
 
 
@@ -194,6 +310,20 @@ def parse_pipfile_lock(text,path):
     return rows,gaps
 
 
+def registry_source(ecosystem,source):
+    """True when a poetry/uv/Cargo lock entry comes from a package registry."""
+    if ecosystem=='crates.io':
+        return isinstance(source,str) and source.startswith(('registry+','sparse+'))
+    if source is None:
+        return True                       # poetry: no source table means PyPI
+    if isinstance(source,dict):
+        kind=source.get('type')
+        if kind is not None:              # poetry: legacy/explicit = another index
+            return kind in {'legacy','explicit','pypi'}
+        return 'registry' in source       # uv: {registry=...} vs editable/virtual/git/path/url
+    return False
+
+
 def parse_toml_packages(text,path,ecosystem,scope='locked'):
     """poetry.lock, uv.lock and Cargo.lock all use `[[package]]` with name+version."""
     if tomllib is None:
@@ -207,6 +337,12 @@ def parse_toml_packages(text,path,ecosystem,scope='locked'):
         locator='package['+str(index)+']'
         if not isinstance(name,str) or not isinstance(version,str):
             gaps.append({'path':path,'reason':'lock_entry_not_versioned','locator':locator});continue
+        if not registry_source(ecosystem,entry.get('source')):
+            # The project's own workspace members, path and git dependencies are
+            # not the registry release of that name and version; matching them
+            # against crates.io/PyPI advisories would attach someone else's CVEs.
+            # ripgrep's lock has 11 such crates out of 63.
+            gaps.append({'path':path,'reason':'lock_entry_local_or_git','locator':locator});continue
         try:rows.append(package(ecosystem,name,version,path,locator,scope,'lockfile_version'))
         except ValueError:gaps.append({'path':path,'reason':'lock_entry_unresolved','locator':locator})
     return rows,gaps
@@ -265,6 +401,123 @@ def parse_gradle_lockfile(text,path):
     return rows,gaps
 
 
+def parse_nuget_lock(text,path):
+    """packages.lock.json (NuGet, RestorePackagesWithLockFile): resolved per target framework."""
+    doc=json.loads(text);rows=[];gaps=[];seen=set()
+    if not isinstance(doc,dict) or doc.get('version') not in (1,2) or not isinstance(doc.get('dependencies'),dict):
+        raise ValueError('packages.lock.json formati noto‘g‘ri.')
+    for framework,entries in sorted(doc['dependencies'].items()):
+        if not isinstance(entries,dict):raise ValueError('packages.lock.json bo‘limi noto‘g‘ri.')
+        for name,entry in sorted(entries.items()):
+            if not isinstance(entry,dict):
+                gaps.append({'path':path,'reason':'nuget_entry_unresolved','locator':name});continue
+            # A project reference is this repository's own code, not a NuGet release.
+            if entry.get('type')=='Project':continue
+            version=entry.get('resolved')
+            if not isinstance(version,str):
+                gaps.append({'path':path,'reason':'nuget_entry_unresolved','locator':name});continue
+            if (name.lower(),version) in seen:continue      # the same package under several frameworks
+            seen.add((name.lower(),version))
+            try:rows.append(package('NuGet',name,version,path,framework+'/'+name,'locked','lockfile_version'))
+            except ValueError:gaps.append({'path':path,'reason':'nuget_entry_unresolved','locator':name})
+    return rows,gaps
+
+
+MAVEN_SCOPE={'test':'development','provided':'runtime','compile':'runtime','runtime':'runtime','system':'runtime','import':'runtime'}
+
+
+def maven_coordinate(text):
+    """`g:a:type[:classifier]:version:scope` -> (name, version, scope) or None."""
+    parts=text.split(':')
+    if len(parts)==5:group,artifact,_,version,scope=parts
+    elif len(parts)==6:group,artifact,_,_,version,scope=parts
+    else:return None
+    return group+':'+artifact,version,MAVEN_SCOPE.get(scope,'unknown')
+
+
+def parse_maven_tree_json(text,path):
+    """`mvn dependency:tree -DoutputType=json`: the project is the root, dependencies its children."""
+    doc=json.loads(text);rows=[];gaps=[];seen=set()
+    if not isinstance(doc,dict) or 'artifactId' not in doc:raise ValueError('dependency-tree.json formati noto‘g‘ri.')
+    stack=[(child,1) for child in reversed(doc.get('children') or [])]
+    while stack:
+        node,depth=stack.pop()
+        if not isinstance(node,dict):continue
+        stack.extend((child,depth+1) for child in reversed(node.get('children') or []))
+        group,artifact,version=node.get('groupId'),node.get('artifactId'),node.get('version')
+        if not all(isinstance(v,str) and v for v in (group,artifact,version)):
+            gaps.append({'path':path,'reason':'maven_tree_entry_unresolved'});continue
+        name=group+':'+artifact;scope=MAVEN_SCOPE.get(node.get('scope') or 'compile','unknown')
+        if (name,version,scope) in seen:continue
+        seen.add((name,version,scope))
+        try:rows.append(package('Maven',name,version,path,name,scope,'build_tool_resolution'))
+        except ValueError:gaps.append({'path':path,'reason':'maven_tree_entry_unresolved','locator':name})
+    return rows,gaps
+
+
+TREE_LINE=re.compile(r'^(?:\[INFO\] )?([| ]*)(\+-|\\-|\+---|\\---) (.*)$')
+
+
+def parse_dependency_tree(text,path):
+    """Text output of `mvn dependency:tree` or `gradle dependencies`, told apart by the tree marks.
+
+    Maven: `+- g:a:jar:1.0:compile`. Gradle: `+--- g:a:1.0 -> 1.2 (*)`, where the
+    version after `->` is the one the build actually resolved. Entries the tool
+    itself marks as not on the classpath -- Maven's `(... omitted for conflict)`,
+    Gradle's `(n)` not resolved and `(c)` constraint -- are left out, and
+    project references are this repository's own modules.
+    """
+    rows={};gaps=[];scope_now='runtime'
+    # A Gradle report lists every configuration, alphabetically: annotationProcessor
+    # comes before compileClasspath. Only *Classpath configurations are what the
+    # build compiles against or ships, so when the report has them, nothing
+    # outside them counts -- from the first line on.
+    gradle_filter=bool(re.search(r'(?m)^[A-Za-z][A-Za-z0-9]*Classpath(?: - .*)?$',text));wanted=not gradle_filter
+    for index,raw in enumerate(text.splitlines(),1):
+        line=raw.rstrip()
+        header=re.match(r'^([A-Za-z][A-Za-z0-9]*)(?: - .*)?$',line)
+        if header and header.group(1).endswith('Classpath'):
+            scope_now='development' if 'test' in header.group(1).lower() else 'runtime'
+            wanted=True
+            continue
+        if header and gradle_filter:
+            wanted=False                      # annotationProcessor, kapt, ...: not shipped
+            continue
+        match=TREE_LINE.match(line)
+        if not match:continue
+        if gradle_filter and not wanted:continue
+        marker,body=match.group(2),match.group(3).strip()
+        locator='line:'+str(index)
+        if marker in ('+-','\\-'):                                   # Maven
+            if body.startswith('('):continue                           # omitted duplicate/conflict
+            found=maven_coordinate(body.split()[0])
+            if not found:
+                gaps.append({'path':path,'line':index,'reason':'maven_tree_entry_unresolved'});continue
+            name,version,scope=found
+        else:                                                          # Gradle
+            if body.startswith('project ') or body.endswith(('(n)','(c)')) or 'FAILED' in body:continue
+            body=re.sub(r'\s+\([*c n]\)$','',body)
+            requested,_,resolved=body.partition(' -> ')
+            parts=requested.split(':')
+            if len(parts)<2:
+                gaps.append({'path':path,'line':index,'reason':'gradle_tree_entry_unresolved'});continue
+            name=parts[0]+':'+parts[1]
+            version=(resolved or (parts[2] if len(parts)>2 else '')).strip()
+            if not version or version.startswith('{') or ' ' in version:
+                gaps.append({'path':path,'line':index,'reason':'gradle_tree_entry_unresolved','locator':name});continue
+            scope=scope_now
+        # One row per package. testRuntimeClasspath repeats every runtime
+        # dependency; what ships is decided by the runtime appearance.
+        known=rows.get((name,version))
+        if known is not None:
+            if scope=='runtime':known['scope']='runtime'
+            continue
+        try:rows[(name,version)]=package('Maven',name,version,path,locator,scope,'build_tool_resolution')
+        except ValueError:gaps.append({'path':path,'line':index,'reason':'maven_tree_entry_unresolved','locator':name})
+    if not rows and not gaps:raise ValueError('Bog‘liqlik daraxti topilmadi.')
+    return list(rows.values()),gaps
+
+
 def parser_for(name,is_python):
     if is_python:return parse_requirements
     if name=='pyproject.toml':return parse_pyproject
@@ -273,8 +526,13 @@ def parser_for(name,is_python):
     if name=='Gemfile.lock':return parse_gemfile_lock
     if name=='composer.lock':return parse_composer_lock
     if name=='gradle.lockfile':return parse_gradle_lockfile
+    if name=='packages.lock.json':return parse_nuget_lock
+    if name=='dependency-tree.json':return parse_maven_tree_json
+    if name in ('dependency-tree.txt','gradle-dependencies.txt'):return parse_dependency_tree
     if name in ('poetry.lock','uv.lock'):
         return lambda text,path:parse_toml_packages(text,path,'PyPI')
+    if name=='yarn.lock':return parse_yarn_lock
+    if name=='pnpm-lock.yaml':return parse_pnpm_lock
     if name=='Cargo.lock':
         return lambda text,path:parse_toml_packages(text,path,'crates.io')
     return parse_npm
@@ -295,6 +553,11 @@ def collect(root):
             seen+=1
             if seen>100000:raise ValueError('Loyiha 100000 fayl chegarasidan oshdi.')
             is_python=bool(re.fullmatch(r'requirements(?:[-_.][A-Za-z0-9_.-]+)?\.txt',name))
+            if name.endswith(('.csproj','.fsproj','.vbproj')):
+                # NuGet resolves versions at restore time; only its lock file states them.
+                if not (Path(current)/'packages.lock.json').is_file():
+                    gaps.append({'path':(Path(current)/name).relative_to(root).as_posix(),'reason':'nuget_lockfile_missing'})
+                continue
             if name not in SUPPORTED|TOML_SUPPORTED|UNSUPPORTED|{'package.json','pyproject.toml'} and not is_python:continue
             file=Path(current)/name;relative=file.relative_to(root).as_posix()
             if linked(file):gaps.append({'path':relative,'reason':'linked_manifest_skipped'});continue
@@ -310,6 +573,8 @@ def collect(root):
             item={'path':relative,'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw),'state':'unsupported'}
             manifests.append(item)
             if name in UNSUPPORTED:
+                if any((file.parent/resolved).is_file() for resolved in RESOLVED_BY.get(name,())):
+                    item['state']='covered_by_resolved_output';continue
                 gaps.append({'path':relative,'reason':UNSUPPORTED_HINTS.get(name,'unsupported_manifest')});continue
             if name=='pyproject.toml' and tomllib is None:
                 gaps.append({'path':relative,'reason':'toml_lock_needs_python_311'});continue
@@ -326,11 +591,12 @@ def collect(root):
     return {'schema_version':1,'packages':rows,'manifests':manifests,'gaps':gaps,
             'sha256':digest(manifests),'unique_packages':len({(p['ecosystem'],p['name'],p['version']) for p in rows}),
             'occurrences':len(rows),'excluded_directories':excluded,
-            'scope':('npm lock v1–v3, Python == pins va Pipfile/poetry/uv lock, Go require, '
+            'scope':('npm lock v1–v3, yarn.lock (v1 va Berry), pnpm-lock.yaml (v5–v9), Python == pins va Pipfile/poetry/uv lock, Go require, '
                      'Gradle lockfile (Maven), Gemfile.lock (RubyGems), composer.lock (Packagist), '
-                     'Cargo.lock (crates.io). Faqat aniq versiya yozilgan formatlar o‘qiladi — versiyani '
-                     'hal qilish uchun build vositasini ishga tushirish kerak bo‘lgan fayllar (pom.xml, '
-                     'build.gradle) qamrovga kirmaydi va bo‘shliq sifatida ko‘rsatiladi. '
+                     'Cargo.lock (crates.io), packages.lock.json (NuGet), `mvn dependency:tree` natijasi '
+                     '(dependency-tree.txt/.json) va `gradle dependencies` natijasi (gradle-dependencies.txt). '
+                     'Faqat aniq versiya yozilgan formatlar o‘qiladi — pom.xml, build.gradle va .csproj yonida '
+                     'shunday fayl bo‘lmasa, ular bo‘shliq sifatida ko‘rsatiladi (buyruq bilan). '
                      'pyproject.toml dan faqat aniq pinlangan (`==`) qatorlar o‘qiladi; diapazon va '
                      'marker bilan yozilganlari bo‘shliq bo‘lib qoladi. '
                      'Tranzitiv bog‘liqliklar va ishlayotgan muhitning to‘liq inventari kafolatlanmaydi. '

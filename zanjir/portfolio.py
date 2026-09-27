@@ -31,10 +31,10 @@ import datetime
 import json
 import re
 
-from .engine import ROOT
+from .engine import ROOT, DATA
 from . import repo_store, code_targets, scanners, dependencies, iac, images, webscan
 
-PROFILES = ROOT / 'profiles/portfolio'
+PROFILES = DATA / 'profiles/portfolio'
 ID = re.compile(r'^[a-z0-9][a-z0-9._-]{2,64}$')
 INTERPOLATION = re.compile(r'\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*')
 STAGES = ('code', 'repository', 'dependencies', 'iac', 'images', 'web')
@@ -56,12 +56,14 @@ BUNDLED = {'crapi': {'name': 'OWASP crAPI · to‘liq namuna', 'owner': 'Bundled
 
 def registered_targets():
     """Target ids each stage currently knows about."""
+    # One scanners.targets() call, not three: it walks every registry.
+    sources = {t['id'] for t in scanners.targets() if t.get('available')}
     return {
-        'code': {t['id'] for t in scanners.targets() if t.get('available')},
+        'code': set(sources),
         'repository': {p['id'] for p in repo_store.list_profiles()},
-        'dependencies': {t['id'] for t in scanners.targets() if t.get('available')} | {p['id'] for p in code_targets.profiles()},
+        'dependencies': sources | {p['id'] for p in code_targets.profiles()},
         # The IaC stage reads the same registered project roots the code scanner does.
-        'iac': {t['id'] for t in scanners.targets() if t.get('available')},
+        'iac': set(sources),
         'images': {t['id'] for t in images.targets()},
         'web': {t['id'] for t in webscan.targets()},
     }
@@ -224,19 +226,26 @@ def derived(taken):
 
     This is exactly what `app.py --register-project` produces, so a project
     added that way appears here without any further configuration. An id known
-    to only one stage is not a portfolio project -- there is nothing to group.
+    to only one stage (an image or a web target registered on its own) is a
+    project too, marked `single_stage`: leaving it out made a scanned image such
+    as alpine or a web target simply absent from the portfolio, which reads as
+    "nothing to see" rather than "only one layer is checked".
     """
     registry = registered_targets()
+    # Looked up once: per id, this re-listed every profile and code target, which
+    # with 60 projects was 64 target listings in one dashboard request.
+    names = {t['id']: t['name'] for t in reversed(scanners.targets())}
+    names.update({p['id']: p['name'] for p in reversed(repo_store.list_profiles())})
     groups = {}
     for identifier in sorted(set().union(*registry.values())):
         if identifier in taken:
             continue
         stages = {stage: [identifier] for stage, ids in registry.items() if identifier in ids}
-        if len(stages) < 2:
+        if not stages:
             continue
-        name = next((p['name'] for p in repo_store.list_profiles() if p['id'] == identifier),
-                    next((t['name'] for t in scanners.targets() if t['id'] == identifier), identifier))
-        groups[identifier] = {'name': name, 'owner': '', 'bundled': False, 'derived': True, 'stages': stages}
+        name = names.get(identifier, identifier)
+        groups[identifier] = {'name': name, 'owner': '', 'bundled': False, 'derived': True, 'stages': stages,
+                              'single_stage': len(stages) == 1}
     return groups
 
 
@@ -247,18 +256,20 @@ def projects():
     return groups
 
 
-def unknown_targets(meta):
+def unknown_targets(meta, registry=None):
     """Ids a grouping names that no registry knows about.
 
     A bundled grouping lists crAPI's nine image ids by name. If one is renamed or
     removed, the group would quietly cover less than it claims and the portfolio
     would look healthier than it is -- so the mismatch is surfaced instead.
     """
-    registry = registered_targets()
+    registry = registry or registered_targets()
     missing = []
     for stage, ids in meta['stages'].items():
         missing += [i for i in ids if i not in registry[stage]]
-    return sorted(missing)
+    # One id can be named by several stages (crapi-full is both the code and the
+    # dependency target); listing it twice read as two missing targets.
+    return sorted(set(missing))
 
 
 def stage_state(rows, targets):
@@ -278,7 +289,9 @@ def stage_state(rows, targets):
     # "Has a scan record" is not "has a result": a target whose latest scan failed
     # or was cancelled would otherwise be counted towards full coverage and the
     # row would read 9/9 while one image was never actually analysed.
-    incomplete = sorted(t for t, r in newest.items() if r.get('state') != 'completed')
+    # 'no_supported_packages' finished: the dependency stage read the project and
+    # found no lockfile. It stays visible as its own state, not as "unfinished".
+    incomplete = sorted(t for t, r in newest.items() if r.get('state') not in {'completed', 'no_supported_packages'})
     return {'targets': targets, 'scanned': True,
             'state': 'partial' if states & {'partial', 'failed', 'cancelled'} else latest.get('state'),
             'count': sum(counts) if counts else None,
@@ -287,20 +300,38 @@ def stage_state(rows, targets):
             'incomplete_targets': incomplete, 'unscanned_targets': sorted(set(targets) - set(newest))}
 
 
+def by_target(rows):
+    """{stage: {target: [(position, row), ...]}} so a project reads only its own rows."""
+    grouped = {}
+    for stage, stage_rows in rows.items():
+        index = grouped[stage] = {}
+        for position, row in enumerate(stage_rows):
+            index.setdefault(row.get('target'), []).append((position, row))
+    return grouped
+
+
+def rows_for(grouped, stage, targets):
+    """The stage's rows for these targets, in the same newest-first order as the full list."""
+    picked = [item for target in dict.fromkeys(targets) for item in grouped[stage].get(target, ())]
+    return [row for _, row in sorted(picked, key=lambda item: item[0])]
+
+
 def overview():
-    rows = histories()
+    grouped = by_target(histories())
+    known = registered_targets()
     result = []
     for identifier, meta in sorted(projects().items(), key=lambda item: item[1]['name'].lower()):
         stages = {}
         for stage in STAGES:
             targets = meta['stages'].get(stage) or []
-            stages[stage] = stage_state(rows[stage], targets) if targets else {
+            stages[stage] = stage_state(rows_for(grouped, stage, targets), targets) if targets else {
                 'targets': [], 'scanned': False, 'state': 'not_registered', 'count': None,
                 'last_scan': None, 'report_id': None, 'scanned_targets': 0}
         scanned = [s for s in stages.values() if s['scanned']]
         result.append({'id': identifier, 'name': meta['name'], 'owner': meta.get('owner', ''),
                        'bundled': meta.get('bundled', False), 'derived': meta.get('derived', False),
-                       'stages': stages, 'unknown_targets': unknown_targets(meta),
+                       'single_stage': meta.get('single_stage', False),
+                       'stages': stages, 'unknown_targets': unknown_targets(meta, known),
                        'gaps': [stage for stage in STAGES if stages[stage]['state'] in ('never_scanned', 'not_registered')],
                        'last_scan': max((s['last_scan'] for s in scanned), default=None)})
     return {'projects': result, 'stages': [{'key': s, 'title': STAGE_TITLES[s]} for s in STAGES],

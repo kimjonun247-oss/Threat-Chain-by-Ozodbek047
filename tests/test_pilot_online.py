@@ -65,7 +65,7 @@ class ImageTests(unittest.TestCase):
     def test_public_profile_registration_is_exclusive(self):
         with tempfile.TemporaryDirectory() as temp,patch.object(images,'PROFILES',Path(temp)):
             images.register('example','alpine@sha256:'+'a'*64)
-            with self.assertRaises(FileExistsError): images.register('example','alpine@sha256:'+'a'*64)
+            with self.assertRaises(ValueError): images.register('example','alpine@sha256:'+'a'*64)
             with self.assertRaises(ValueError): images.register('pilot-abc','alpine@sha256:'+'a'*64)
 
 

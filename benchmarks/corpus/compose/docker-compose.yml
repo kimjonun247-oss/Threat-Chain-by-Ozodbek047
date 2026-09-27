@@ -1,0 +1,28 @@
+services:
+  gateway:
+    image: nginx:1.27
+    ports: ["80:80"]
+  api:
+    image: example/api:1.0
+    ports: ["8080:8080"]
+    environment:
+      FLASK_DEBUG: "1"
+  backend:
+    image: example/backend:1.0
+    ports: ["0.0.0.0:9000:9000"]
+  secure:
+    image: example/secure:1.0
+    ports: ["9443:9443"]
+  agent:
+    image: example/agent:1.0
+    ports: ["7000:7000"]
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
+  sys:
+    image: example/sys:1.0
+    ports: ["7100:7100"]
+    cap_add: [SYS_ADMIN]
+  db:
+    image: postgres:16
+  cache:
+    image: redis:7
+    ports: ["127.0.0.1:6379:6379"]

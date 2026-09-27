@@ -35,11 +35,19 @@ def evidence_anchor():
 
 
 def make_certificates(folder):
-    # This optional dependency is supplied by the bundled Python runtime.
-    from cryptography import x509
-    from cryptography.hazmat.primitives import hashes,serialization
-    from cryptography.hazmat.primitives.asymmetric import rsa
-    from cryptography.x509.oid import NameOID,ExtendedKeyUsageOID
+    # This optional dependency is supplied by the bundled Python runtime. A broken
+    # build can panic in its Rust extension (a BaseException, not ImportError);
+    # either way the operator gets one readable sentence, not a Rust backtrace.
+    try:
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes,serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.x509.oid import NameOID,ExtendedKeyUsageOID
+    except (KeyboardInterrupt,SystemExit):
+        raise
+    except BaseException as error:
+        raise ValueError('TLS sinov sertifikatlari uchun cryptography paketi kerak, lekin u yuklanmadi: '
+                         +type(error).__name__+'. `python3 -m pip install cryptography` bilan o‘rnating.') from None
     now=dt.datetime.now(dt.timezone.utc)
     def issue_ca(name):
         key=rsa.generate_private_key(public_exponent=65537,key_size=2048)

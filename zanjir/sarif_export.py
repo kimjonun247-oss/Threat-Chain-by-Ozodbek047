@@ -67,7 +67,7 @@ _STAGE_CONVERTERS = {'code': _code_entries, 'dependencies': _dependencies_entrie
                       'images': _images_entries, 'web': _web_entries, 'iac': _iac_entries}
 
 
-def _run(entries):
+def _run(entries, stage):
     rules, seen, results = [], set(), []
     for e in entries:
         if e['rule_id'] not in seen:
@@ -85,7 +85,30 @@ def _run(entries):
             result['locations'] = [{'physicalLocation': {'artifactLocation': {'uri': str(e['path']).replace('\\', '/')},
                                     'region': {'startLine': max(1, int(e['line'] or 1))}}}]
         results.append(result)
-    return {'tool': {'driver': {'name': TOOL_NAME, 'rules': rules}}, 'results': results}
+    return _label({'tool': {'driver': {'name': TOOL_NAME, 'rules': rules}}, 'results': results}, stage)
+
+
+STAGE_TOOLS = {'code': 'Semgrep + Gitleaks (+ PMD)', 'repository': 'ThreatChain Compose/Nginx qoidalari',
+               'dependencies': 'OSV + CISA KEV + NVD + EPSS', 'images': 'Trivy image', 'iac': 'Trivy config',
+               'web': 'Nuclei + ThreatChain HTTP', 'chain': 'ThreatChain cross-skaner zanjirlari'}
+
+
+def _label(run, stage):
+    """Give each run its own category and say which scanner produced it.
+
+    Every run used to be an anonymous "ThreatChain" run. GitHub code scanning
+    identifies a run by tool name + category, and it no longer merges several
+    runs that share both, so a multi-stage file could be rejected, and nothing
+    in the file said which scanner a result came from. The driver name stays
+    "ThreatChain" so alerts keep their identity; the category and a property
+    carry the stage.
+    """
+    run['automationDetails'] = {'id': f'threatchain/{stage}/'}
+    driver = run['tool']['driver']
+    driver.setdefault('version', repository_mod.VERSION)
+    driver['informationUri'] = 'https://github.com/kimjonun247-oss/Kim-Jon-Un'
+    run['properties'] = {**run.get('properties', {}), 'stage': stage, 'scanner': STAGE_TOOLS.get(stage, stage)}
+    return run
 
 
 def build(report):
@@ -96,14 +119,14 @@ def build(report):
         if not child:
             continue
         if stage['kind'] == 'repository':
-            runs.append(repository_mod.sarif(child)['runs'][0])
+            runs.append(_label(repository_mod.sarif(child)['runs'][0], 'repository'))
             continue
         converter = _STAGE_CONVERTERS.get(stage['kind'])
         if converter:
-            runs.append(_run(converter(child.get('findings') or [])))
+            runs.append(_run(converter(child.get('findings') or []), stage['kind']))
     chain_findings = report.get('chain_findings') or []
     if chain_findings:
-        runs.append(_run(_chain_entries(chain_findings)))
+        runs.append(_run(_chain_entries(chain_findings), 'chain'))
     if not runs:
-        runs.append(_run([]))
+        runs.append(_run([], 'empty'))
     return {'$schema': 'https://json.schemastore.org/sarif-2.1.0.json', 'version': '2.1.0', 'runs': runs}

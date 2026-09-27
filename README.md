@@ -4,12 +4,288 @@
 
 Kod, kutubxonalar, container image, ruxsatli sayt/API va joylashtirish dalillarini bir joyda tekshirish. Pentester topilmani baholaydi, tuzatishni rejalashtiradi va qayta skan bilan solishtiradi. Bu bir kompyuter, bir foydalanuvchi uchun pilot; barcha CVE va barcha hujumlarni aniqlash kafolati emas.
 
-**Yakuniy holat (2026-09-25, 0.7.0):** 639 test o'tadi, `verify_platform.py` 8/8 qadamdan
-o'tadi (macOS), 7 ta skaner bosqichi, 11 ta zanjir qoidasi (RP-001…011) + 3 ta cross-skaner
+**Yakuniy holat (2026-09-25, 0.7.0 + tuzatishlar):** 728 test o'tadi, `verify_platform.py` 9/9
+qadamdan o'tadi (Linux; macOS'da 8/8), 7 ta skaner bosqichi, 11 ta zanjir qoidasi (RP-001…011) + 3 ta cross-skaner
 zanjiri (SX-001…003). Python bog'liqliklari: **0 ta**.
 
 Ochiq qolgani ikkita, ikkalasi ham kod nuqsoni emas: Windows natijasining o'zi (faqat Windows
 mashinasi bera oladi) va Colima diski bo'yicha operator qarori. Tafsilot: [MUAMMOLAR.md](MUAMMOLAR.md).
+
+## Web panel tezligi (2026-09-25 optimallashtirish)
+
+O'lchov: Chromium, bir xil ma'lumotlar, bosh sahifani ochish.
+
+| Ko'rsatkich | Oldin | Keyin |
+|---|---|---|
+| Birinchi ochilishdagi so'rovlar | 51 | 10 (1 JS bundle + 1 CSS + API) |
+| Shundan API chaqiruvlari | 38 | 6 |
+| Uzatilgan hajm (kesh bo'sh) | 515 KB | ~77 KB |
+| Qayta ochishda hajm | 515 KB | ~20 KB (statik fayllar keshdan) |
+| DOMContentLoaded / birinchi chizish | 226 / 260 ms | 70 / 120 ms (qayta: 51 / 80 ms) |
+| Skanni kuzatish (33 s kod skani) | ~22 marta to'liq hisobot | 10 ta kichik `?status=1` + 1 to'liq |
+| `/api/dashboard` (server vaqti) | 150–200 ms (parallel yukda 0,6–1,4 s) | ~19 ms |
+| `/api/portfolio` | 57 ms | ~8 ms |
+
+Nima qilindi:
+- **Lazy bo'limlar:** har bo'lim ma'lumotini faqat birinchi ochilganda yuklaydi (`whenShown()`); bir vaqtda
+  ketayotgan bir xil GET so'rovlari bitta javobni bo'lishadi; chap panel dashboard javobini qayta ishlatadi.
+- **Statik fayllar:** `index.html` har bir faylga kontent xeshi bilan murojaat qiladi (`/app.js?v=<xesh>`),
+  ular `immutable` keshlanadi; sahifa va versiyasiz URL `ETag` bilan tekshiriladi (o'zgarmasa 304).
+  Qurish (build) bosqichi yo'q — almashtirish server ichida bajariladi. CSP o'zgarmadi.
+- **Bitta bundle:** 11 ta JS va 2 ta CSS server tomonida sahifa tartibida birlashtirib beriladi
+  (hammasi `'use strict'` va bitta global doirada — xulq o'zgarmaydi); `THREATCHAIN_DEBUG_ASSETS=1`
+  bilan fayllar alohida beriladi (brauzerda nosozlik izlash uchun).
+- **Skanni kuzatish:** `pollReport()` faqat `?status=1` (holat, progress) so'raydi, oraliq 1 s dan 5 s gacha
+  o'sadi, yorliq yashirin bo'lsa to'xtaydi; to'liq hisobot bir marta, skan tugagach olinadi.
+- **HTTP:** gzip (faqat mijoz so'rasa va hajm kichrayganda), HTTP/1.1 keep-alive; tanasi o'qilmagan
+  rad etilgan POST ulanishni yopadi. API javoblari avvalgidek `no-store`.
+- **Server hisobi:** profil ro'yxatlari fayl imzosi (nom, hajm, mtime) bilan keshlanadi — yozuv
+  `write_json()` orqali bo'lgani uchun o'zgarish darhol ko'rinadi; portfel nishonlar ro'yxatini bir marta
+  quradi; holat ko'rinishi qoida paketi SHA-256 tekshiruvini qayta ishlatadi (skan har doim to'liq tekshiradi).
+
+## Skan qilinadigan tizimlarga ta'sir (impact) — 2026-09-25
+
+So'rovlarni sanaydigan nishon bilan o'lchandi (bitta web skan, 17 ta yo'l):
+
+| Holat | Oldin | Keyin |
+|---|---|---|
+| Oddiy server | 17 so'rov, **17 TCP/TLS ulanish** | 17 so'rov, **1 ulanish** (keep-alive); skan 16 s → 9 s |
+| Server 503 + `Retry-After: 3` qaytaradi | `Retry-After` e'tiborsiz, **13 ta qo'shimcha so'rov** | `Retry-After` kutiladi, ikkinchi rad javobidan keyin skan to'xtaydi: jami 6 so'rov |
+| Server sekinlashadi (1,5 s/javob) | tezlik o'zgarmaydi | kechikish bir marta ikkilanadi, yangi daraja me'yor deb olinadi, skan tugaydi |
+| Ulanib bo'lmaydi | har so'rov urinadi | 3 ta ketma-ket xatodan keyin to'xtaydi (circuit breaker) |
+
+**Ruxsat oynasi va kunlik limit (har nishon uchun, ixtiyoriy):** ro'yxatga olishda `scan_window`
+(kunlar, `HH:MM–HH:MM`, UTC ofseti; tun yarmidan o'tishi mumkin) va `daily_request_budget` yoziladi —
+ruxsat bergan mas'ul bilan birga. Oynadan tashqarida yoki limit tugaganda skan boshlanmaydi (keyingi oyna/limit
+yangilanish vaqti aytiladi); skan davomida oyna yopilsa yoki limit tugasa, kolektor keyingi so'rovni yubormaydi
+(`window_closed` / `daily_budget`). Limit nishonning vaqt zonasidagi yarim tundan hisoblanadi va shu kungi barcha
+skanlar (`impact.requests`) yig'indisi bilan solishtiriladi. CLI: `check_web.py --register ID --url ... --owner ...
+--authorized --window-days mon-fri --window-start 22:00 --window-end 06:00 --timezone +05:00 --daily-budget 300`.
+
+O'zgarmagan chegaralar: faqat GET, bir vaqtda bitta so'rov, javobdan ko'pi bilan 64 KB (`Range`), so'rovlar
+orasida kamida 0,5 s (nishon bo'yicha oshiriladi), 48 so'rov va 180 s umumiy chegara, Nuclei ham shu
+kolektor orqali (takror yo'l keshdan). Har bir web hisobotida `impact` bo'limi bor: so'rovlar, ulanishlar,
+boshlang'ich/yakuniy kechikish, sekinlashuvlar, rad javoblari va to'xtash sababi.
+
+Boshqa tizimlar: OSV — batch so'rov + 24 soat kesh; NVD — rasmiy 5 so'rov/30 s chegarasi; git — sayoz
+(`--depth 1`, teglarsiz) va qisman (`--filter=blob:limit=1m`) vaqtinchalik klon — 1 MB dan katta fayllar
+serverdan umuman so'ralmaydi (kod skanerlari ularni baribir o'tkazib yuboradi), faqat lockfile/manifestlar
+hajmidan qat'i nazar yuklanadi; o'tkazilganlar hisobotda `source.partial_clone` va qamrovda ko'rinadi;
+Trivy bazasi keraksiz yangilanmaydi.
+**Skaner ishlayotgan kompyuter:** Semgrep, Gitleaks, Trivy va Nuclei past ustuvorlikda ishlaydi
+(`nice 10`, Linux'da `ionice` idle sinfi; Windows'da BELOW_NORMAL) — natija o'zgarmaydi, faqat
+operatorning boshqa ishiga xalal bermaydi. Ajratilgan skan serverida `THREATCHAIN_NORMAL_PRIORITY=1`.
+
+## Frontend: TypeScript, lint va build (2026-09-26)
+
+Dashboard manbasi — `web/src/*.ts` (12 ta skript + `types.ts`), **strict** TypeScript. Build — esbuild:
+`dist/*.js` (har skript alohida, o'qiladigan; `THREATCHAIN_DEBUG_ASSETS=1` rejimi uchun) va minify qilingan
+`dist/bundle.js` (121 KB) + `dist/bundle.css`. Server tayyor bundle'ni beradi (runtime'da yig'ish faqat
+build natijasi yo'q bo'lsa). Tartibning yagona manbai — `web/bundle.json` (build ham, server ham o'qiydi).
+
+```
+cd web && npm ci && npm run all      # tsc --noEmit (strict) + eslint + build
+npm run check                        # dist/ manbaga mosmi (CI shu bilan tekshiradi)
+```
+
+- **ThreatChain'ni ishlatish uchun Node kerak emas**: `dist/` build natijasi omborda; Node faqat frontend'ni
+  o'zgartiradigan dasturchiga kerak. Dev bog'liqliklar aniq versiyada pinlangan (`package-lock.json`).
+- **CI (`lint` job)**: `npm ci` → TypeScript strict → ESLint (`typescript-eslint` recommended, `eqeqeq`,
+  `prefer-const`, `no-var`) → `npm run check` (dist/ eskirgan bo'lsa yiqiladi) → `node --check`.
+- **Turlar**: DOM, hodisalar, forma maydonlari, holatlar va yordamchi funksiyalar aniq turlangan; server JSON
+  javoblari yagona `ApiData` nomi bilan (serverda tekshiriladi) — 211 joyda. Keyingi qadam: Python hisobot
+  sxemalaridan TS interfeyslarini hosil qilish.
+- Tekshirildi: brauzerda ikkala rejimda (bundle va debug) 12 ta bo'lim, 3 ta modal va qidiruv — konsol xatosi 0,
+  HTTP ≥ 400 javob 0. O'tish paytida topilgan xato: debug rejimida `jobs.js` 404 edi (ro'yxat qo'lda yuritilardi).
+
+## Ixtiyoriy chuqur tahlil: CodeQL (2026-09-26)
+
+Semgrep (open-source) naqshni bitta funksiya/fayl ichida ko'radi. So'rov qiymati bir faylda o'qilib, boshqa fayldagi
+yordamchi orqali SQL/shell/HTML'ga yetsa — u buni ko'rmaydi. CodeQL butun dastur bo'ylab ma'lumot oqimini kuzatadi.
+
+```
+python3 setup_codeql.py        # CodeQL 2.27.1 bundle: ~0.9 GB, SHA-256 pinlangan + GitHub checksum bilan solishtiriladi
+```
+*Umumiy sozlamalar → Chuqur tahlil* (yoki `POST /api/settings/deep-analysis {"codeql": true}`) — shundan keyin har
+kod skanida `codeql` bosqichi qo'shiladi (past ustuvorlikda, `--no-download`, `security-extended` so'rovlari).
+
+- **Qamrov:** build talab qilmaydigan tillar — Python, JavaScript/TypeScript, Ruby, Java/Kotlin, C#
+  (`--build-mode=none`). Go, C/C++, Swift build talab qiladi (repository kodi bajarilmaydi) — hisobotda
+  "qamrovga kirmadi" deb yoziladi. **PHP'ni CodeQL qo'llamaydi** — DVWA kabi PHP loyihalarda fayllararo tahlil
+  uchun tijoriy Semgrep Pro kerak; bu hisobotda aniq aytiladi.
+- **Natija:** har topilmada manba → xavfli nuqta (`app.py:11 → store.py:8`), qadamlar soni va "fayllararo" belgisi.
+- **Isbot (benchmark `deep`, CI'da):** `corpus/interfile` — SQL injection (12 qadam), command injection (7),
+  reflected XSS (5), hammasi fayllar orasida. Xuddi shu korpusda Semgrep SQL injection'ni **umuman topmaydi**.
+- **Litsenziya:** ochiq kod va ilmiy ish uchun bepul; xususiy/tijoriy kodni tahlil qilish uchun GitHub Advanced
+  Security litsenziyasi kerak — yoqishdan oldin tekshiring.
+
+## Tuzatish taklifi: qaysi versiya va tayyor diff (2026-09-26)
+
+Har hisobotda `fix_plan` (dashboard: *Tuzatish taklifi*). Hech narsa avtomatik qo'llanmaydi.
+
+- **CVE (kutubxonalar):** har advisory uchun joriy versiyadan katta eng kichik tuzatilgan versiya, paket bo'yicha
+  ulardan eng kattasi (log4j-core 2.14.1 → 2.15.0 emas, 2.12.2 shoxi ham emas). Maqsad versiya **OSV'da qayta
+  tekshiriladi**: u ham zaif bo'lsa, keyingi tuzatishga o'tiladi (≤3 marta; 2.15.0 → 2.16.0), natija `toza /
+  hali zaif / tekshirib bo'lmadi`. Major versiya o'zgarishi belgilanadi. Versiya literal yozilgan manifestlar uchun
+  unified diff: `requirements*.txt`, `pyproject.toml`, `go.mod`, `pom.xml`, `*.csproj`, `build.gradle`; har
+  ekotizim uchun buyruq (`npm/yarn/pnpm`, `pip/poetry`, `go get`, `dotnet add package`, `composer`, `cargo`, `bundle`).
+- **Docker image:** tuzatilgan OS paketlari bitta tayyor qator (`RUN apk add --upgrade …` / `apt-get
+  --only-upgrade …` / `dnf upgrade …`), til paketlari buyrug'i, EOSL bo'lsa base image ogohlantirishi.
+- **IaC va Compose/Nginx:** bir ma'noli tuzatishlar uchun diff — Dockerfile `USER 10001`, `--no-install-recommends`;
+  Kubernetes `privileged/hostNetwork/hostPID/hostIPC/allowPrivilegeEscalation → false`, `runAsNonRoot/
+  readOnlyRootFilesystem → true`; Compose portni `127.0.0.1` ga bog'lash, proxy ortidagi xizmatning host portini
+  olib tashlash (RP-003/004), docker.sock va xavfli capability'larni olib tashlash, debug o'chirish; nginx
+  `proxy_ssl_verify on`, `location /x/` (alias), xavfsizlik sarlavhalarini ichki blokda takrorlash. Inson qarori
+  kerak bo'lganlar (qaysi base tag, qaysi healthcheck, tarmoq segmentatsiyasi, SSRF, ochiq bo'lishi kerak bo'lgan
+  gateway porti) — diff emas, tavsiya.
+- **Maxfiy qiymat diff'ga tushmaydi:** `PASSWORD/SECRET/TOKEN/KEY` qatorlari `***` bilan yashiriladi (shu bo'lak
+  qo'lda qo'llanadi), kontekst 2 qator.
+- **Isbot (CI benchmark `fixes`):** diff'lar `patch` bilan qo'llanib qayta skan qilinadi — IaC 41 → 36 (5/5
+  qoida yo'qoldi), Compose/Nginx 17 → 3 (13/13 (qoida, joy) yo'qoldi; qolgan 3 tasi faqat tavsiyali).
+
+## Nazariy topilmani ikkinchi GET bilan tasdiqlash (2026-09-26)
+
+Bitta mos javob — bu kuzatuv, tasdiq emas. Web skan oxirida har bir nazariy topilma xavfsiz qo'shimcha GET bilan
+(o'sha chegaralar, o'sha kunlik limit; jami ≤ 10 so'rov) qayta tekshiriladi va natija topilma yonida yoziladi:
+
+| Topilma | Ikkinchi qarash | Tasdiqlanadi, agar |
+|---|---|---|
+| CORS reflected origin | Boshqa, tasodifiy `Origin` | u ham credentials bilan aks ettirilsa (ruxsat ro'yxati emas, ko'r-ko'rona) |
+| `.env` | Keshsiz qayta GET + tuzilma | javob barqaror va haqiqatan `KEY=VALUE` fayli (HTML ichidagi iqtibos emas) |
+| SQL backup, git config, Compose, OpenAPI | Keshsiz qayta GET + tuzilma | `CREATE/INSERT`, `[core]`, `services`, `openapi`+`paths` bor |
+| Papka indeksi | Qayta GET | yana avtomatik indeks |
+| Bir xil fallback (SPA) | Yangi tasodifiy yo'l | fallback o'zi config fayli bo'lsa — HIGH; oddiy HTML bo'lsa — **rad etiladi** (sababi hisobotda) |
+
+Holatlar: `confirmed`, `not_reproduced` (qo'lda tekshirish), `inconclusive` (so'rov bajarilmadi), `dismissed`.
+Benchmark: zaif saytdagi 7 ta nazariy topilmaning hammasi 7 ta qo'shimcha so'rov bilan tasdiqlanadi (CI talab qiladi);
+aldovchi nishonlar (ruxsat ro'yxatli CORS, `.env` matnini iqtibos qilgan HTML, har safar o'zgaradigan javob, SPA
+fallback) `not_reproduced` yoki `dismissed` bo'ladi (`tests/test_web_confirm.py`).
+
+## Jamoa rejimi: login, rollar, audit, TLS (2026-09-26)
+
+Standart holat o'zgarmaydi: server faqat `127.0.0.1` da, foydalanuvchi yo'q bo'lsa login so'ralmaydi. Jamoa uchun:
+
+```
+python3 app.py --add-user boss --role admin          # parol so'raladi (kamida 12 belgi)
+python3 app.py --add-user ali  --role operator
+python3 app.py --bind 0.0.0.0 --port 8443 --tls-cert cert.pem --tls-key key.pem --public-host scanner.example.com:8443
+```
+
+- **Tashqariga faqat himoya bilan:** `127.0.0.1` dan boshqa manzilda server TLS sertifikatisiz, admin
+  foydalanuvchisiz yoki `--public-host` siz ishga tushmaydi (sabab aytiladi). TLS 1.2+, HSTS; handshake
+  so'rov oqimida bajariladi — sekin mijoz boshqalarni to'sib qo'ymaydi; 60 s faolsiz ulanish yopiladi.
+- **Rollar:** `viewer` — ko'rish; `operator` — skan, navbat, kod/image nishonlari, triage; `admin` — web nishon
+  ruxsati (uchinchi tomon serveriga so'rov yuborish qarori), sozlamalar, xabar kanallari, jadval, o'z qoidalari,
+  audit jurnali. Foydalanuvchilar faqat server konsolida boshqariladi (`--add-user`, `--set-password`,
+  `--set-role`, `--remove-user`, `--list-users`) — HTTP orqali hech qachon.
+- **Parol va sessiya:** PBKDF2-SHA256 (600 000 iteratsiya, tuz); sessiya — 256-bit tasodifiy token, `HttpOnly;
+  SameSite=Strict; Secure` cookie, xotirada faqat SHA-256 xeshi; 30 daqiqa faolsizlik yoki 12 soatdan keyin tugaydi;
+  parol/rol o'zgarsa sessiyalar yopiladi. 5 ta noto'g'ri urinishdan keyin foydalanuvchi va manzil bo'yicha
+  bloklash (1 → 15 daqiqa). Noma'lum foydalanuvchi uchun ham xesh hisoblanadi (vaqt orqali nom aniqlanmaydi).
+- **Audit jurnali** (`audit/audit.jsonl`, admin: *Umumiy sozlamalar*): kirish/chiqish, noto'g'ri urinishlar,
+  rad etilgan so'rovlar va har bir o'zgartiruvchi so'rov — kim, rol, manzil, yo'l, HTTP kodi va faqat ID'lar
+  (parol, token, URL ichidagi login, qoida matni yozilmaydi). Localhost rejimida ham yoziladi.
+- Tekshirildi (brauzer, TLS): noto'g'ri parol rad etildi; cookie `HttpOnly/Secure/SameSite=Strict`; kuzatuvchi
+  skan boshlay olmadi (403, jurnalda `refused`); admin audit jurnalini ko'rdi.
+
+## Navbat, jadval va xabarnomalar (2026-09-26)
+
+- **Navbat** (`zanjir/jobs.py`, dashboard: *Navbat va jadval*, API: `POST /api/jobs`): "boshqa tekshiruv davom
+  etmoqda" rad javobi o'rniga so'rov navbatga tushadi va skaner bo'shashi bilan boshlanadi. Bir turdagi skan
+  bittadan, mashinada umumiy parallel chegara (standart 1, sozlamada 1–4). Bir xil tur+nishon ikki marta
+  navbatga tushmaydi. Server qayta ishga tushsa, navbat saqlanadi; ishlayotgan ish `interrupted` deb belgilanadi.
+- **Jadval** (`POST /api/schedules`): kunlar (`mon-fri`), vaqt (`02:30`) va UTC ofseti. Server o'chiq paytda
+  o'tib ketgan vaqt qaytganda **bir marta** bajariladi (24 soat ichida), har o'tgan kun uchun emas. Web nishon
+  ruxsat oynasidan tashqarida bo'lsa, ish oyna ochilguncha `waiting` holatida kutadi.
+- **Xabarnomalar** (`zanjir/notify.py`): natija oldingi skandan farq qilsa (yangi yoki yo'qolgan topilma —
+  fingerprint bo'yicha, yoki holat o'zgarishi) — JSON webhook, Slack incoming webhook va/yoki email (SMTP).
+  Xabarda faqat bosqich, nishon, holatlar, sonlar va 5 tagacha yangi topilma (qoida, jiddiylik, joy) bor —
+  kod, dalil yoki maxfiy qiymat yo'q. Manzillar va SMTP paroli `profiles/settings.json` da (faqat egasi o'qiydi),
+  API ularni qaytarmaydi; `THREATCHAIN_SMTP_PASSWORD` ustun turadi. "Yo'qolgan" hech qachon "tuzatildi" demaydi.
+- Tekshirildi: haqiqiy serverda 3 ta ish ketma-ket bajarildi, birinchi skan xabar yubordi, o'zgarmagan ikkinchi
+  skan yubormadi; jadval belgilangan daqiqada ishga tushdi va keyingi vaqt ertaga deb ko'rsatildi.
+
+## Sifat nazorati va katta tarix (2026-09-26)
+
+- **CI** (`.github/workflows/ci.yml`): har push/PR'da lint (Python kompilyatsiyasi + dashboard JS),
+  unit testlar Ubuntu/Windows/macOS da, uchala OS da haqiqiy vositalar bilan `verify_platform.py`,
+  va benchmarklar (natija jadvali job xulosasida).
+- **Benchmarklar** (`benchmarks/`, [README](benchmarks/README.md)): har skaner javobi ma'lum
+  to'plamda o'lchanadi va `expected.json` bilan solishtiriladi — topish kamaysa, noto'g'ri signal
+  paydo bo'lsa, gate qarori o'zgarsa yoki nishonga yuk ortsa, CI yiqiladi.
+- **Hisobot indeksi — SQLite** (Python stdlib, yangi bog'liqlik yo'q): har hisobot papkasida
+  `index.sqlite3`. Ro'yxat — bitta tartiblangan, cheklangan so'rov; `write_json()` hisobotni
+  yozayotganda indeksni ham yangilaydi; qaytarilgan har satr fayl imzosi bo'yicha tekshiriladi;
+  har jarayonda birinchi ro'yxatda hamma satr bir marta tekshiriladi. Indeks — kesh: faylni
+  o'chirish yoki buzilishi xavfsiz (qayta quriladi), SQLite ishlamasa eski JSON kesh javob beradi.
+  60 loyiha × 25 skan = 6000 hisobot (300 MB) ustida o'lchandi:
+
+  | So'rov | Avval | Keyin |
+  |---|---|---|
+  | `scanners.history(30)`, jarayon ishga tushgandan keyin birinchi | 776 ms | 15 ms |
+  | `images.history(hammasi)`, birinchi | 804 ms | 20 ms |
+  | boshqaruv paneli (`dashboard.overview`) | ~380 ms | 130–180 ms |
+  | portfolio | 150–180 ms | 44–72 ms |
+  | portfolio trendi | 130–145 ms | ~36 ms |
+  | topilmalar qidiruvi, birinchi | 893 ms | ~310 ms |
+
+- **`THREATCHAIN_DATA_DIR`**: hisobotlar, ro'yxatlar, triage va sozlamalarni boshqa papkaga
+  ko'chiradi (bir nechta izolyatsiyalangan o'rnatma, benchmark, zaxira).
+
+## Vositalar aniqligi — alohida sinov (2026-09-25)
+
+| Vosita | Sinov | Natija |
+|---|---|---|
+| Semgrep (29 lokal + 1343 rasmiy qoida) | 30 ta ma'lum zaiflik, 5 til + xavfsiz fayllar | 30/30 topildi; CI gate 24 tasida to'xtaydi; xavfsiz fayllarda gate signali 0 |
+| Gitleaks | 10 ta soxta sir (tarixdagi va DB URL bilan) + 3 soxta holat | 10/10, ortiqcha signal 0, qiymat hisobotga tushmaydi |
+| PMD (Apex) | 4 zaiflik + xavfsiz klass | 3/4 (upstream chegara), ortiqcha signal 0 |
+| Trivy image | `python:3.9.0-alpine` | To'g'ridan-to'g'ri Trivy bilan 85/85; SBOM'da 85/85 zaiflik |
+| Trivy IaC | Dockerfile + K8s + Terraform | 41/41 |
+| Compose/Nginx | RP-001…011 har biri + xavfsiz Compose | 11/11 qoida; xavfsizda 0 |
+| Nuclei + HTTP | zaif va tuzatilgan sayt | barcha ochiq fayllar, CORS, cookie, stack trace, papka ro'yxati; tuzatilganda faqat HTTP |
+| Lockfile o'qish | npm, yarn v1/Berry, pnpm v9, Poetry, Pipenv, Composer, Go, Cargo — haqiqiy loyihalar | mustaqil hisob bilan 100% mos |
+
+Tafsilot va tuzatilgan 19 ta muammo: [MUAMMOLAR.md](MUAMMOLAR.md) (F bo'limi).
+
+## 0.7 dan keyingi tuzatishlar (2026-09-25 to'liq sinovi)
+
+Toza nusxani haqiqiy vositalar bilan ishga tushirib, ataylab zaif ilova va ochiq `.env`/SQL dump
+bergan sayt ustida sinab topilgan nuqsonlar. Tafsilot: [MUAMMOLAR.md](MUAMMOLAR.md) (E bo'limi).
+
+- **CI gate tugamagan skanni o'tkazib yubormaydi.** Tanlangan bosqich `failed`/`partial`/
+  `cancelled` bo'lsa (masalan OSV'ga ulanib bo'lmasa) chiqish kodi endi **2**, avval 0 edi —
+  "baza ishlamadi" "zaiflik yo'q" bo'lib ko'rinardi. Eski xulq: `--allow-partial`.
+  Lock fayli yo'q loyiha (`no_supported_packages`) tugagan bosqich hisoblanadi, shuning uchun
+  bunday loyihada ham `--baseline last-green` endi asos topadi (avval hech qachon topmasdi).
+- **Lokal Semgrep qoidalari 7 → 19**, jumladan HTTP so'rovidan kelgan qiymatni kuzatadigan
+  taint qoidalari (buyruq va SQL injeksiyasi, deserializatsiya — Python va JS/TS) va
+  `yaml.load`. Ular `ERROR`, ya'ni gate'ni to'xtatadi; avval barcha lokal qoidalar `WARNING`
+  edi va rasmiy paketsiz Semgrep gate'ga hech qachon ta'sir qilmasdi. Sinov ilovasida
+  topilmalar 1 → 9, loyihaning o'z kodida noto'g'ri signal 0.
+- **Nuclei `.env` va SQL dump shablonlari (v2):** faqat sirdan iborat `.env` va
+  mysqldump sarlavhasisiz SQL eksporti endi topiladi. Nazorat sinovi (`validate_web.py`,
+  jumladan soft-404 rejimi) o'zgarishsiz o'tadi.
+- **NuGet va Maven/Gradle (2026-09-26):** `packages.lock.json` (NuGet), `mvn dependency:tree` natijasi
+  (`dependency-tree.txt` — `[INFO]` bilan konsol chiqishi ham, yoki `-DoutputType=json` bilan `dependency-tree.json`)
+  va `gradle dependencies` natijasi (`gradle-dependencies.txt`) o'qiladi. Build vositasini operator ishga tushiradi —
+  ThreatChain hech qachon repository kodini bajarmaydi. Gradle'da `->` dan keyingi, ya'ni haqiqatan tanlangan versiya
+  olinadi; faqat `*Classpath` konfiguratsiyalari (annotationProcessor emas); `(c)`, `(n)`, `project :x` va Maven'ning
+  `omitted for conflict` qatorlari hisoblanmaydi. Yonida shunday fayl bo'lgan `pom.xml`/`build.gradle` bo'shliq
+  hisoblanmaydi; lock'siz `.csproj` esa buyruq bilan nomli bo'shliq bo'ladi.
+- **`yarn.lock` (v1 va Berry) va `pnpm-lock.yaml` (v5/v6/v9) o'qiladi** — avval "qo'llanmaydi"
+  bo'shlig'i edi, ya'ni Yarn/pnpm loyihalarining npm paketlari umuman tekshirilmasdi.
+  git/fayl/workspace manbalari taxmin qilinmaydi, nomli bo'shliq bo'ladi.
+- **Korporativ tarmoq:** `SSL_CERT_FILE`/`SSL_CERT_DIR` endi certifi'dan ustun
+  (`zanjir/nettrust.py`); proxy `THREATCHAIN_USE_PROXY=1` bilan ixtiyoriy yoqiladi
+  (standart holatda avvalgidek chetlab o'tiladi). TLS tekshiruvi hech qachon o'chirilmaydi.
+- **O'z qoidasini tekshirish internetsiz ishlaydi:** `semgrep --validate` semgrep.dev'dan
+  qoida yuklardi va tarmoq yopiq bo'lsa ~100 s qotib qolardi; endi xuddi shu parser bo'sh
+  papka skani orqali ~2 s da ishlaydi.
+- **Kichikroq:** web skan rad etilgan nishonda aniq sababni yozadi (masalan metadata
+  manzili); `crapi-full` manbasi yo'q bo'lsa CLI mavjud nishonlarni taklif qiladi;
+  EOL OS'li image'da aniq ogohlantirish; portfel jadvali ekranga sig'adi; chap paneldagi
+  "So'nggi tekshiruvlar" endi to'ladi; telefon kengligida loyiha kartasi chiqib ketmaydi;
+  3 ta test mashinaga bog'liq edi — endi germetik.
 
 ## 0.7 ga yo'l — bajarilgan bosqichlar
 
@@ -120,17 +396,17 @@ mashinasi bera oladi) va Colima diski bo'yicha operator qarori. Tafsilot: [MUAMM
 - **Docker aniqlash tuzatildi (`pilot.py`):** `docker_prefix()` ilgari joriy Docker context nomini OS bo'yicha taxmin qilar edi (`'default'` yoki `'desktop-linux'`) — bu Docker Desktop uchun ishlaydi, lekin colima, OrbStack va boshqa sozlamalarda context boshqa nomda bo'lib, aslida yashab turgan daemon'ga emas, ishlamaydigan bo'sh `'default'` context'ga ulanishga urinib xato berardi. Endi `docker context show` orqali CLI'ning haqiqiy joriy context'i so'raladi, so'ng xuddi avvalgidek faqat lokal (`unix://`/`npipe://`) endpoint qabul qilinadi. `colima` bilan real docker o'rnatib, butun Docker-bog'liq zanjirni (crAPI lab: `pilot.py prepare/pull/start`, TLS nazorat tajribasi: `pilot_tls.py run`, jonli crAPI'ga qarshi Nuclei skani) uchidan-uchigacha tasdiqladim — jonli crAPI'da haqiqiy **HIGH** darajali `.env` fayli ochiqligi topildi (`verified: true`, HTTP 206).
 - **CI/CD Quality Gate (yangi):** butun "Umumiy tekshiruv" quvuri endi interfeyssiz, bitta buyruq bilan ishga tushadi va CI'ni to'xtatadigan chiqish kodi qaytaradi — `python ci_gate.py --target <manba> --repository-target <compose> [--web-target ...] [--image-target ...] --allow N`. Chiqish kodi: `0` — gate o'tdi, `1` — gate to'xtatdi, `2` — skan umuman bajarilmadi (noto'g'ri nishon yoki vosita xatosi; bu "toza natija" deb hisoblanmaydi). **Hech qanday aralash "xavfsizlik foizi" hisoblanmaydi** — loyihaning boshqa joylaridagi tamoyil bilan bir xil: gate faqat aniq nomlangan shartlarni sanaydi (`zanjir/ci_gate.py`): repository topilmasi `level == 'error'` (ya'ni RP-004/007/008 — natijasi autentifikatsiyani chetlab o'tish yoki xost darajasiga chiqish bo'lgan zanjirlar), `dependencies`/`images` topilmasi `CRITICAL`/`HIGH`, `web` topilmasi `HIGH`, va har qanday cross-skaner zanjir topilmasi (SX-00X — bular allaqachon ikki mustaqil faktning kamdan-kam uchraydigan birikmasi, shuning uchun bittasi ham e'tiborga loyiq). `--allow N` mavjud texnik qarzni bosqichma-bosqich kamaytirish uchun: birinchi ishga tushirishda joriy sonni o'lchab shuni qo'ying, keyin asta 0 ga tushiring. Amalda tekshirildi: crAPI repository profilida SARIF'da 6 topilma chiqdi, lekin barchasi `warning` darajasida (loopback portlar) — gate to'g'ri o'tkazdi; to'liq crAPI quvurida esa 135 gate-relevant topilma sanalib, `--allow 100` bilan chiqish kodi 1 qaytdi.
 - **SARIF 2.1.0 eksporti (yangi):** `zanjir/sarif_export.py` butun quvur hisobotini — beshala bosqich (`code`, `repository`, `dependencies`, `images`, `web`) va cross-skaner `chain_findings` — standart SARIF 2.1.0 formatiga o'giradi, har bir bosqich alohida `run` sifatida, CWE teglari va (kod bosqichida) fayl/satr joylashuvi bilan. Bu GitHub Code scanning, GitLab va boshqa SARIF tushunadigan tizimlarga to'g'ridan-to'g'ri yuklanadi, ya'ni topilmalar PR'da aynan o'sha satrda ko'rinadi. Ikki yo'l bilan olinadi: CLI'da `ci_gate.py --sarif-out`, interfeysda esa "Umumiy tekshiruv" natijasi yonidagi **SARIF (CI/CD) ↓** havolasi (`GET /api/assessments/reports/<id>/sarif`). Tayyor CI namunalari: [`ci-examples/github-actions.yml`](ci-examples/github-actions.yml) (SARIF'ni `github/codeql-action/upload-sarif` orqali yuklaydi) va [`ci-examples/gitlab-ci.yml`](ci-examples/gitlab-ci.yml). DAST (`--web-target`) namunalarga qasddan kiritilmagan — u haqiqiy tarmoq so'rovi yuboradi va faqat yozma ruxsat berilgan nishonga qarshi qo'shilishi kerak.
-- **SAST chuqurligi va til qamrovi — rasmiy Semgrep qoida bazasi (yangi):** loyihaning 7 ta lokal qoidasi ustiga endi `semgrep/semgrep-rules` omboridan **pinlangan commit'dagi** rasmiy `security` toifasidagi qoidalar qo'shiladi — `python3 setup_semgrep_rules.py` bitta arxivni yuklab, har bir faylni YAML sifatida tekshiradi, SHA-256 bilan manifestga yozadi va `scanner-rules/semgrep-registry/` ga o'rnatadi. Natija: **7 qoida / 5 til → 1350 qoida / 22 til** (bash, C, C#, Clojure, Dockerfile, Go, HTML, Java, JavaScript, JSON, Kotlin, OCaml, PHP, Python, Ruby, Rust, Scala, Solidity, Terraform, TypeScript, YAML, generic). Terraform/Kubernetes/Dockerfile qoidalari orqali **IaC qamrovi** ham qo'shildi. Paket **ixtiyoriy** — o'rnatilmagan bo'lsa skan avvalgidek faqat lokal qoidalar bilan ishlaydi. Har bir skandan oldin manifest qayta tekshiriladi: qoida fayli o'zgargan yoki o'chirilgan bo'lsa skan to'xtaydi (qoida fayli skan nimani topa olishini belgilaydi, shuning uchun jimgina o'zgarishi qamrovni jimgina qisqartirardi). Amalda tasdiqlandi: crAPI'da Semgrep topilmalari **6 → 134** ga chiqdi, **134/134** da CWE bor, 117 tasi OWASP 2025 toifasiga bog'landi (qolgan 17 tasining CWE'si MITRE jadvalida hech bir 2025 toifasiga a'zo emas — taxmin qilinmaydi), skan vaqti ~39 s.
+- **SAST chuqurligi va til qamrovi — rasmiy Semgrep qoida bazasi (yangi):** loyihaning lokal qoidalari ustiga endi `semgrep/semgrep-rules` omboridan **pinlangan commit'dagi** rasmiy `security` toifasidagi qoidalar qo'shiladi — `python3 setup_semgrep_rules.py` bitta arxivni yuklab, har bir faylni YAML sifatida tekshiradi, SHA-256 bilan manifestga yozadi va `scanner-rules/semgrep-registry/` ga o'rnatadi. Natija: **7 qoida / 5 til → 1350 qoida / 22 til** (bash, C, C#, Clojure, Dockerfile, Go, HTML, Java, JavaScript, JSON, Kotlin, OCaml, PHP, Python, Ruby, Rust, Scala, Solidity, Terraform, TypeScript, YAML, generic). Terraform/Kubernetes/Dockerfile qoidalari orqali **IaC qamrovi** ham qo'shildi. Paket **ixtiyoriy** — o'rnatilmagan bo'lsa skan avvalgidek faqat lokal qoidalar bilan ishlaydi. Har bir skandan oldin manifest qayta tekshiriladi: qoida fayli o'zgargan yoki o'chirilgan bo'lsa skan to'xtaydi (qoida fayli skan nimani topa olishini belgilaydi, shuning uchun jimgina o'zgarishi qamrovni jimgina qisqartirardi). Amalda tasdiqlandi: crAPI'da Semgrep topilmalari **6 → 134** ga chiqdi, **134/134** da CWE bor, 117 tasi OWASP 2025 toifasiga bog'landi (qolgan 17 tasining CWE'si MITRE jadvalida hech bir 2025 toifasiga a'zo emas — taxmin qilinmaydi), skan vaqti ~39 s.
   - **Topilma matni skaner chiqishidan emas, qoida faylidan olinadi.** Semgrep o'z `extra.message` maydoniga mos kelgan kod parchasini (masalan funksiya nomi yoki literal qiymat) qo'shib yuboradi — bu tekshirilayotgan loyihadan hisobotga, jumladan haqiqiy sir qiymatini olib chiqishi mumkin edi. Shuning uchun matn SHA-256 bilan tasdiqlangan qoida faylining o'z yozuvidan o'qiladi; hisobotda `$CONTAINER` kabi o'rin egallovchi ko'rinib turishi aynan shu himoyaning dalili.
   - **OWASP toifasi har doim loyihaning o'z MITRE'dan olingan jadvali orqali chiqariladi**, rasmiy qoidaning o'z `owasp` maydonidan emas — barcha skanerlarda bitta manba saqlanadi.
   - **Qoida darajasi (`ERROR`/`WARNING`/`INFO`)** endi topilmada saqlanadi, interfeysda rangli belgi sifatida ko'rinadi va ro'yxat eng jiddiylari yuqorida turadigan qilib tartiblanadi; SARIF'ga ham `error`/`warning`/`note` sifatida o'tadi.
   - **CI gate'ga `code` bosqichi qo'shildi:** har bir Gitleaks mosligi (manbadagi ochiq sir merge qilinmaydi) va Semgrep `ERROR` darajasidagi topilmalar gate'ni to'xtatadi; `WARNING`/`INFO` qasddan kiritilmagan — haqiqiy loyihada ular yuzlab bo'ladi va doim to'xtaydigan gate'ni hech kim o'qimaydi. crAPI'da: 135 → **163** gate-relevant topilma (18 Semgrep `ERROR` + 10 Gitleaks), ular orasida omborga kiritilgan **private key'lar**, root bilan ishlaydigan **Dockerfile'lar** va Postman to'plamidagi **JWT token'lar**.
   - **Yaxlitlik cheklovi ochiq aytiladi:** commit SHA qattiq pinlanadi va har bir fayl uchun SHA-256 hamda mustaqil qayta tekshirish uchun `raw.githubusercontent` havolasi manifestda saqlanadi, lekin arxiv baytlari oldindan ma'lum xesh bilan solishtirilmaydi va reliz imzosi tekshirilmaydi — bu loyihadagi Trivy/Nuclei o'rnatuvchilari bilan bir xil daraja, undan yuqori kafolat da'vo qilinmaydi. Apex qoidalari qasddan chiqarib tashlangan: OSS Semgrep Apex'ni umuman parse qila olmaydi, ular faqat o'zgarmas xato shovqini berardi.
   - **Tahlil xatolari endi turi bo'yicha taqsimlanadi** (`error_kinds`) — yalang'och son o'rniga "qaysi turdagi qamrov bo'shlig'i" ko'rinadi. crAPI'da 36 ta `Other syntax error` — bular Helm shablon fayllari (`deploy/helm/templates/...`), ular sof YAML emas; bu haqiqiy qamrov bo'shlig'i, shuning uchun bosqich halol ravishda `partial` holatida qoladi.
-- **O'z qoidalaringiz:** loyihangizga xos naqshni qo'shsangiz, keyingi har bir kod tekshiruvida u 7 ta lokal va ~1343 ta rasmiy qoida bilan birga ishlaydi. Saqlash joyi `scanner-rules/local/`, mantiq `zanjir/custom_rules.py`, API `GET /api/rules` va `POST /api/rules/{validate,save,delete}`. **Web sahifadagi qoida muharriri 0.7 da olib tashlandi** (kundalik ishda ishlatilmasdi va sahifani og'irlashtirardi) — qoidalar endi faylga yozib yoki shu API orqali qo'shiladi; tekshirish mantig'i va cheklovlari o'zgarmadi.
+- **O'z qoidalaringiz:** loyihangizga xos naqshni qo'shsangiz, keyingi har bir kod tekshiruvida u 29 ta lokal va ~1343 ta rasmiy qoida bilan birga ishlaydi. Saqlash joyi `scanner-rules/local/`, mantiq `zanjir/custom_rules.py`, API `GET /api/rules` va `POST /api/rules/{validate,save,delete}`. **Web sahifadagi qoida muharriri 0.7 da olib tashlandi** (kundalik ishda ishlatilmasdi va sahifani og'irlashtirardi) — qoidalar endi faylga yozib yoki shu API orqali qo'shiladi; tekshirish mantig'i va cheklovlari o'zgarmadi.
   - **Faqat deklarativ Semgrep YAML qabul qilinadi — bu chegara qasddan qo'yilgan.** Python mantiqidagi zanjir qoidalari (RP-00X, SX-00X) **hech qachon** web orqali qo'shilmaydi: ular dastur kodi, va ularni HTTP orqali qabul qilish xavfsizlik vositasining o'ziga ixtiyoriy kod bajarish yo'lini ochardi. **Nuclei shablonlari ham qabul qilinmaydi:** shablon real tarmoq so'rovi yuboradi, ya'ni oddiy matn maydoni interfeysga ixtiyoriy hostga trafik yo'naltirish imkonini berardi — bu "Sayt va API" bo'limidagi yozma ruxsat modelini talab qiladi, matn maydonini emas.
   - **Ishonch chegarasi ochiq aytiladi:** server faqat localhost'ga bog'langan va cross-site so'rovlarni rad etadi, shuning uchun bu endpoint'ga yeta oladigan kishi allaqachon skanerlash uchun loyiha papkasini ro'yxatdan o'tkaza oladi. Quyidagi tekshiruvlar masofaviy hujumchidan himoya emas — ular noto'g'ri qoidaning skan natijasini jimgina buzishining oldini oladi.
-  - **Har bir qoida ikki marta tekshiriladi:** (1) strukturaviy — `id` noyobligi va xavfsiz belgilar, `message`, `languages` (faqat OSS engine parse qila oladigan tillar), `severity`, kamida bitta naqsh kaliti, YAML alias/anchor va chuqurlik/hajm chegaralari; manba faylini o'zgartiradigan (`fix`, `fix-regex`) va engine sozlamasiga tegadigan (`options`, `join`, `r2c-internal-*`) kalitlar rad etiladi, noma'lum kalit jimgina e'tiborsiz qoldirilmaydi; (2) **Semgrep'ning o'z `--validate` tekshiruvi** — naqsh haqiqatan parse bo'lishini faqat u biladi.
+  - **Har bir qoida ikki marta tekshiriladi:** (1) strukturaviy — `id` noyobligi va xavfsiz belgilar, `message`, `languages` (faqat OSS engine parse qila oladigan tillar), `severity`, kamida bitta naqsh kaliti, YAML alias/anchor va chuqurlik/hajm chegaralari; manba faylini o'zgartiradigan (`fix`, `fix-regex`) va engine sozlamasiga tegadigan (`options`, `join`, `r2c-internal-*`) kalitlar rad etiladi, noma'lum kalit jimgina e'tiborsiz qoldirilmaydi; (2) **Semgrep'ning o'z qoida parseri** (bo'sh papka skani, internetsiz) — naqsh haqiqatan parse bo'lishini faqat u biladi.
   - **`metadata.cwe` majburiy.** CWE'siz topilma hisobotga CWE'siz va OWASP toifasisiz tushadi, bu loyiha esa keyinchalik toifani hech qachon taxmin qilmaydi — shuning uchun qoida yozishning o'zida talab qilinadi.
   - Topilma matni bu yerda ham qoida faylidan olinadi, Semgrep chiqishidan emas — rasmiy paketdagi bilan bir xil sir sizishidan himoya sababi.
   - Uchidan-uchigacha tasdiqlandi: brauzerdan yozilgan `pattern-regex` qoidasi sun'iy loyihada to'g'ri ishladi — `severity: ERROR`, `CWE-798` → `A07:2025`, xabar qoida faylidan; `fix` kalitli, CWE'siz, noto'g'ri `severity`/til va parse bo'lmaydigan naqshli variantlar esa aniq sabab bilan rad etildi.
@@ -187,7 +463,7 @@ NVD so‘rov cheklovi sekin (5/30s, kalitsiz). Tezroq CWE boyitish uchun ixtiyor
 
 | Vosita | Qamrov | Chegara |
 |---|---|---|
-| Semgrep | 7 ta mahalliy qoida + rasmiy `semgrep-rules` security paketi (~1343 qoida, 22 til; `setup_semgrep_rules.py`, ixtiyoriy) + `scanner-rules/local/` dagi o‘z qoidalaringiz | Universal SAST emas; paket o‘rnatilmasa faqat 7 ta lokal qoida ishlaydi; Apex qamralmaydi; web orqali faqat deklarativ Semgrep YAML qabul qilinadi (Python zanjir qoidalari va Nuclei shablonlari emas) |
+| Semgrep | 29 ta mahalliy qoida (taint: buyruq/SQL injeksiyasi, deserializatsiya, SSTI, XSS, XXE; Python/JS/Java/Go/PHP) + rasmiy `semgrep-rules` security paketi (~1343 qoida, 22 til; `setup_semgrep_rules.py`, ixtiyoriy) + `scanner-rules/local/` dagi o‘z qoidalaringiz | Universal SAST emas; paket o‘rnatilmasa faqat 29 ta lokal qoida ishlaydi; Apex qamralmaydi; web orqali faqat deklarativ Semgrep YAML qabul qilinadi (Python zanjir qoidalari va Nuclei shablonlari emas) |
 | Gitleaks | Joriy matn fayllaridagi sirlar | Git tarixi yo‘q; API hisobotida sir qiymati yashiriladi |
 | OSV + CISA KEV | npm lock v1–v3, Python `==`, Go `require`; ustuvorlik | Java/Gradle va boshqa lock formatlari qamrov bo‘shlig‘i; tranzitiv/runtime to‘liqligi kafolatlanmaydi |
 | Trivy 0.74.0 | Public Docker Hub image; digest; linux/amd64; 1 GB gacha | Private registry va faol hujum sinovi yo‘q; image bajarilmaydi |

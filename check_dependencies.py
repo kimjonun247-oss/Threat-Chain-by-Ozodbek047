@@ -29,7 +29,7 @@ def main():
             target=existing['id'] if existing else 'project-'+hashlib.sha256(str(source).encode()).hexdigest()[:10]
             if not existing:code_targets.register(target,source,source.name)
         print('Tekshiruv doim online: OSV, CISA KEV, NVD va EPSS ga paket nomlari va versiyalarini yuboradi. Kod va sirlar yuborilmaydi.',file=sys.stderr)
-    scanners.target_root(target)
+    scanners.check_target(target)
     print('Tekshiruv boshlandi. Natija CVE va kutubxonalar bo‘limida saqlanadi.',flush=True,file=sys.stderr)
     report=dependencies.start(target,background=False)
     print(json.dumps({key:report.get(key) for key in ('id','target','state','count','priority_counts','progress')},ensure_ascii=False,indent=2))

@@ -1,13 +1,17 @@
 """CLI-only source project registration, independent of deployment format."""
 import json
 from pathlib import Path
-from .engine import ROOT
+from .engine import ROOT, DATA
 from . import repo_store
 
-PROFILES=ROOT/'profiles/code'
+PROFILES=DATA/'profiles/code'
 
 
 def profiles():
+    return repo_store.memo(('code_profiles',str(PROFILES)),repo_store.folder_signature(PROFILES),_profiles)
+
+
+def _profiles():
     result=[]
     if PROFILES.exists():
         for path in sorted(PROFILES.glob('*.json')):
@@ -32,8 +36,10 @@ def register_remote(target,url,ref='',name=None):
     from . import remote_source
     if not isinstance(target,str) or not repo_store.PROFILE_ID.fullmatch(target) or target in {'crapi','crapi-full'}:
         raise ValueError('Loyiha ID 2–40 ta kichik harf, raqam, _ yoki - bo‘lsin. crapi nomlari band.')
-    if target in {p['id'] for p in repo_store.list_profiles()} or any(p['id']==target for p in profiles()):
-        raise ValueError('Bu loyiha ID allaqachon mavjud.')
+    # The same id may name this project's Compose profile too: the portfolio
+    # groups stages by id, so sharing it is the point, not a clash.
+    if any(p['id']==target for p in profiles()) or (PROFILES/(target+'.json')).exists():
+        raise ValueError('Bu loyiha ID allaqachon kod nishoni sifatida mavjud.')
     url=remote_source.check_url(url)
     ref=remote_source.check_ref(ref)
     if not isinstance(name or target,str) or len(name or target)>120:raise ValueError('Loyiha nomi juda uzun.')
@@ -47,8 +53,10 @@ def register_remote(target,url,ref='',name=None):
 def register(target,root,name=None):
     if not isinstance(target,str) or not repo_store.PROFILE_ID.fullmatch(target) or target in {'crapi','crapi-full'}:
         raise ValueError('Loyiha ID 2–40 ta kichik harf, raqam, _ yoki - bo‘lsin. crapi nomlari band.')
-    if target in {p['id'] for p in repo_store.list_profiles()} or any(p['id']==target for p in profiles()):
-        raise ValueError('Bu loyiha ID allaqachon mavjud.')
+    # The same id may name this project's Compose profile too: the portfolio
+    # groups stages by id, so sharing it is the point, not a clash.
+    if any(p['id']==target for p in profiles()) or (PROFILES/(target+'.json')).exists():
+        raise ValueError('Bu loyiha ID allaqachon kod nishoni sifatida mavjud.')
     source=Path(root).resolve()
     if not source.is_dir():raise ValueError('Loyiha papkasi mavjud emas.')
     if not isinstance(name or target,str) or len(name or target)>120:raise ValueError('Loyiha nomi juda uzun.')
@@ -56,3 +64,13 @@ def register(target,root,name=None):
     PROFILES.mkdir(parents=True,exist_ok=True)
     with (PROFILES/(target+'.json')).open('x',encoding='utf-8') as file:json.dump(row,file,ensure_ascii=False,indent=2)
     return {'id':target,'name':row['name']}
+
+
+def remove(target):
+    """Drop a local or remote source registration. Reports stay in the history,
+    and the project's folder is never touched."""
+    path=PROFILES/(str(target)+'.json')
+    if not repo_store.PROFILE_ID.fullmatch(str(target)) or not path.is_file():
+        raise ValueError('Bunday ro‘yxatdagi kod loyihasi yo‘q.')
+    path.unlink()
+    return {'id':target,'removed':True,'note':'Manba papkasiga tegilmadi; oldingi hisobotlar tarixda qoldi.'}

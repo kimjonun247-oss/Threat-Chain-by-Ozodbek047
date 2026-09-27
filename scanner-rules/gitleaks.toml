@@ -1,3 +1,17 @@
 title = "Zanjir local Gitleaks built-in rules"
 [extend]
 useDefault = true
+
+# Gitleaks'ning o'rnatilgan qoidalari ulanish URL'idagi parolni topmaydi
+# (2026-09-25 benchmarki: postgres://admin:<parol>@db... o'tkazib yuborildi).
+[[rules]]
+id = "connection-string-password"
+description = "Ma'lumotlar bazasi/broker ulanish URL'idagi parol"
+regex = '''(?i)\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|rediss?|amqps?|mssql|sqlserver|oracle|jdbc:[a-z]+)://[^\s:@/'"<>]{1,64}:([^\s@/'"<>]{4,128})@[^\s'"<>]+'''
+secretGroup = 1
+keywords = ["://"]
+
+[[rules.allowlists]]
+description = "Namuna va shablon qiymatlar sir emas"
+regexTarget = "secret"
+regexes = ['''(?i)^(password|passwd|changeme|example|secret|pass|placeholder|your[_-]?password|x{3,}|\*{3,}|<[^>]*>)$''', '''^\$\{[^}]*\}$''', '''^\$[A-Z_][A-Z0-9_]*$''', '''^%\([a-z_]+\)s$''']

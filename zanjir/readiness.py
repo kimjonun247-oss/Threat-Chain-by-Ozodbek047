@@ -35,7 +35,7 @@ def status():
     # The official Semgrep pack is optional; a broken manifest is reported here
     # rather than raised, so the overview page still renders.
     try:
-        pack = scanners.registry_manifest()
+        pack = scanners.registry_manifest(cached=True)
         rules = ({'installed': True, 'rules': pack['rules'], 'files': pack['files'],
                   'languages': pack['languages'], 'commit': pack['commit'], 'source': pack['source'],
                   # Named, not silently dropped: OSS Semgrep cannot parse Apex at
