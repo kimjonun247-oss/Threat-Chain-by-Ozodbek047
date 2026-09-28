@@ -113,7 +113,12 @@ def install(force=False):
         unpacked.mkdir()
         print('Ochilmoqda…', flush=True)
         with tarfile.open(archive_path) as archive:
-            archive.extractall(unpacked, members=safe_members(archive, unpacked))
+            # safe_members already rejects any path or link that escapes `unpacked`,
+            # and the archive's SHA-256 was matched against the pinned and the
+            # GitHub-published checksums above, so it is trusted. An explicit filter
+            # keeps CodeQL's own file permissions and symlinks and silences the
+            # Python 3.14 extraction DeprecationWarning.
+            archive.extractall(unpacked, members=safe_members(archive, unpacked), filter='fully_trusted')
         if DEST.exists():
             shutil.rmtree(DEST)
         DEST.parent.mkdir(parents=True, exist_ok=True)

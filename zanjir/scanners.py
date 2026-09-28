@@ -781,8 +781,9 @@ def execute(target,rid):
                 report['findings']+=extra
                 report['count']=len(report['findings']);report['verification_summary']=verification_mod.summarize(report['findings'])
             write(folder/'report.json',report)
-    except (OSError,ValueError) as error:
-        report.update(state='failed',message=str(error))
+    except Exception as error:  # noqa: BLE001 -- any failure marks the scan failed rather than leaving it 'running'; dependencies.py, iac.py and images.py do the same
+        report.update(state='failed',error_type=type(error).__name__)
+        if isinstance(error,(OSError,ValueError)):report['message']=str(error)[:300]
     finally:
         report['finished_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
         write(folder/'report.json',report)

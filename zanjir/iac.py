@@ -209,7 +209,10 @@ def trivy_version():
     try:
         done = subprocess.run([str(images.BINARY), 'version', '--format', 'json'],
                               capture_output=True, text=True, timeout=30)
-        return str(json.loads(done.stdout).get('Version', ''))[:40]
+        data = json.loads(done.stdout)
+        # A non-dict payload (a future Trivy, or an error on stdout) would make
+        # .get() raise AttributeError, which the except below does not catch.
+        return str(data.get('Version', '') if isinstance(data, dict) else '')[:40]
     except (OSError, ValueError, subprocess.SubprocessError):
         return ''
 

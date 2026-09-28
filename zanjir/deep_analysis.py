@@ -72,7 +72,16 @@ def languages(source):
 
 def version(env):
     done = subprocess.run([str(binary()), 'version', '--format=json'], capture_output=True, text=True, timeout=120, env=env)
-    return str(json.loads(done.stdout).get('version') or '')
+    # `codeql version --format=json` is an object today, but a future CLI (or an
+    # error written to stdout) could hand back a list or malformed JSON. Reading
+    # the field defensively keeps a surprise here from raising AttributeError,
+    # which run()'s except below does not catch and which would sink the whole
+    # code scan rather than just this optional stage.
+    try:
+        data = json.loads(done.stdout)
+    except (ValueError, TypeError):
+        return ''
+    return str(data.get('version') or '') if isinstance(data, dict) else ''
 
 
 def severity_of(rule):
