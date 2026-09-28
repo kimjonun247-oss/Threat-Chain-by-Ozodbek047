@@ -95,9 +95,18 @@
     const rows = entries.filter(([, value]: ApiData) => value > 0);
     if (!rows.length) return `<p class="cell-sub">Ma’lumot yo‘q.</p>`;
     const top = Math.max(...rows.map(([, value]: ApiData) => value));
+    // The fill width is a `w-<n>` class and only multiples of five exist (with a
+    // 2% floor for a still-visible sliver); an arbitrary percentage would name a
+    // class the stylesheet has no rule for, and the fill would then default to
+    // the full track width -- which made every bar look identical regardless of
+    // its number. Snapping to the grid keeps the lengths in proportion.
+    const width = (value: number) => {
+      const pct = Math.round(value / top * 20) * 5;
+      return pct < 2 ? 2 : pct;
+    };
     return `<ul class="bars ${wide ? 'named' : ''}">${rows.map(([key, value, label]: ApiData) => `<li>
       <span class="bar-label">${iconOf ? icon(iconOf(key)) : ''}${e(label || key)}</span>
-      <span class="bar-track"><span class="bar-fill w-${Math.max(2, Math.round(value / top * 100))}"></span></span>
+      <span class="bar-track"><span class="bar-fill w-${width(value)}"></span></span>
       <b>${value}</b></li>`).join('')}</ul>`;
   }
 

@@ -257,10 +257,10 @@
           <div class="modal-actions"><button type="button" class="secondary" data-test>Sinov xabari</button><button type="button" class="secondary" data-clear-notify>Hammasini o‘chirish</button><button class="primary" data-submit>Saqlash</button></div>
           <p class="modal-feedback"></p>
         </form>
-        <h3>Chuqur tahlil (CodeQL)</h3>
-        <p class="hint-text">Fayllararo ma’lumot oqimi (taint) tahlili: Python, JS/TS, Ruby, Java/Kotlin, C#. Sekin (daqiqalar) va alohida litsenziyali: ochiq kod va ilmiy ish uchun bepul, xususiy kod uchun GitHub Advanced Security kerak. ${status.deep_analysis?.installed ? 'O‘rnatilgan.' : 'O‘rnatilmagan: <code>python3 setup_codeql.py</code>.'}</p>
-        <form id="settings-deep"><label><input type="checkbox" name="codeql"${status.deep_analysis?.codeql ? ' checked' : ''}> Kod skanida CodeQL bosqichini qo‘shish</label>
-          <div class="modal-actions"><button class="primary" data-submit>Saqlash</button></div><p class="modal-feedback"></p></form>
+        <form id="settings-deep">
+          <div class="deep-head"><h3>Chuqur tahlil (CodeQL)</h3>
+            <label class="deep-toggle"><input type="checkbox" name="codeql"${status.deep_analysis?.codeql ? ' checked' : ''} aria-label="Kod skanida CodeQL bosqichini qo‘shish"></label></div>
+          <p class="hint-text">Fayllararo ma’lumot oqimi (taint) tahlili: Python, JS/TS, Ruby, Java/Kotlin, C#. Sekin (daqiqalar) va alohida litsenziyali: ochiq kod va ilmiy ish uchun bepul, xususiy kod uchun GitHub Advanced Security kerak. ${status.deep_analysis?.installed ? 'O‘rnatilgan.' : 'O‘rnatilmagan: <code>python3 setup_codeql.py</code>.'}</p></form>
         <h3>Navbat</h3>
         <form id="settings-queue">
           <label>Bir vaqtda ishlaydigan skanlar (1–4; bir turdagi skan baribir bittadan)<input name="max" type="number" min="1" max="4" value="${e(queue.max_parallel || 1)}"></label>
@@ -316,11 +316,17 @@
             submit(notifyForm, '/api/settings/notifications', {webhook_url: '', slack_webhook_url: '', email: false}, () => 'O‘chirildi.');
         });
         const deepForm = box.querySelector('#settings-deep');
-        deepForm.addEventListener('submit', (event: Event) => {
-          event.preventDefault();
+        // No save button: the toggle writes the setting the moment it changes.
+        // A plain class carries the on/off look (heading, description and label),
+        // set here rather than with :has() so it never lags a programmatic change.
+        const syncDeep = () => deepForm.classList.toggle('on', deepForm.elements.codeql.checked);
+        deepForm.addEventListener('submit', (event: Event) => event.preventDefault());
+        deepForm.elements.codeql.addEventListener('change', () => {
+          syncDeep();
           submit(deepForm, '/api/settings/deep-analysis', {codeql: deepForm.elements.codeql.checked},
                  (r: ApiData) => (r.codeql ? 'Yoqildi.' : 'O‘chirildi.') + (r.note ? ' ' + r.note : ''));
         });
+        syncDeep();
         const queueForm = box.querySelector('#settings-queue');
         queueForm.addEventListener('submit', (event: Event) => {
           event.preventDefault();
@@ -354,10 +360,104 @@
       });
     },
 
+    /* The project wizard: group already-registered targets of every layer under
+       one project id, so the assessment form can fill and run them in one click.
+       It only groups -- registration stays in the "Nishon qo'shish" window, and
+       nothing here invents a score. */
+    projectWizard: async () => {
+      let sources: ApiData[] = [], webs: ApiData[] = [], images: ApiData[] = [], repositories: ApiData[] = [], iacs: ApiData[] = [];
+      try { [sources, webs, images, repositories, iacs] = await Promise.all([api('/api/scanners/targets'), api('/api/web/targets'), api('/api/images/targets'), api('/api/repository/profiles'), api('/api/iac/targets')]); }
+      catch (error) { /* empty lists simply render as no options */ }
+      const opts = (rows: ApiData[], avail = false) => '<option value="">— tanlanmagan —</option>' +
+        (rows || []).filter((t: ApiData) => !avail || t.available).map((t: ApiData) => `<option value="${e(t.id)}">${e(t.name)}</option>`).join('');
+      openModal('Loyiha ustasi — barcha qatlamni bitta loyihaga bog‘lash', `
+        <form id="wizard-project">
+          <label>Loyiha ID<input name="id" required maxlength="40" placeholder="masalan: mening-app"></label>
+          <label>Nomi<input name="name" required maxlength="120" placeholder="Ko‘rinadigan nom"></label>
+          <label>Mas’ul (ixtiyoriy)<input name="owner" maxlength="120" placeholder="Ism va lavozim"></label>
+          <p class="hint-text">Har qatlam uchun ro‘yxatga olingan nishonni tanlang. Bo‘sh qatlam loyihaga bog‘lanmaydi (skanda o‘tkazib yuboriladi). Bu forma faqat guruhlaydi — skan qilmaydi va umumiy ball chiqarmaydi.</p>
+          <label>Manba kodi <small>(Kod + CVE)</small><select name="code">${opts(sources, true)}</select></label>
+          <label>Konfiguratsiya <small>(IaC)</small><select name="iac">${opts(iacs, true)}</select></label>
+          <label>Repository <small>(Compose)</small><select name="repository">${opts(repositories)}</select></label>
+          <label>Docker image <small>(bir nechta tanlash mumkin)</small><select name="images" multiple size="3">${(images || []).map((t: ApiData) => `<option value="${e(t.id)}">${e(t.name)}</option>`).join('')}</select></label>
+          <button type="button" class="wiz-toggle" data-new="image">＋ Yangi image</button>
+          <div class="wiz-new" data-newfor="image" hidden>
+            <label>Image manzili<input name="image_reference" placeholder="registry/app:1.0 yoki nom@sha256:…"></label>
+            <label>Registry autentifikatsiyasi<select name="image_auth"><option value="none">Kerak emas (ochiq registry)</option><option value="environment">Muhit o‘zgaruvchisidan</option><option value="docker-config">docker login seansidan</option></select></label>
+          </div>
+          <label>Sayt / API<select name="web">${opts(webs)}</select></label>
+          <button type="button" class="wiz-toggle" data-new="web">＋ Yangi sayt / API</button>
+          <div class="wiz-new" data-newfor="web" hidden>
+            <label>URL<input name="web_url" placeholder="https://staging.example.test"></label>
+            <label>Ruxsat bergan mas’ul<input name="web_owner" placeholder="Ism va lavozim"></label>
+            <label class="wiz-check"><input name="web_authenticated" type="checkbox"> Nishon autentifikatsiya talab qiladi</label>
+            <p class="hint-text">Faqat ruxsatli, ochiq (internetdagi) nishon. Lokal/intranet manzil brauzerdan ro‘yxatga olinmaydi — buning uchun CLI: <code>check_web.py --allow-private</code>.</p>
+          </div>
+          <div class="modal-actions"><button type="button" class="secondary" id="wizard-register">＋ Boshqa nishon</button><button class="primary" data-submit>Loyihani yaratish</button></div>
+          <p class="modal-feedback"></p>
+        </form>
+`, (box: Field) => {
+        box.querySelector('#wizard-register').addEventListener('click', () => WINDOWS.register());
+        const wizForm = box.querySelector('#wizard-project');
+        // Per-layer "＋ Yangi" toggles reveal that layer's registration fields.
+        const newMode: Record<string, boolean> = {image: false, web: false};
+        box.querySelectorAll('.wiz-toggle').forEach((btn: ApiData) => btn.addEventListener('click', () => {
+          const which = btn.dataset.new;
+          newMode[which] = !newMode[which];
+          (box.querySelector(`[data-newfor="${which}"]`) as Field).hidden = !newMode[which];
+          btn.textContent = (newMode[which] ? '− ' : '＋ ') + (which === 'image' ? 'Yangi image' : 'Yangi sayt / API');
+        }));
+        wizForm.addEventListener('submit', async (event: Event) => {
+          event.preventDefault();
+          const button = wizForm.querySelector('[data-submit]');
+          button.disabled = true;
+          try {
+            const form = formData(wizForm);
+            const projId = form.get('id').trim();
+            if (!projId || !form.get('name').trim()) { feedback(box, 'Loyiha ID va nomi kerak.', false); return; }
+            const stages: ApiData = {};
+            const code = form.get('code'); if (code) { stages.code = [code]; stages.dependencies = [code]; }
+            const iac = form.get('iac'); if (iac) stages.iac = [iac];
+            const repo = form.get('repository'); if (repo) stages.repository = [repo];
+            // A "new" layer is registered first; its returned id then goes into the
+            // grouping. Registration failures (a private URL, a taken id) surface
+            // here and stop the wizard before any grouping is written.
+            if (newMode.image) {
+              const ref = form.get('image_reference').trim();
+              if (!ref) { feedback(box, 'Yangi image manzilini kiriting.', false); return; }
+              feedback(box, 'Image ro‘yxatga olinmoqda…', true);
+              const r = await api('/api/registry/image', {id: projId + '-img', reference: ref, auth: form.get('image_auth') || 'none'});
+              stages.images = [r.id];
+            } else {
+              const imgs = [...(wizForm.querySelector('[name="images"]') as Field).selectedOptions].map((o: ApiData) => o.value).filter(Boolean);
+              if (imgs.length) stages.images = imgs;
+            }
+            if (newMode.web) {
+              const url = form.get('web_url').trim(), owner = form.get('web_owner').trim();
+              if (!url || !owner) { feedback(box, 'Yangi sayt uchun URL va mas’ul kerak.', false); return; }
+              feedback(box, 'Sayt nishoni ro‘yxatga olinmoqda…', true);
+              const r = await api('/api/registry/web', {id: projId + '-web', url, owner, authenticated: form.get('web_authenticated') === 'on'});
+              stages.web = [r.id];
+            } else {
+              const web = form.get('web'); if (web) stages.web = [web];
+            }
+            if (!Object.keys(stages).length) { feedback(box, 'Kamida bitta qatlam uchun nishon tanlang yoki qo‘shing.', false); return; }
+            const created = await api('/api/portfolio/register', {id: projId, name: form.get('name').trim(), owner: form.get('owner').trim(), stages});
+            feedback(box, `Loyiha yaratildi: ${created.name}. Umumiy tekshiruv formasi to‘ldirildi.`, true);
+            document.dispatchEvent(new CustomEvent('assessment-project', {detail: created.id}));
+            document.dispatchEvent(new CustomEvent('registry-changed'));
+            setTimeout(closeModal, 900);
+          } catch (error) { feedback(box, messageOf(error), false); }
+          finally { button.disabled = false; }
+        });
+      });
+    },
+
   };
 
   document.querySelectorAll('[data-modal]').forEach(button =>
     button.addEventListener('click', () => WINDOWS[button.dataset.modal ?? '']?.()));
+  $('assessment-new-project')?.addEventListener('click', () => WINDOWS.projectWizard());
 
   /* ---- keyboard -------------------------------------------------------- */
   const GOTO: Record<string, string> = {t: 'findings', l: 'portfolio', u: 'assessments', b: 'readiness', p: 'project'};

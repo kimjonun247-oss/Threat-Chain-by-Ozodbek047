@@ -27,7 +27,7 @@
 main{min-width:0}
 .topbar{height:60px;display:flex;align-items:center;justify-content:flex-end;padding:0 40px;background:var(--surface);border-bottom:1px solid var(--line);font-size:13px;color:var(--muted);gap:14px}
 .environment{letter-spacing:.06em;font-size:11px;font-weight:700;color:var(--teal);background:var(--teal-light);border:1px solid #c7e6e4;padding:7px 12px;border-radius:99px;white-space:nowrap}
-.content{max-width:1440px;margin:0 auto;padding:38px 40px 60px}
+.content{max-width:1440px;margin:0 auto;padding:18px 40px 60px}
 .eyebrow{font-size:11px;font-weight:700;letter-spacing:.11em;color:var(--teal);margin:0 0 9px}
 h1{font-size:clamp(25px,2.2vw,33px);letter-spacing:-.03em;line-height:1.22;margin:0 0 10px;font-weight:700;color:var(--heading)}
 h2{font-size:21px;letter-spacing:-.02em;margin:0 0 8px;line-height:1.3;font-weight:700;color:var(--heading)}
@@ -61,7 +61,8 @@ h3{font-size:16px;margin:0 0 12px;font-weight:650}
 .metric span{font-size:12px;color:var(--muted);display:block;font-weight:550}
 .metric strong{font-size:24px;display:block;font-weight:700;letter-spacing:-.02em;margin:7px 0;color:var(--heading)}
 .metric small{font-size:12px;color:var(--muted)}
-.section-heading{display:flex;align-items:center;justify-content:space-between;gap:15px;margin:28px 0 12px}
+.section-heading{display:flex;align-items:center;justify-content:space-between;gap:15px;margin:14px 0 12px}
+.section-heading .primary,.section-heading .secondary{margin-top:0}
 .section-heading .eyebrow{margin-bottom:6px}.section-heading h2{margin-bottom:0}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-md);padding:22px;box-shadow:var(--shadow-card)}
 .graph-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:23px}.graph-head h3{margin:0}
@@ -451,3 +452,41 @@ button.small{padding:3px 8px;font-size:12px}
 .fix-plan pre.diff{background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px 12px;overflow:auto;font-size:12px;line-height:1.45;white-space:pre;max-height:420px}
 .fix-diff{margin:8px 0}.fix-diff summary{cursor:pointer}.fix-actions{display:flex;justify-content:flex-end;margin:4px 0}
 .fix-plan pre.diff .add{color:var(--green);background:var(--green-bg);display:inline-block;min-width:100%}.fix-plan pre.diff .del{color:var(--red);background:var(--red-bg);display:inline-block;min-width:100%}.fix-plan pre.diff .meta{color:var(--muted)}
+
+/* CodeQL deep-analysis toggle: sits beside its heading; the label reads muted
+   until the box is checked, so an off switch never looks active in light mode. */
+.deep-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:22px 0 0}
+.deep-head h3{margin:0}
+.modal-body .deep-toggle,.deep-head .deep-toggle{display:inline-flex;align-items:center;gap:7px;margin:0;font-size:13px;color:var(--muted);cursor:pointer;font-weight:500}
+#settings-deep.on .deep-toggle{color:var(--teal);font-weight:650}
+/* Shrink the box to text size (the modal's full-width input rule blows it up
+   otherwise) and let it colour itself with the brand accent. */
+.modal-body .deep-toggle input,.drawer-body .deep-toggle input{width:15px;height:15px;min-height:0;margin:0;padding:0;border:0;background:none;flex:none;accent-color:var(--teal)}
+/* The whole block reads full-strength when CodeQL is on and dims when off, so
+   an inactive stage never competes with the rest of the settings. The `.on`
+   class is toggled in shell.ts, which is more reliable than a :has() rule. */
+#settings-deep h3,#settings-deep .hint-text{opacity:.5;transition:opacity .15s ease}
+#settings-deep.on h3,#settings-deep.on .hint-text{opacity:1}
+
+/* Umumiy tekshiruv (assessment) — barcha qatlamni bir joyda tanlash paneli.
+   Har qatlam o'z dalilini beradi; bu forma faqat tanlovni jamlaydi, ball chiqarmaydi. */
+.assessment-form{margin:8px 0 4px}
+.assessment-quick{display:flex;align-items:flex-end;gap:12px;max-width:660px;margin-bottom:16px}
+.assessment-quick label{display:flex;flex-direction:column;gap:6px;flex:1 1 auto;font-size:13px;font-weight:650;color:var(--heading)}
+.assessment-quick button{flex:none;white-space:nowrap;min-height:40px}
+.assessment-quick .ic{width:15px;height:15px}
+.assessment-layers{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:14px}
+.assessment-layers label{display:flex;flex-direction:column;gap:7px;font-size:13px;font-weight:650;color:var(--ink)}
+.assessment-layers .alh{display:flex;align-items:center;gap:6px}
+.assessment-layers .alh .ic{width:16px;height:16px;color:var(--teal);flex:none}
+.assessment-layers small{color:var(--muted);font-weight:500}
+.assessment-form select{width:100%;min-height:40px;border:1px solid #ccd6e0;border-radius:var(--radius-sm);padding:8px 11px;font-size:14px;background:var(--surface);color:var(--ink)}
+.assessment-hint{display:flex;align-items:flex-start;gap:7px;margin-top:14px;font-size:12px;line-height:1.55}
+.assessment-hint .ic{width:15px;height:15px;color:var(--amber);flex:none;margin-top:1px}
+
+/* Loyiha ustasidagi inline "＋ Yangi" ro'yxatga olish bloklari. */
+.wiz-toggle{background:none;border:0;color:var(--teal);font-size:13px;font-weight:600;padding:3px 0;margin:2px 0;cursor:pointer;text-align:left}
+.wiz-toggle:hover{text-decoration:underline}
+.wiz-new{border:1px solid var(--line);border-radius:var(--radius-sm);padding:2px 14px 14px;margin:2px 0 6px;background:var(--bg)}
+.wiz-new .wiz-check{display:flex;align-items:center;gap:8px;font-weight:500}
+.wiz-new .wiz-check input{width:16px;height:16px;min-height:0;margin:0;padding:0;border:0;background:none;flex:none;accent-color:var(--teal)}

@@ -95,9 +95,13 @@
     const rows = entries.filter(([, value]) => value > 0);
     if (!rows.length) return `<p class="cell-sub">Ma’lumot yo‘q.</p>`;
     const top = Math.max(...rows.map(([, value]) => value));
+    const width = (value) => {
+      const pct = Math.round(value / top * 20) * 5;
+      return pct < 2 ? 2 : pct;
+    };
     return `<ul class="bars ${wide ? "named" : ""}">${rows.map(([key, value, label]) => `<li>
       <span class="bar-label">${iconOf ? icon(iconOf(key)) : ""}${e(label || key)}</span>
-      <span class="bar-track"><span class="bar-fill w-${Math.max(2, Math.round(value / top * 100))}"></span></span>
+      <span class="bar-track"><span class="bar-fill w-${width(value)}"></span></span>
       <b>${value}</b></li>`).join("")}</ul>`;
   }
   function tools(list) {
