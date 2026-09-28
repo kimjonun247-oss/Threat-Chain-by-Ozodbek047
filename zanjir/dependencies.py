@@ -100,8 +100,9 @@ def start(target,background=True):
 
 def cancel(rid):
     read(rid)
-    if rid not in CANCEL:raise ValueError('Bu jarayon ushbu serverda ishlamayapti.')
-    CANCEL[rid].set()
+    event=CANCEL.get(rid)  # one atomic get: 'in' then '[rid]' can race the scan thread popping rid on finish
+    if event is None:raise ValueError('Bu jarayon ushbu serverda ishlamayapti.')
+    event.set()
     return {'id':rid,'state':'cancellation_requested'}
 
 
