@@ -11,6 +11,51 @@ zanjiri (SX-001…003). Python bog'liqliklari: **0 ta**.
 Ochiq qolgani ikkita, ikkalasi ham kod nuqsoni emas: Windows natijasining o'zi (faqat Windows
 mashinasi bera oladi) va Colima diski bo'yicha operator qarori. Tafsilot: [MUAMMOLAR.md](MUAMMOLAR.md).
 
+## Boshlash (yangi kompyuterda)
+
+Loyiha toza klonda ishlashga mo'ljallangan: `dist/` omborga kiritilgan (ishga tushirish uchun
+Node/npm **kerak emas**) va Python bog'liqliklari **0 ta** (core faqat standart kutubxona + ichki
+`vendor/yaml` bilan ishlaydi, `pip install` shart emas).
+
+```bash
+git clone https://github.com/kimjonun247-oss/Kim-Jon-Un.git
+cd Kim-Jon-Un
+python3 setup_all.py          # skanerlar: semgrep (venv) + gitleaks + trivy + nuclei + PMD
+                              # va rasmiy qoida paketi — hammasi pinlangan versiya + SHA-256 bilan
+python3 app.py --port 8765    # serverni ishga tushiradi
+```
+
+So'ng brauzerda: **http://127.0.0.1:8765**
+
+Ixtiyoriy chuqur tahlil:
+
+```bash
+python3 setup_codeql.py       # CodeQL bundle, ~0.9 GB (ixtiyoriy — [Ixtiyoriy chuqur tahlil] bo'limiga qarang)
+```
+
+Yangi mashinada hammasi joyidaligini bitta buyruq tasdiqlaydi:
+
+```bash
+python3 verify_platform.py    # vositalar, testlar, haqiqiy skan, zanjir qoidalari, CI gate
+```
+
+### Talablar
+
+| Narsa | Kerakmi | Izoh |
+|---|---|---|
+| **Python 3** | majburiy | 3.13 da sinalgan |
+| **Internet** | majburiy | "Doim online" dizayn: `setup_all` binarlarni yuklaydi; skan vaqtida OSV/NVD so'raladi |
+| **Docker** (Colima yoki Docker Desktop) | faqat image skani uchun | Docker'siz ham kod / CVE / IaC / web bosqichlari to'liq ishlaydi |
+| **Java** | faqat PMD / Apex (`.cls`, `.trigger`) uchun | Aks holda kerak emas |
+| `cryptography`, `NVD_API_KEY` | ixtiyoriy | TLS test-sertifikati / tezroq CVE boyitish |
+
+`setup_all.py` yarim o'rnatishga chidamli: bitta vosita yiqilsa qolganlari baribir o'rnatiladi va
+qaysi biri ishlamagani aytiladi. Mahalliy holat (`.tools/`, skan natijalari, foydalanuvchilar, NVD
+kaliti) `.gitignore` da — ya'ni klon toza boshlanadi, eski ma'lumot ko'chmaydi.
+
+**Platforma:** macOS / Linux to'liq. Windows uchun `VERIFY-WINDOWS.cmd` bor va Windows'ga xos
+nuqsonlar auditdan o'tgan, lekin haqiqiy Windows yurish-natijasi hali tasdiqlanmagan.
+
 ## Web panel tezligi (2026-09-25 optimallashtirish)
 
 O'lchov: Chromium, bir xil ma'lumotlar, bosh sahifani ochish.
