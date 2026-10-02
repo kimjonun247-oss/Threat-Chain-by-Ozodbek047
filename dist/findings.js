@@ -13,6 +13,24 @@
     repository: "Repository",
     chain: "Zanjir"
   };
+  const ROLE_BY_STAGE = {
+    code: "Developer",
+    dependencies: "Developer",
+    repository: "DevOps",
+    iac: "DevOps",
+    images: "DevOps",
+    web: "Tarmoq"
+  };
+  const ROLE_BY_CHAIN = {
+    "SX-001": "Developer + DevOps",
+    "SX-002": "DevOps",
+    "SX-003": "DevOps",
+    "SX-004": "Developer",
+    "SX-005": "DevOps",
+    "SX-006": "Developer",
+    "SX-007": "DevOps + Developer"
+  };
+  const responsibleOf = (row) => row.stage === "chain" ? ROLE_BY_CHAIN[row.rule_id] || "Developer + DevOps" : ROLE_BY_STAGE[row.stage] || "—";
   const STATUS_NAMES = {
     untriaged: "Ko‘rilmagan",
     investigating: "Tekshirilmoqda",
@@ -79,7 +97,7 @@
     return parts.map((p) => `<p>${p}</p>`).join("");
   }
   function tags(row) {
-    const out = [];
+    const out = [`<span class="tag tag-role" title="Kim tuzatadi">${e(responsibleOf(row))}</span>`];
     if (row.known_exploited === true) out.push('<span class="tag tag-kev">CISA KEV</span>');
     if (row.overdue) out.push(`<span class="tag tag-overdue">SLA ${e(row.sla?.days_remaining)} kun</span>`);
     if (row.epss != null) out.push(`<span class="tag">EPSS ${(row.epss * 100).toFixed(1)}%</span>`);
@@ -187,6 +205,7 @@
           <tr><td>Hisobot</td><td>${e(row.report_id)} · ${e(row.report_state)}</td></tr>
           <tr><td>Identifikator</td><td class="hash">${e(row.fingerprint)}</td></tr>
         </tbody></table>
+        ${detail.snippet ? `<h3>Kod — aynan shu yerda</h3><pre class="snippet">${detail.snippet.map((l) => `<span class="snippet-line ${l.hit ? "snippet-hit" : ""}"><span class="snippet-n">${e(l.n)}</span><span class="snippet-code">${e(l.text) || " "}</span></span>`).join("")}</pre>` : detail.snippet_state === "secret" ? '<p class="cell-sub">Kod satri ataylab ko‘rsatilmaydi: bu qatorda sir qiymat bor va u himoyalanadi.</p>' : detail.snippet_state === "unavailable" ? '<p class="cell-sub">Kod satri ko‘rsatilmadi: manba papka o‘zgargan yoki o‘qib bo‘lmadi.</p>' : ""}
         ${detail.related.length ? `<h3>Bog‘liq topilmalar</h3>${detail.related.map((r) => `<p><button class="cell-title" data-open="${e(r.fingerprint)}">${e(r.rule_id)} — ${e(r.title)}</button><span class="cell-sub">${r.escalates === row.fingerprint ? "Bu topilmani kuchaytiradi" : r.duplicate_of === row.fingerprint ? "Shu topilmaning takrori" : "Bog‘liq"}</span></p>`).join("")}` : ""}
         <h3>Qaror</h3>
         <form id="drawer-triage">

@@ -106,7 +106,10 @@ def chain_rules():
     rules = sorted({f['rule_id'] for f in repo['findings']})
     chain = [f['rule_id'] for f in result.get('chain_findings') or []]
     expected = {'RP-001', 'RP-005', 'RP-006', 'RP-007', 'RP-008'}
-    if not expected <= set(rules) or chain != ['SX-001']:
+    # SX-001 (secret + exposed) and SX-007 (that secret on a service that can also
+    # escape the container -- RP-007/008 -- so the pair escalates): both are the
+    # sample's own facts, so both must fire.
+    if not expected <= set(rules) or set(chain) != {'SX-001', 'SX-007'}:
         raise AssertionError(f'RP={rules} SX={chain}')
     return {'repository_rules': rules, 'chain': chain}
 

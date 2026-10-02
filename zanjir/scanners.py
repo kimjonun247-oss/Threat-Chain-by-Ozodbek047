@@ -607,6 +607,42 @@ def source_line(source,path,line):
     return ''
 
 
+def source_snippet(target,path,line,span=3):
+    """A few source lines around `line` of `path`, for the finding detail panel.
+
+    Read from the live registered source -- the scan snapshot is gone by now --
+    so a file edited since the scan shows its current lines, and the caller says
+    so. The path is validated against the target's own root and never read
+    outside it; a missing, oversized or unreadable file yields no snippet rather
+    than an error, and secrets are never passed here (gitleaks redacts its own)."""
+    try:
+        root=target_root(target)
+        line=int(line)
+    except (TypeError,ValueError,OSError):
+        return None
+    raw=str(path or '').replace('\\','/')
+    if not raw or raw.startswith('/') or '..' in Path(raw).parts or ':' in raw:
+        return None
+    file=root/raw
+    try:
+        if not file.resolve().is_relative_to(root.resolve()) or not file.is_file() or file.stat().st_size>2_000_000:
+            return None
+        rows,lo,hi=[],max(1,line-span),line+span
+        with file.open('r',encoding='utf-8',errors='replace') as handle:
+            for number,text in enumerate(handle,1):
+                if number<lo:continue
+                if number>hi:break
+                # Safety net: mask any long unbroken key-like token (an API key,
+                # hash or base64 blob) so an incidental secret on a line never
+                # reaches the panel. Normal code -- keywords, short names, SQL with
+                # spaces -- is untouched; detail() skips secret findings outright.
+                safe=re.sub(r'[A-Za-z0-9+/=_.\-]{24,}',lambda m:m.group()[:4]+'***',text.rstrip('\n'))
+                rows.append({'n':number,'text':safe[:300],'hit':number==line})
+        return rows or None
+    except OSError:
+        return None
+
+
 def normalize(tool,data,source,messages=None):
     if tool=='pmd':rows=pmd_rows(data)
     else:rows=data.get('results') if tool=='semgrep' and isinstance(data,dict) else data

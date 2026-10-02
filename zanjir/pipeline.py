@@ -158,7 +158,8 @@ def correlate_stages(report):
     if repository:
         images_by_target = project_images(report, repository)
     linked = image_links(repository, images_by_target)
-    return chains.correlate_all({'code': stage_report(report, 'code'), 'repository': repository},
+    return chains.correlate_all({'code': stage_report(report, 'code'), 'repository': repository,
+                                 'dependencies': stage_report(report, 'dependencies')},
                                 links=linked.get('links'), image_reports=images_by_target,
                                 ambiguous=linked.get('ambiguous'))
 

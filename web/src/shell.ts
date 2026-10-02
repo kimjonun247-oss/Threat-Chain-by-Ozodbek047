@@ -81,6 +81,7 @@
         <button class="chip" data-tab="remove" aria-pressed="false">Ro‘yxatdan chiqarish</button>
       </div>
       <form id="reg-project" data-panel="project">
+        <div class="reg-gate" id="reg-gate" hidden><p>Xavfsizlik uchun brauzerdan manba papkasini ro‘yxatga olish <strong>o‘chirilgan</strong>. Yoqilsa, server uy papkangizdagi papkalarni ko‘rsatadi va siz tanlagan papkani o‘qib indekslaydi — bu ongli qaror. Ko‘p foydalanuvchi serverda yoqmang; qayta ishga tushirilganda o‘zi o‘chadi.</p><button type="button" class="primary" id="reg-enable"><svg class="ic"><use href="#i-check"/></svg> Ro‘yxatga olishni yoqish</button></div>
         <label>Loyiha ID<input name="id" required maxlength="40" placeholder="masalan: ichki-api"></label>
         <label>Manba papkasi<span class="path-field"><input name="root" id="reg-root" required placeholder="/Users/.../loyiha"><button type="button" class="secondary" id="reg-pick">Papka tanlash</button></span></label>
         <div id="reg-browser" class="folder-browser" hidden></div>
@@ -168,6 +169,20 @@
         browser.hidden = true;
       });
       box.querySelector('#reg-pick').addEventListener('click', () => openFolder(''));
+
+      /* Folder registration is off by default (the same boundary as the
+         --allow-registration flag). Rather than send the operator to a terminal,
+         the gate here turns it on for the running server after a warning. */
+      api('/api/settings').then((s: ApiData) => {
+        if (!s.registration_enabled) (box.querySelector('#reg-gate') as Field).hidden = false;
+      }).catch(() => { /* settings unavailable: the picker itself still reports the gate on use */ });
+      box.querySelector('#reg-enable').addEventListener('click', async () => {
+        if (!confirm('Brauzerdan papka ro‘yxatga olishni yoqasizmi? Server uy papkangizdagi papkalarni o‘qiy oladi va tanlagan papkangizni indekslaydi. Faqat o‘zingiz ishonchli lokal mashinada yoqing.')) return;
+        try {
+          await api('/api/settings/allow-registration', {enabled: true});
+          (box.querySelector('#reg-gate') as Field).hidden = true;
+        } catch (error) { feedback(box.querySelector('#reg-project'), messageOf(error), false); }
+      });
       box.querySelector('#reg-project').addEventListener('submit', (event: Event) => {
         event.preventDefault();
         const form = formData((event.target as Field));

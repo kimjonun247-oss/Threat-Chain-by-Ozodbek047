@@ -490,3 +490,19 @@ button.small{padding:3px 8px;font-size:12px}
 .wiz-new{border:1px solid var(--line);border-radius:var(--radius-sm);padding:2px 14px 14px;margin:2px 0 6px;background:var(--bg)}
 .wiz-new .wiz-check{display:flex;align-items:center;gap:8px;font-weight:500}
 .wiz-new .wiz-check input{width:16px;height:16px;min-height:0;margin:0;padding:0;border:0;background:none;flex:none;accent-color:var(--teal)}
+
+/* Manba ro'yxatga olishni GUI'dan yoqish qutisi (--allow-registration o'rniga). */
+.reg-gate{border:1px solid var(--amber);background:var(--amber-bg);border-radius:var(--radius-sm);padding:12px 14px;margin:4px 0 14px}
+.reg-gate p{margin:0 0 10px;font-size:12.5px;line-height:1.55;color:var(--amber)}
+.reg-gate .ic{width:15px;height:15px;vertical-align:-3px;margin-right:5px}
+
+/* "Kim tuzatadi" rol tegi — topilmani to'g'ri rolga yo'naltiradi (loyihani bo'lmasdan). */
+.tag-role{color:var(--teal);border-color:#c7e6e4;background:var(--teal-light);font-weight:600}
+
+/* Topilma detalida "aynan shu yerda" kod bloki — flaglangan satr ajratilgan. */
+.snippet{margin:6px 0 2px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--bg);overflow-x:auto;font-size:12.5px;line-height:1.55;padding:6px 0}
+.snippet-line{display:flex;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre}
+.snippet-hit{background:var(--amber-bg)}
+.snippet-n{flex:0 0 42px;text-align:right;padding:0 10px;color:var(--muted);user-select:none;border-right:1px solid var(--line-soft)}
+.snippet-hit .snippet-n{color:var(--amber);font-weight:700}
+.snippet-code{padding:0 12px;white-space:pre}

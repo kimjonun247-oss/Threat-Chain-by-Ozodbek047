@@ -42,7 +42,17 @@ def recent_scans(limit=RECENT):
         except (OSError, ValueError, KeyError):
             continue
     rows.sort(key=lambda row: str(row.get('created_at') or ''), reverse=True)
-    return rows[:limit]
+    # One row per (stage, target): re-scanning a target replaces its line rather
+    # than stacking its old runs in the feed. The reports stay on disk (history,
+    # baseline and trend still read them); only this dashboard feed is deduped.
+    seen, latest = set(), []
+    for row in rows:
+        key = (row['stage'], row['target'])
+        if key in seen:
+            continue
+        seen.add(key)
+        latest.append(row)
+    return latest[:limit]
 
 
 def trend(limit=TREND):
@@ -137,7 +147,7 @@ def overview():
             'rules': {'semgrep': (health['semgrep_rule_pack'] or {}).get('rules'),
                       'languages': len((health['semgrep_rule_pack'] or {}).get('languages') or []),
                       'custom': (health.get('custom_rules') or {}).get('rules', 0),
-                      'chain': 11, 'cross_scanner': 3},
+                      'chain': 11, 'cross_scanner': 7},
             'nvd_key': health['nvd_api_key']['present'],
         },
         'totals': {

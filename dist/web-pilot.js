@@ -41,7 +41,11 @@
   const chainSources = {
     "SX-001": "Kod (Gitleaks) + Repository (Compose)",
     "SX-002": "Repository (Compose) + Docker image (Trivy)",
-    "SX-003": "Repository (RP-006) + Docker image (Trivy)"
+    "SX-003": "Repository (RP-006) + Docker image (Trivy)",
+    "SX-004": "Kod (Semgrep/CodeQL/PMD) + Repository (Compose)",
+    "SX-005": "Repository (Compose) + Docker image (Trivy · EOL)",
+    "SX-006": "CVE (OSV/KEV) + Repository (Compose)",
+    "SX-007": "Kod (sir/zaiflik) + Repository (RP-007/008)"
   };
   function chainEvidence(f) {
     const v = f.evidence || {};

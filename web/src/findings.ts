@@ -17,6 +17,17 @@
   const FACET_TITLES = {severity: 'Og‘irlik', stage: 'Skaner', project: 'Loyiha', owasp: 'OWASP', status: 'Holat'};
   const STAGE_NAMES: Record<string, string> = {code: 'Kod', dependencies: 'CVE', images: 'Image', web: 'Sayt', iac: 'IaC',
                        repository: 'Repository', chain: 'Zanjir'};
+  // Who fixes it -- a routing tag, not a split of the project: every finding
+  // still sits in one list. Code and its libraries are the developer's; the
+  // Compose/image/IaC layers are DevOps'; a live-site finding is the network's.
+  // A chain spans roles, so it names the one the fix usually starts with.
+  const ROLE_BY_STAGE: Record<string, string> = {code: 'Developer', dependencies: 'Developer',
+                        repository: 'DevOps', iac: 'DevOps', images: 'DevOps', web: 'Tarmoq'};
+  const ROLE_BY_CHAIN: Record<string, string> = {'SX-001': 'Developer + DevOps', 'SX-002': 'DevOps',
+                        'SX-003': 'DevOps', 'SX-004': 'Developer', 'SX-005': 'DevOps',
+                        'SX-006': 'Developer', 'SX-007': 'DevOps + Developer'};
+  const responsibleOf = (row: ApiData): string =>
+    row.stage === 'chain' ? (ROLE_BY_CHAIN[row.rule_id] || 'Developer + DevOps') : (ROLE_BY_STAGE[row.stage] || '—');
   const STATUS_NAMES: Record<string, string> = {untriaged: 'Ko‘rilmagan', investigating: 'Tekshirilmoqda', confirmed: 'Tasdiqlangan',
                         fix_planned: 'Tuzatish rejalashtirilgan', false_positive: 'Noto‘g‘ri signal',
                         accepted_risk: 'Xavf qabul qilingan', fixed: 'Tuzatilgan'};
@@ -77,7 +88,7 @@
   }
 
   function tags(row: ApiData) {
-    const out = [];
+    const out = [`<span class="tag tag-role" title="Kim tuzatadi">${e(responsibleOf(row))}</span>`];
     if (row.known_exploited === true) out.push('<span class="tag tag-kev">CISA KEV</span>');
     if (row.overdue) out.push(`<span class="tag tag-overdue">SLA ${e(row.sla?.days_remaining)} kun</span>`);
     if (row.epss != null) out.push(`<span class="tag">EPSS ${(row.epss * 100).toFixed(1)}%</span>`);
@@ -194,6 +205,13 @@
           <tr><td>Hisobot</td><td>${e(row.report_id)} · ${e(row.report_state)}</td></tr>
           <tr><td>Identifikator</td><td class="hash">${e(row.fingerprint)}</td></tr>
         </tbody></table>
+        ${detail.snippet ? `<h3>Kod — aynan shu yerda</h3><pre class="snippet">${detail.snippet.map((l: ApiData) =>
+            `<span class="snippet-line ${l.hit ? 'snippet-hit' : ''}"><span class="snippet-n">${e(l.n)}</span><span class="snippet-code">${e(l.text) || ' '}</span></span>`).join('')}</pre>`
+          : (detail.snippet_state === 'secret'
+              ? '<p class="cell-sub">Kod satri ataylab ko‘rsatilmaydi: bu qatorda sir qiymat bor va u himoyalanadi.</p>'
+              : detail.snippet_state === 'unavailable'
+                ? '<p class="cell-sub">Kod satri ko‘rsatilmadi: manba papka o‘zgargan yoki o‘qib bo‘lmadi.</p>'
+                : '')}
         ${detail.related.length ? `<h3>Bog‘liq topilmalar</h3>${detail.related.map((r: ApiData) => `<p><button class="cell-title" data-open="${e(r.fingerprint)}">${e(r.rule_id)} — ${e(r.title)}</button><span class="cell-sub">${r.escalates === row.fingerprint ? 'Bu topilmani kuchaytiradi' : r.duplicate_of === row.fingerprint ? 'Shu topilmaning takrori' : 'Bog‘liq'}</span></p>`).join('')}` : ''}
         <h3>Qaror</h3>
         <form id="drawer-triage">
