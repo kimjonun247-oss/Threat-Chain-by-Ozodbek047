@@ -1,0 +1,54 @@
+# Keep the build context small and clean. Scanners, the rule pack and CodeQL are
+# rebuilt inside the image by setup_all.py / setup_codeql.py, so none of the local
+# copies are copied in; runtime state never enters the image.
+.git
+.gitignore
+**/__pycache__/
+*.pyc
+*.tmp
+
+# Frontend dev tree (dist/ is committed and copied; node_modules is not needed).
+web/node_modules/
+
+# Scanner binaries, rule pack and CodeQL -- rebuilt in-image.
+.tools/
+scanner-rules/semgrep-registry/
+scanner-rules/semgrep-merged.yml
+
+# Virtualenvs.
+.venv/
+venv/
+
+# Scan outputs and local state (regenerated or created at runtime).
+runs/
+iac-runs/
+web-runs/
+image-runs/
+scanner-runs/
+dependency-runs/
+repository-runs/
+assessment-runs/
+validation-runs/
+advisory-cache/
+audit/
+jobs/
+work/
+profiles/settings.json
+profiles/users.json
+profiles/triage/
+profiles/schedules/
+profiles/local/
+pilot/runtime/
+pilot/evidence/
+pilot/tls-runs/
+
+# Editor / OS / tooling noise.
+.DS_Store
+**/.DS_Store
+.claude/
+.openai/
+
+# The image build does not need these.
+Dockerfile
+docker-compose.yml
+.dockerignore

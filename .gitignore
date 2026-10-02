@@ -50,3 +50,7 @@ jobs/
 
 # Dashboard dev tools (npm ci in web/); dist/ is the committed build output.
 web/node_modules/
+
+# Docker: skanerlanadigan nishonlar (mazmuni kuzatilmaydi)
+targets/*
+!targets/README.md

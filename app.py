@@ -844,7 +844,18 @@ LOOPBACK = ('127.0.0.1', 'localhost', '::1')
 def make_server(args, parser):
     """The HTTP(S) server; refuses a team setup that would expose data unprotected."""
     import ssl
-    loopback = args.bind in LOOPBACK
+    # THREATCHAIN_TRUST_BIND=1 lets the server bind 0.0.0.0 without TLS. It exists
+    # for the container image, where the app must bind 0.0.0.0 to be reachable
+    # through Docker's port forwarder, yet the published port is mapped only to the
+    # host's loopback (127.0.0.1:8765 in docker-compose.yml) -- so nothing on the
+    # network can reach it, exactly as a plain loopback bind. Setting it while
+    # publishing the port to a routable address exposes data unprotected: that is
+    # the operator's deliberate choice, named so it can never happen by accident.
+    trusted = os.environ.get('THREATCHAIN_TRUST_BIND') == '1'
+    loopback = args.bind in LOOPBACK or trusted
+    if trusted and args.bind not in LOOPBACK:
+        print(f'THREATCHAIN_TRUST_BIND=1: {args.bind} ishonchli deb qabul qilindi '
+              '(port faqat host loopback’iga ochilishi kerak).', file=sys.stderr)
     if bool(args.tls_cert) != bool(args.tls_key):
         parser.error('--tls-cert va --tls-key birga beriladi.')
     if not loopback:
