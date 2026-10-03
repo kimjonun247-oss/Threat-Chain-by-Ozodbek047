@@ -166,7 +166,12 @@ def crapi_root():
     if override:
         return Path(override)
     candidates=[ROOT/'work/repositories/crapi-stable']
-    candidates.append(ROOT.parents[1]/'work/repositories/crapi-stable')
+    # The historical sibling checkout sits two levels above the application
+    # folder. In a container the app lives at /app, which has no grandparent, so
+    # guard the index -- otherwise readiness and every target listing raise
+    # IndexError. ROOT/'work/...' above still covers the in-folder copy.
+    if len(ROOT.parents)>=2:
+        candidates.append(ROOT.parents[1]/'work/repositories/crapi-stable')
     for candidate in candidates:
         try:
             if candidate.is_dir():return candidate

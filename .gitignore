@@ -54,3 +54,6 @@ web/node_modules/
 # Docker: skanerlanadigan nishonlar (mazmuni kuzatilmaydi)
 targets/*
 !targets/README.md
+
+# Docker build uchun oldindan yuklangan CodeQL bundle (katta, commit qilinmaydi)
+vendor-cache/

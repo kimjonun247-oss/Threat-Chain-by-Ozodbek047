@@ -33,14 +33,23 @@ RUN for i in 1 2 3; do \
     done; \
     python3 setup_all.py
 
-# CodeQL (~0.9 GB) in its own layer, with retries: the download can truncate under
-# emulation, and the SHA-256 check then rejects the partial file. Retry up to three
-# times, then verify the binary is actually present so a still-missing CodeQL fails
-# the build rather than shipping a half-installed image.
-RUN for i in 1 2 3; do \
-      python3 setup_codeql.py && break || { echo "CodeQL urinish $i muvaffaqiyatsiz, qayta…"; sleep 5; }; \
-    done; \
-    test -x .tools/codeql/codeql/codeql
+# CodeQL (~0.9 GB) deep analysis, in its own layer. On by default; build with
+#   --build-arg WITH_CODEQL=0
+# to skip it on a slow or constrained network and add it later inside the running
+# container (`docker exec <container> python3 setup_codeql.py`). The six core stages
+# (code, repository, dependencies, images, iac, web) and every chain rule work
+# without it. Retried: the download can truncate under emulation and the SHA-256
+# check then rejects the partial file; a still-missing CodeQL fails the build rather
+# than shipping a half-installed image.
+ARG WITH_CODEQL=1
+RUN if [ "$WITH_CODEQL" = "1" ]; then \
+      for i in 1 2 3; do \
+        python3 setup_codeql.py && break || { echo "CodeQL urinish $i muvaffaqiyatsiz, qayta…"; sleep 5; }; \
+      done; \
+      test -x .tools/codeql/codeql/codeql; \
+    else \
+      echo "CodeQL o‘tkazib yuborildi (WITH_CODEQL=0). Keyin: docker exec <konteyner> python3 setup_codeql.py"; \
+    fi
 
 # The server binds 0.0.0.0 so Docker's port forwarder can reach it; the published
 # port is mapped only to the host loopback (see docker-compose.yml), so nothing on
