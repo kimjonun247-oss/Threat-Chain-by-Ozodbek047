@@ -57,3 +57,6 @@ targets/*
 
 # Docker build uchun oldindan yuklangan CodeQL bundle (katta, commit qilinmaydi)
 vendor-cache/
+
+# Eksport qilingan Docker image arxivlari
+*.tar.gz
