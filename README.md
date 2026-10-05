@@ -43,7 +43,7 @@ python3 verify_platform.py    # vositalar, testlar, haqiqiy skan, zanjir qoidala
 
 | Narsa | Kerakmi | Izoh |
 |---|---|---|
-| **Python 3** | majburiy | 3.13 da sinalgan |
+| **Python 3** | majburiy | 3.14 da sinalgan |
 | **Internet** | majburiy | "Doim online" dizayn: `setup_all` binarlarni yuklaydi; skan vaqtida OSV/NVD so'raladi |
 | **Docker** (Colima yoki Docker Desktop) | faqat image skani uchun | Docker'siz ham kod / CVE / IaC / web bosqichlari to'liq ishlaydi |
 | **Java** | faqat PMD / Apex (`.cls`, `.trigger`) uchun | Aks holda kerak emas |

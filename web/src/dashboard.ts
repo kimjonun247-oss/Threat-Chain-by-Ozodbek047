@@ -155,7 +155,12 @@
       <span class="feed-count ${r.state === 'completed' ? '' : 'state-partial'}">${r.count ?? '—'}</span></li>`).join('')}</ul>`;
   }
 
-  async function load() {
+  async function load(btn?: HTMLButtonElement) {
+    // The refresh button re-fetches identical data when nothing changed, so
+    // without a visible signal it looks dead. Spin and disable it while the
+    // request is in flight, and stamp the time so a no-change refresh is still
+    // visibly a refresh.
+    if (btn) { btn.classList.add('spinning'); btn.disabled = true; }
     try {
       const d = await api('/api/dashboard');
       document.dispatchEvent(new CustomEvent('dashboard-data', {detail: d}));
@@ -163,6 +168,7 @@
       const gaps = c.unscanned + c.incomplete;
       const decided = t.findings - (st.untriaged || 0);
       $('dash').innerHTML = `
+      <p class="refresh-stamp">${icon('i-refresh')} Yangilandi: ${e(new Date().toLocaleTimeString())}</p>
       <div class="tile-row">
         ${tile(t.findings, 'Jami topilma', 'i-shield', 'tone-teal', 'findings', 'Ro‘yxatni ochish')}
         ${tile(t.severity.CRITICAL, 'Kritik topilma', 'i-alert', 'tone-red', 'findings', 'Topilmalar')}
@@ -219,6 +225,7 @@
         <p class="cell-sub">${e(t.note)}</p>
       </section>`;
     } catch (error) { showError(error); }
+    finally { if (btn) { btn.classList.remove('spinning'); btn.disabled = false; } }
   }
 
   /* The tiles are rebuilt on every load, so their links are handled here rather
@@ -227,7 +234,7 @@
     const link = (event.target as Field).closest('[data-goto]');
     if (link) view(link.dataset.goto ?? '');
   });
-  $('readiness-refresh').addEventListener('click', load);
+  $('readiness-refresh').addEventListener('click', event => load(event.currentTarget as HTMLButtonElement));
   $('open-assessment').addEventListener('click', () => view('assessments'));
   document.addEventListener('view-shown', event => { if ((event as CustomEvent).detail === 'readiness') load(); });
 })();

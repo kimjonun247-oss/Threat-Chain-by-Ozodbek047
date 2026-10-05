@@ -147,7 +147,11 @@
       <span class="cell-sub">${e(time(r.created_at))}</span></span>
       <span class="feed-count ${r.state === "completed" ? "" : "state-partial"}">${r.count ?? "—"}</span></li>`).join("")}</ul>`;
   }
-  async function load() {
+  async function load(btn) {
+    if (btn) {
+      btn.classList.add("spinning");
+      btn.disabled = true;
+    }
     try {
       const d = await api("/api/dashboard");
       document.dispatchEvent(new CustomEvent("dashboard-data", { detail: d }));
@@ -155,6 +159,7 @@
       const gaps = c.unscanned + c.incomplete;
       const decided = t.findings - (st.untriaged || 0);
       $("dash").innerHTML = `
+      <p class="refresh-stamp">${icon("i-refresh")} Yangilandi: ${e((/* @__PURE__ */ new Date()).toLocaleTimeString())}</p>
       <div class="tile-row">
         ${tile(t.findings, "Jami topilma", "i-shield", "tone-teal", "findings", "Ro‘yxatni ochish")}
         ${tile(t.severity.CRITICAL, "Kritik topilma", "i-alert", "tone-red", "findings", "Topilmalar")}
@@ -217,13 +222,18 @@
       </section>`;
     } catch (error) {
       showError(error);
+    } finally {
+      if (btn) {
+        btn.classList.remove("spinning");
+        btn.disabled = false;
+      }
     }
   }
   $("dash").addEventListener("click", (event) => {
     const link = event.target.closest("[data-goto]");
     if (link) view(link.dataset.goto ?? "");
   });
-  $("readiness-refresh").addEventListener("click", load);
+  $("readiness-refresh").addEventListener("click", (event) => load(event.currentTarget));
   $("open-assessment").addEventListener("click", () => view("assessments"));
   document.addEventListener("view-shown", (event) => {
     if (event.detail === "readiness") load();

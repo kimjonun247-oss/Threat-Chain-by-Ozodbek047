@@ -41,7 +41,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: '3.14'
 
       - name: Skaner vositalarini o'rnatish (rasmiy reliz, SHA-256 tekshiriladi)
         working-directory: threatchain

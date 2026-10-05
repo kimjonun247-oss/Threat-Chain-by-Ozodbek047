@@ -8,7 +8,7 @@
 # Pinned to linux/amd64 on purpose: the CodeQL bundle is x86_64-only, so pinning
 # the whole image keeps every tool on one architecture (it runs under emulation
 # on Apple Silicon / arm64 hosts).
-FROM --platform=linux/amd64 python:3.13-slim-bookworm
+FROM --platform=linux/amd64 python:3.14-slim-bookworm
 
 # git             -- remote-repo scans, Gitleaks history, Semgrep rule-pack fetch
 # default-jre     -- PMD (Apex / Java rules)
