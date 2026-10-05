@@ -26,6 +26,7 @@ from urllib.parse import urlsplit, urljoin
 
 from .engine import ROOT, DATA
 from . import priority, repo_store, scanners, taxonomy, run_index, findings as findings_mod, triage
+from . import api_inventory
 from . import verification as verification_mod
 from . import scan_window as scan_window_mod
 from vendor import yaml
@@ -183,6 +184,23 @@ def canonical_url(value):
         raise ValueError('URL bazaviy yo‘li oddiy segmentlardan iborat bo‘lsin.')
     authority = host + (':' + str(port) if port != (443 if parts.scheme == 'https' else 80) else '')
     return f'{parts.scheme}://{authority}{path}'
+
+
+def source_root_for(profile):
+    """The source directory of the repository project sharing this web target's
+    id, if one is registered -- so the API inventory can read spec files the
+    running app may not expose. None when there is no linked, readable source."""
+    try:
+        source = repo_store.profile_for(profile['id'])
+    except (ValueError, KeyError, OSError):
+        return None
+    root = Path(source.get('root') or '')
+    if not root.is_absolute():
+        root = ROOT / root
+    try:
+        return root if root.is_dir() else None
+    except OSError:
+        return None
 
 
 def register(target, url, owner, allow_private=False, authenticated=False, rate_delay_seconds=None, replace=False,
@@ -1076,6 +1094,13 @@ def execute(profile, rid, event):
         report['findings'] += fingerprint_findings(collector, pages)
         report['findings'] += error_disclosure_findings(collector, pages)
         report['findings'] += directory_listing_findings(collector, pages)
+        # Documented API surface: live spec URLs plus any spec in the linked
+        # source repo, then one unauthenticated GET per static endpoint. GET only,
+        # same bounded collector, no parameter guessing (see api_inventory).
+        api_findings, report['api_inventory'] = api_inventory.inventory_findings(
+            collector, finding, source_root=source_root_for(profile),
+            authenticated=bool(profile.get('authenticated')))
+        report['findings'] += api_findings
         missing_status, _, missing_body = collector.fetch(missing)
         report.update(count=len(report['findings']), progress='Nuclei tanlangan GET qoidalarini bajarmoqda.')
         repo_store.write_json(folder / 'report.json', report)

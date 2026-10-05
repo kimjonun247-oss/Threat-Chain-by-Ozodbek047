@@ -112,6 +112,9 @@ RULE_CWE = {
     # RP-009 alias traversal, RP-010 SSRF through a client-controlled upstream,
     # RP-011 security headers silently dropped by nginx's add_header rules.
     'RP-009': [22], 'RP-010': [918], 'RP-011': [693],
+    # API inventory: an exposed spec leaks the API surface (CWE-200); a
+    # documented endpoint reachable without auth is missing authorization (CWE-862).
+    'api-spec-exposed': [200], 'api-endpoint-unauthenticated': [862],
     'cors-reflected-origin-credentials': [942], 'cors-wildcard-credentials': [942],
     'cookie-missing-secure': [614], 'cookie-missing-httponly': [1004],
     'server-fingerprint': [200], 'error-disclosure': [209],
