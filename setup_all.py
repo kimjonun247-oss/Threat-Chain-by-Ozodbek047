@@ -41,6 +41,9 @@ STEPS = (
     {'key': 'pmd', 'script': 'setup_pmd.py', 'supports_force': False,
      'title': 'PMD (Apex/Salesforce kodi; Java kerak)',
      'needed_for': 'Apex kodini tekshirish', 'optional': True},
+    {'key': 'cwe', 'script': 'setup_cwe.py', 'supports_force': False,
+     'title': 'CWE → OWASP xaritasi (MITRE katalogidan)',
+     'needed_for': 'OWASP toifalashning eng yangi holati (asos xarita baribir ichkarida)', 'optional': True},
 )
 
 

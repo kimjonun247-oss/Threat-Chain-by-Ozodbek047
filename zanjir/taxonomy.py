@@ -13,8 +13,15 @@ guessed into a category (e.g. CWE-400 "Uncontrolled Resource Consumption" and
 CWE-1333 "Inefficient Regular Expression Complexity" were checked directly
 and are NOT members of any OWASP Top 10:2025 category, unlike some informal
 2021-era mappings that grouped them under Insecure Design).
+
+The baseline below is hand-verified and always ships. `setup_cwe.py` can refresh
+it from MITRE's own catalog into scanner-rules/cwe-owasp.json; when that file is
+present and valid it REPLACES the baseline at import, so a new CWE release updates
+the tagging without editing this file (see _load_generated_owasp_map below).
 """
+import json
 import re
+from pathlib import Path
 
 OWASP_TOP10_2025 = {
     'A01': 'A01:2025 – Broken Access Control',
@@ -84,6 +91,35 @@ CWE_TO_OWASP = {
     460:'A10',476:'A10',478:'A10',484:'A10',550:'A10',636:'A10',703:'A10',
     754:'A10',755:'A10',756:'A10',
 }
+
+# Optional refresh of the map above from MITRE's catalog (setup_cwe.py).
+GENERATED_OWASP_MAP = Path(__file__).resolve().parents[1] / 'scanner-rules' / 'cwe-owasp.json'
+
+
+def _load_generated_owasp_map(path=GENERATED_OWASP_MAP):
+    """The MITRE-regenerated CWE->OWASP map when it is present and valid, else None.
+
+    A genuine OWASP Top 10 map covers all ten categories and many CWEs; anything
+    smaller or malformed is treated as corrupt so the hand-verified baseline is
+    kept. Every value must be a well-formed A01..A10 code.
+    """
+    try:
+        data = json.loads(Path(path).read_text(encoding='utf-8'))
+        raw = data.get('map') if isinstance(data, dict) else None
+        if not isinstance(raw, dict):
+            return None
+        loaded = {int(k): v for k, v in raw.items()
+                  if isinstance(v, str) and re.fullmatch(r'A\d\d', v)}
+        if len(loaded) >= 100 and set(loaded.values()) == set(OWASP_TOP10_2025):
+            return loaded
+    except (OSError, ValueError, TypeError):
+        pass
+    return None
+
+
+_generated = _load_generated_owasp_map()
+if _generated is not None:
+    CWE_TO_OWASP = _generated
 
 # Findings whose exact CWE is known ahead of time (this project's own rules,
 # fixed Nuclei templates and fixed HTTP header checks). Keyed by rule/finding id.

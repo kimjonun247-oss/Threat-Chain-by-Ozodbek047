@@ -60,3 +60,6 @@ vendor-cache/
 
 # Eksport qilingan Docker image arxivlari
 *.tar.gz
+
+# setup_cwe.py yaratadigan CWE->OWASP xaritasi (asos xarita taxonomy.py ichida)
+scanner-rules/cwe-owasp.json
