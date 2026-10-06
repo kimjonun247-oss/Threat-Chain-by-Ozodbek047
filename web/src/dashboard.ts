@@ -168,7 +168,7 @@
       const gaps = c.unscanned + c.incomplete;
       const decided = t.findings - (st.untriaged || 0);
       $('dash').innerHTML = `
-      <p class="refresh-stamp">${icon('i-refresh')} Yangilandi: ${e(new Date().toLocaleTimeString())}</p>
+      <p class="refresh-stamp">${e(new Date().toLocaleTimeString())}</p>
       <div class="tile-row">
         ${tile(t.findings, 'Jami topilma', 'i-shield', 'tone-teal', 'findings', 'Ro‘yxatni ochish')}
         ${tile(t.severity.CRITICAL, 'Kritik topilma', 'i-alert', 'tone-red', 'findings', 'Topilmalar')}

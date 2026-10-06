@@ -267,7 +267,11 @@
   $('findings-bulk').querySelectorAll('[data-bulk]').forEach(button =>
     button.addEventListener('click', () => bulkDecide(button.dataset.bulk ?? '')));
   $('findings-clear-selection').addEventListener('click', () => { state.selected.clear(); paint(); });
-  $('findings-refresh').addEventListener('click', load);
+  $('findings-refresh').addEventListener('click', event => {
+    const btn = event.currentTarget as HTMLButtonElement;
+    btn.classList.add('spinning'); btn.disabled = true;
+    Promise.resolve(load()).finally(() => { btn.classList.remove('spinning'); btn.disabled = false; });
+  });
   $('findings-reset').addEventListener('click', () => { state.filters = {}; state.offset = 0; load(); });
   $('findings-prev').addEventListener('click', () => { state.offset = Math.max(0, state.offset - state.limit); load(); });
   $('findings-next').addEventListener('click', () => { state.offset += state.limit; load(); });

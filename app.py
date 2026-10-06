@@ -605,6 +605,8 @@ class Handler(BaseHTTPRequestHandler):
                                                        requested_by=(self._user or {}).get('name')))
                 if path == '/api/jobs/cancel' and set(payload) == {'id'}:
                     return self.send(200, jobs.cancel(payload['id']))
+                if path == '/api/jobs/remove' and set(payload) == {'id'}:
+                    return self.send(200, jobs.remove(payload['id']))
                 if path == '/api/schedules':
                     return self.send(200, jobs.save_schedule(payload))
                 if path == '/api/schedules/remove' and set(payload) == {'id'}:

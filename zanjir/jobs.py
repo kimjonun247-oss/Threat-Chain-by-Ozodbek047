@@ -151,6 +151,21 @@ def cancel(job_id):
     return {**job, 'message': 'Bekor qilish so‘raldi.'}
 
 
+def remove(job_id):
+    """Remove a finished entry from the queue list. An active job (queued, waiting
+    or running) cannot be removed -- cancel it first, so a scan still in flight is
+    never silently dropped from the record. The scan's own report is untouched."""
+    with _LOCK:
+        jobs = load()
+        job = next((j for j in jobs if j['id'] == job_id), None)
+        if job is None:
+            raise ValueError('Bunday navbat yozuvi yo‘q.')
+        if job['state'] not in FINAL:
+            raise ValueError('Faol yozuvni o‘chirib bo‘lmaydi — avval bekor qiling.')
+        save([j for j in jobs if j['id'] != job_id])
+    return {'removed': job_id}
+
+
 def listing():
     jobs = load()
     return {'jobs': list(reversed(jobs))[:200], 'schedules': schedules(),

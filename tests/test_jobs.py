@@ -154,6 +154,22 @@ class QueueTests(Isolated):
         self.assertEqual(jobs.cancel(job['id'])['state'], 'cancelled')
         self.assertEqual(jobs.tick(), [])
 
+    def test_removing_a_finished_job_drops_it_from_the_list(self):
+        job = jobs.enqueue('code', 'a')
+        jobs.cancel(job['id'])                       # -> cancelled (a FINAL state)
+        self.assertEqual(jobs.remove(job['id']), {'removed': job['id']})
+        self.assertEqual(jobs.load(), [])
+
+    def test_an_active_job_cannot_be_removed(self):
+        job = jobs.enqueue('code', 'a')              # queued, not final
+        with self.assertRaises(ValueError):
+            jobs.remove(job['id'])
+        self.assertEqual(len(jobs.load()), 1)        # still there
+
+    def test_removing_an_unknown_job_raises(self):
+        with self.assertRaises(ValueError):
+            jobs.remove('no-such-id')
+
     def test_a_job_running_when_the_server_stopped_is_marked_interrupted(self):
         jobs.save([{'id': 'x', 'kind': 'code', 'target': 'a', 'state': 'running', 'payload': None}])
         jobs.recover()

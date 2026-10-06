@@ -274,7 +274,15 @@
     state.selected.clear();
     paint();
   });
-  $("findings-refresh").addEventListener("click", load);
+  $("findings-refresh").addEventListener("click", (event) => {
+    const btn = event.currentTarget;
+    btn.classList.add("spinning");
+    btn.disabled = true;
+    Promise.resolve(load()).finally(() => {
+      btn.classList.remove("spinning");
+      btn.disabled = false;
+    });
+  });
   $("findings-reset").addEventListener("click", () => {
     state.filters = {};
     state.offset = 0;
