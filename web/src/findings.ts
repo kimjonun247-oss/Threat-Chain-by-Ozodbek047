@@ -13,8 +13,8 @@
      - filters live in the URL, so a view can be handed to someone else. */
 (() => {
   const e = escapeHTML;
-  const KEYS = ['q', 'stage', 'project', 'severity', 'owasp', 'status', 'state', 'target'];
-  const FACET_TITLES = {severity: 'Og‘irlik', stage: 'Skaner', project: 'Loyiha', owasp: 'OWASP', status: 'Holat'};
+  const KEYS = ['q', 'stage', 'project', 'severity', 'status', 'state', 'target'];
+  const FACET_TITLES = {severity: 'Og‘irlik', stage: 'Skaner', project: 'Loyiha', status: 'Holat'};
   const STAGE_NAMES: Record<string, string> = {code: 'Kod', dependencies: 'CVE', images: 'Image', web: 'Sayt', iac: 'IaC',
                        repository: 'Repository', chain: 'Zanjir'};
   // Who fixes it -- a routing tag, not a split of the project: every finding
@@ -113,15 +113,14 @@
             <span class="cell-sub">${e(row.rule_id)} · ${e(row.subject)}</span>
             <span class="cell-sub">${tags(row)}</span></td>
         <td>${e(STAGE_NAMES[row.stage] || row.stage)}<span class="cell-sub">${e(row.target)}</span></td>
-        <td>${(row.owasp || []).map((o: ApiData) => `<span class="tag">${e(o)}</span>`).join('') || '<span class="cell-sub">—</span>'}
-            <span class="cell-sub">${e((row.cwe_ids || []).join(', ') || 'CWE yo‘q')}</span></td>
+        <td>${e((row.cwe_ids || []).join(', ') || 'CWE yo‘q')}</td>
         <td>${e(STATUS_NAMES[row.status || 'untriaged'])}<span class="cell-sub">${row.owner ? e(row.owner) : ''}</span></td>
         <td><span class="cell-sub">${row.first_seen ? e(time(row.first_seen)) : 'noma’lum'}</span></td>
       </tr>`;
     }).join('');
     return `<table class="findings-table"><thead><tr>
       <th><input type="checkbox" id="findings-all" aria-label="Sahifadagi hammasini tanlash"></th>
-      <th>Og‘irlik</th><th>Topilma</th><th>Skaner / nishon</th><th>OWASP / CWE</th><th>Holat</th><th>Birinchi ko‘rilgan</th>
+      <th>Og‘irlik</th><th>Topilma</th><th>Skaner / nishon</th><th>CWE</th><th>Holat</th><th>Birinchi ko‘rilgan</th>
     </tr></thead><tbody>${body}</tbody></table>`;
   }
 
@@ -199,7 +198,7 @@
           <tr><td>Nishon</td><td>${e(row.target)}</td></tr>
           <tr><td>Loyiha</td><td>${e(row.project || '—')}</td></tr>
           <tr><td>Joy</td><td>${e(row.subject || '—')}</td></tr>
-          <tr><td>CWE / OWASP</td><td>${e((row.cwe_ids || []).join(', ') || '—')} ${(row.owasp || []).map((o: ApiData) => `<span class="tag">${e(o)}</span>`).join('')}</td></tr>
+          <tr><td>CWE</td><td>${e((row.cwe_ids || []).join(', ') || '—')}</td></tr>
           <tr><td>SLA</td><td>${e(sla)}</td></tr>
           <tr><td>Birinchi / oxirgi ko‘rilgan</td><td>${row.first_seen ? e(time(row.first_seen)) : '—'} / ${row.last_seen ? e(time(row.last_seen)) : '—'}</td></tr>
           <tr><td>Hisobot</td><td>${e(row.report_id)} · ${e(row.report_state)}</td></tr>
