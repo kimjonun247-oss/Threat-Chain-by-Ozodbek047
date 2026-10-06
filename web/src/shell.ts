@@ -522,7 +522,7 @@
      lists the same rows as the dashboard feed (server: dashboard.recent_scans)
      and opens the stage a row belongs to. Refreshed whenever a view is shown,
      so a scan finished in one section appears without a page reload. */
-  const STAGE_TITLE: Record<string, string> = {code: 'Kod', dependencies: 'CVE', iac: 'IaC', images: 'Image', web: 'Sayt', repository: 'Repository'};
+  const STAGE_TITLE: Record<string, string> = {code: 'Kod', dependencies: 'CVE', iac: 'IaC', images: 'Image', web: 'Sayt', repository: 'Compose'};
   const STATE_TITLE: Record<string, string> = {completed: 'tugadi', partial: 'qisman', failed: 'yiqildi', running: 'ishlamoqda', queued: 'navbatda',
                        cancelled: 'bekor qilindi', no_supported_packages: 'manifest yo‘q'};
   // Fed by the overview's own /api/dashboard answer (dashboard-data) instead of a

@@ -519,3 +519,6 @@ button.spinning { opacity: 0.7; cursor: progress; }
 button.danger{background:var(--red-bg);color:var(--red);border:1px solid #f3ccd2;border-radius:var(--radius-sm);padding:9px 15px;font-weight:600;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
 button.danger:hover{background:#fbdfe3}
 button.danger .ic{width:1em;height:1em}
+
+/* Plain-language one-liner under a section title, for first-time users. */
+.section-intro{margin:4px 0 0;color:var(--muted);font-size:13.5px;max-width:70ch;line-height:1.45}

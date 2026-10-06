@@ -577,7 +577,7 @@
     event.preventDefault();
     runSearch();
   });
-  const STAGE_TITLE = { code: "Kod", dependencies: "CVE", iac: "IaC", images: "Image", web: "Sayt", repository: "Repository" };
+  const STAGE_TITLE = { code: "Kod", dependencies: "CVE", iac: "IaC", images: "Image", web: "Sayt", repository: "Compose" };
   const STATE_TITLE = {
     completed: "tugadi",
     partial: "qisman",

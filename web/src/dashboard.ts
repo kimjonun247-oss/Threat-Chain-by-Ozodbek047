@@ -22,7 +22,7 @@
                  A04: 'A04 · Kriptografiya', A05: 'A05 · Injection', A06: 'A06 · Xavfli dizayn',
                  A07: 'A07 · Autentifikatsiya', A08: 'A08 · Yaxlitlik', A09: 'A09 · Jurnal va monitoring',
                  A10: 'A10 · Istisno holatlar'};
-  const STAGE: Record<string, string[]> = {code: ['Kod', 'i-code'], repository: ['Repository', 'i-server'], dependencies: ['CVE', 'i-package'],
+  const STAGE: Record<string, string[]> = {code: ['Kod', 'i-code'], repository: ['Compose', 'i-server'], dependencies: ['CVE', 'i-package'],
                  iac: ['IaC', 'i-sliders'], images: ['Image', 'i-box'], web: ['Sayt', 'i-globe'],
                  chain: ['Zanjir', 'i-link']};
   const STATE_ICON: Record<string, string> = {completed: 'i-check', partial: 'i-alert', failed: 'i-x', cancelled: 'i-x',

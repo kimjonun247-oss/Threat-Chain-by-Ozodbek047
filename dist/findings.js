@@ -10,7 +10,7 @@
     images: "Image",
     web: "Sayt",
     iac: "IaC",
-    repository: "Repository",
+    repository: "Compose",
     chain: "Zanjir"
   };
   const ROLE_BY_STAGE = {

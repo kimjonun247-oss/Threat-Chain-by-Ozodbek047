@@ -16,7 +16,7 @@
   const KEYS = ['q', 'stage', 'project', 'severity', 'status', 'state', 'target'];
   const FACET_TITLES = {severity: 'Og‘irlik', stage: 'Skaner', project: 'Loyiha', status: 'Holat'};
   const STAGE_NAMES: Record<string, string> = {code: 'Kod', dependencies: 'CVE', images: 'Image', web: 'Sayt', iac: 'IaC',
-                       repository: 'Repository', chain: 'Zanjir'};
+                       repository: 'Compose', chain: 'Zanjir'};
   // Who fixes it -- a routing tag, not a split of the project: every finding
   // still sits in one list. Code and its libraries are the developer's; the
   // Compose/image/IaC layers are DevOps'; a live-site finding is the network's.

@@ -27,7 +27,7 @@
   };
   const STAGE = {
     code: ["Kod", "i-code"],
-    repository: ["Repository", "i-server"],
+    repository: ["Compose", "i-server"],
     dependencies: ["CVE", "i-package"],
     iac: ["IaC", "i-sliders"],
     images: ["Image", "i-box"],
