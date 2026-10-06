@@ -17,7 +17,7 @@ from urllib.parse import urlsplit, parse_qs
 from zanjir.engine import ROOT
 from zanjir import repo_store
 from zanjir import scanners, dependencies, images, readiness, webscan, pipeline, custom_rules, portfolio, triage, baseline, iac, sbom
-from zanjir import findings_index, settings, code_targets, dashboard, browse, jobs, notify, auth
+from zanjir import findings_index, settings, code_targets, dashboard, browse, jobs, notify, auth, reset
 from zanjir.repository import scan_repository, sarif
 
 RUN_LOCK = threading.Lock()
@@ -597,8 +597,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(400, {'error': str(error)})
         if path.startswith('/api/jobs') or path.startswith('/api/schedules') or path.startswith('/api/notifications') \
                 or path in ('/api/settings/notifications', '/api/settings/queue', '/api/settings/deep-analysis',
-                            '/api/settings/allow-registration'):
+                            '/api/settings/allow-registration', '/api/reset/results'):
             try:
+                if path == '/api/reset/results' and payload.get('confirm') is True:
+                    return self.send(200, reset.clear_results())
                 if path == '/api/jobs' and {'kind'} <= set(payload) <= {'kind', 'target', 'payload', 'notify'}:
                     return self.send(202, jobs.enqueue(payload['kind'], payload.get('target'), payload.get('payload'),
                                                        notify=payload.get('notify', 'never'),

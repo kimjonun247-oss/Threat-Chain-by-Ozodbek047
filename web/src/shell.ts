@@ -285,6 +285,10 @@
         ${audit ? `<h3>Audit jurnali (so‘nggi 100)</h3>
         <p class="hint-text">Foydalanuvchilar: ${audit.users.map((u: ApiData) => e(u.name) + ' (' + e(u.role) + ')').join(', ')}. Foydalanuvchilar faqat server konsolida boshqariladi: <code>python3 app.py --add-user ISM --role operator</code>.</p>
         <div class="audit-list table-wrap"><table><thead><tr><th>Vaqt</th><th>Kim</th><th>Amal</th><th>Kod</th><th>Manzil</th><th>ID’lar</th></tr></thead><tbody>${auditRows}</tbody></table></div>` : ''}
+        <h3>Natijalarni tozalash</h3>
+        <p class="hint-text">Barcha skan natijalarini — hisobotlar va qarorlarni — o‘chiradi. Ro‘yxatga olingan nishonlar, sozlamalar va o‘rnatilgan vositalar saqlanadi. Yangi tizimni tekshirishdan oldin eski natijalar aralashib ketmasligi uchun ishlating.</p>
+        <div class="modal-actions"><button type="button" class="danger" id="settings-clear-results"><svg class="ic"><use href="#i-x"/></svg> Barcha natijalarni tozalash</button></div>
+        <p class="modal-feedback" id="clear-feedback"></p>
         <h3>Muhit</h3>
         <table class="kv"><tbody>
           <tr><td>Versiya</td><td>${e(status.version || '—')}</td></tr>
@@ -293,6 +297,14 @@
           <tr><td>Kod barmoq izi</td><td>${e(status.code_fingerprint || '—')}</td></tr>
         </tbody></table>
 `, (box: Field) => {
+        box.querySelector('#settings-clear-results').addEventListener('click', async () => {
+          if (!confirm('Barcha skan natijalari (hisobotlar va qarorlar) o‘chiriladi. Nishonlar va sozlamalar saqlanadi. Davom etilsinmi?')) return;
+          try {
+            const result = await api('/api/reset/results', {confirm: true});
+            box.querySelector('#clear-feedback').textContent = `Tozalandi: ${result.total} ta yozuv o‘chirildi. Dashboard yangilandi.`;
+            document.dispatchEvent(new CustomEvent('view-shown', {detail: 'readiness'}));
+          } catch (error) { showError(error); }
+        });
         box.querySelector('#settings-nvd').addEventListener('submit', (event: Event) => {
           event.preventDefault();
           const value = formData((event.target as Field)).get('key').trim();
