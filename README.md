@@ -11,6 +11,87 @@ zanjiri (SX-001…003). Python bog'liqliklari: **0 ta**.
 Ochiq qolgani ikkita, ikkalasi ham kod nuqsoni emas: Windows natijasining o'zi (faqat Windows
 mashinasi bera oladi) va Colima diski bo'yicha operator qarori. Tafsilot: [MUAMMOLAR.md](MUAMMOLAR.md).
 
+## Boshlash (yangi kompyuterda)
+
+Loyiha toza klonda ishlashga mo'ljallangan: `dist/` omborga kiritilgan (ishga tushirish uchun
+Node/npm **kerak emas**) va Python bog'liqliklari **0 ta** (core faqat standart kutubxona + ichki
+`vendor/yaml` bilan ishlaydi, `pip install` shart emas).
+
+```bash
+git clone https://github.com/kimjonun247-oss/Kim-Jon-Un.git
+cd Kim-Jon-Un
+python3 setup_all.py          # skanerlar: semgrep (venv) + gitleaks + trivy + nuclei + PMD
+                              # va rasmiy qoida paketi — hammasi pinlangan versiya + SHA-256 bilan
+python3 app.py --port 8765    # serverni ishga tushiradi
+```
+
+So'ng brauzerda: **http://127.0.0.1:8765**
+
+Ixtiyoriy chuqur tahlil:
+
+```bash
+python3 setup_codeql.py       # CodeQL bundle, ~0.9 GB (ixtiyoriy — [Ixtiyoriy chuqur tahlil] bo'limiga qarang)
+```
+
+Yangi mashinada hammasi joyidaligini bitta buyruq tasdiqlaydi:
+
+```bash
+python3 verify_platform.py    # vositalar, testlar, haqiqiy skan, zanjir qoidalari, CI gate
+```
+
+### Talablar
+
+| Narsa | Kerakmi | Izoh |
+|---|---|---|
+| **Python 3** | majburiy | 3.14 da sinalgan |
+| **Internet** | majburiy | "Doim online" dizayn: `setup_all` binarlarni yuklaydi; skan vaqtida OSV/NVD so'raladi |
+| **Docker** (Colima yoki Docker Desktop) | faqat image skani uchun | Docker'siz ham kod / CVE / IaC / web bosqichlari to'liq ishlaydi |
+| **Java** | faqat PMD / Apex (`.cls`, `.trigger`) uchun | Aks holda kerak emas |
+| `cryptography`, `NVD_API_KEY` | ixtiyoriy | TLS test-sertifikati / tezroq CVE boyitish |
+
+`setup_all.py` yarim o'rnatishga chidamli: bitta vosita yiqilsa qolganlari baribir o'rnatiladi va
+qaysi biri ishlamagani aytiladi. Mahalliy holat (`.tools/`, skan natijalari, foydalanuvchilar, NVD
+kaliti) `.gitignore` da — ya'ni klon toza boshlanadi, eski ma'lumot ko'chmaydi.
+
+**Platforma:** macOS / Linux to'liq. Windows uchun `VERIFY-WINDOWS.cmd` bor va Windows'ga xos
+nuqsonlar auditdan o'tgan, lekin haqiqiy Windows yurish-natijasi hali tasdiqlanmagan.
+
+## Docker bilan ishga tushirish (hech narsa o'rnatmasdan)
+
+Yangi kompyuterda `setup_all.py` ham, Java ham, venv ham o'rnatishni istamasangiz — barcha skaner
+(Semgrep, Gitleaks, Trivy, Nuclei, PMD) va CodeQL bundle **image ichiga pishirilgan**. Kompyuterда
+faqat **Docker** bo'lishi kerak:
+
+```bash
+git clone https://github.com/kimjonun247-oss/Kim-Jon-Un.git
+cd Kim-Jon-Un
+docker compose up --build        # birinchi marta: image quriladi (CodeQL tufayli ~3 GB, bir martalik)
+```
+
+So'ng brauzerda: **http://127.0.0.1:8765**
+
+- **Faqat host loopback'iga ochiq.** Port `127.0.0.1:8765` ga map qilinadi — tarmoqdagi hech kim
+  yeta olmaydi. Shuning uchun konteyner ichida `0.0.0.0` ga TLS'siz bog'lanish xavfsiz; buni
+  `THREATCHAIN_TRUST_BIND=1` aniq bildiradi (`app.py` `make_server()` izohiga qarang).
+- **Ma'lumot saqlanadi.** Foydalanuvchilar, NVD kaliti, triage qarorlari va skan natijalari nomli
+  volume'larda turadi — konteyner qayta ishga tushsa ham yo'qolmaydi (`docker-compose.yml`).
+- **Image skani** Trivy'ning daemon'siz rejimida ishlaydi (`--image-src remote`) — host Docker
+  soketini ulash **shart emas**, image to'g'ridan-to'g'ri registr (registry)dan tortiladi.
+- **Nishon qo'shish.** Loyihani host'dagi `./targets/` ga qo'ying — u konteynerda `/app/targets/`
+  sifatida (faqat o'qish) ko'rinadi; GUI da `--allow-registration` yoqilgani uchun uni tanlab
+  ro'yxatdan o'tkazasiz. Bu faqat konteyner fayltizimiga yetadi, host'ga emas.
+
+Boshqarish:
+
+```bash
+docker compose logs -f        # loglar
+docker compose down           # to'xtatish (volume'lar saqlanadi)
+docker compose down -v        # to'xtatish + barcha ma'lumotni o'chirish
+```
+
+Image `linux/amd64` ga pinlangan (CodeQL faqat x86_64) — Apple Silicon'da emulyatsiya orqali
+ishlaydi. "Doim online" dizayn Docker'da ham saqlanadi: skan vaqtida OSV/NVD baribir so'raladi.
+
 ## Web panel tezligi (2026-09-25 optimallashtirish)
 
 O'lchov: Chromium, bir xil ma'lumotlar, bosh sahifani ochish.

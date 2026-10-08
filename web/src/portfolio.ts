@@ -83,7 +83,11 @@
     } catch (error) { showError(error); }
   }
 
-  $('portfolio-refresh').addEventListener('click', () => loadOverview().then(loadTrend).catch(showError));
+  $('portfolio-refresh').addEventListener('click', event => {
+    const btn = event.currentTarget as HTMLButtonElement;
+    btn.classList.add('spinning'); btn.disabled = true;
+    loadOverview().then(loadTrend).catch(showError).finally(() => { btn.classList.remove('spinning'); btn.disabled = false; });
+  });
   $('trend-project').addEventListener('change', async () => { await loadOverview(); loadTrend(); });
   $('trend-stage').addEventListener('change', loadTrend);
   $('pf-save').addEventListener('click', async () => {

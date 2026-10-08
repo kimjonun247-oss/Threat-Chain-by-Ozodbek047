@@ -1,0 +1,43 @@
+# ThreatChain -- one command, no host install:  docker compose up --build
+# Then open http://127.0.0.1:8765
+services:
+  threatchain:
+    build:
+      context: .
+    image: threatchain:latest
+    container_name: threatchain
+    # Published ONLY to the host loopback. Nothing on the network can reach it,
+    # which is exactly what makes THREATCHAIN_TRUST_BIND safe. Do not widen the
+    # left side to 0.0.0.0 unless you add TLS + users (see README, team mode).
+    ports:
+      - "127.0.0.1:8765:8765"
+    # --allow-registration lets you pick a mounted target from the GUI. In a
+    # container this reaches only the container filesystem (/app/targets and the
+    # app itself), never the host, so the usual registration caveat is contained.
+    command: ["python3", "app.py", "--bind", "0.0.0.0", "--port", "8765", "--allow-registration"]
+    volumes:
+      # --- Persistent state (survives container restarts and rebuilds) ---
+      - tc_profiles:/app/profiles         # users, NVD key, triage decisions, settings, demo profiles
+      - tc_advisory:/app/advisory-cache   # CVE cache -> faster re-scans
+      - tc_assessment:/app/assessment-runs
+      - tc_repository:/app/repository-runs
+      - tc_dependency:/app/dependency-runs
+      - tc_images:/app/image-runs
+      - tc_scanner:/app/scanner-runs
+      - tc_web:/app/web-runs
+      - tc_iac:/app/iac-runs
+      # --- Targets to scan (read-only). Drop a project into ./targets on the host,
+      #     then register ./targets/<name> -> /app/targets/<name> in the GUI. ---
+      - ./targets:/app/targets:ro
+    restart: unless-stopped
+
+volumes:
+  tc_profiles:
+  tc_advisory:
+  tc_assessment:
+  tc_repository:
+  tc_dependency:
+  tc_images:
+  tc_scanner:
+  tc_web:
+  tc_iac:

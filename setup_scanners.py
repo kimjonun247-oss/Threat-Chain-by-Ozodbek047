@@ -19,6 +19,7 @@ import argparse
 import hashlib
 import io
 import os
+import shutil
 import json
 import platform
 import subprocess
@@ -104,27 +105,66 @@ def semgrep_paths():
 
 
 def installed_semgrep(python):
+    """Installed Semgrep *package* version, read from its dist metadata via the
+    interpreter itself: no pip needed (uv venvs have none), and it reports the
+    PyPI version -- which `semgrep --version` (the CLI build number) does not."""
     try:
-        done = subprocess.run([str(python), '-m', 'pip', 'show', 'semgrep'], capture_output=True,
-                              text=True, encoding='utf-8', errors='replace', timeout=120)
+        done = subprocess.run(
+            [str(python), '-c', 'import importlib.metadata as m; print(m.version("semgrep"))'],
+            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60)
     except (OSError, subprocess.TimeoutExpired):
         return None
-    return next((line.split(':', 1)[1].strip() for line in done.stdout.splitlines() if line.startswith('Version:')), None)
+    return done.stdout.strip() or None
+
+
+def _venv_pip_install(venv, python):
+    """Install Semgrep with pip into a venv; raise on any failure so the caller can
+    fall back to uv. Handles an interpreter whose fresh-venv `ensurepip` fails by
+    building the venv without pip and installing with the parent interpreter's pip."""
+    if not python.is_file():
+        try:
+            subprocess.run([sys.executable, '-m', 'venv', str(venv)], check=True, timeout=600)
+        except subprocess.CalledProcessError:
+            subprocess.run([sys.executable, '-m', 'venv', '--without-pip', str(venv)],
+                           check=True, timeout=600)
+    bin_dir = venv / ('Scripts' if IS_WINDOWS else 'bin')
+    has_pip = (bin_dir / ('pip.exe' if IS_WINDOWS else 'pip')).is_file()
+    install = ([str(python), '-m', 'pip', 'install'] if has_pip else
+               [sys.executable, '-m', 'pip', '--python', str(python), 'install'])
+    subprocess.run(install + ['--disable-pip-version-check', '--quiet',
+                   f'semgrep=={SEMGREP_VERSION}'], check=True, timeout=1800)
+
+
+def _uv_install(venv, python):
+    """Install Semgrep with uv, which manages its own Python and bypasses pip --
+    the fallback for a host whose pip is broken (e.g. macOS 26 + Homebrew CPython
+    3.14, where platform.mac_ver() is empty so pip's truststore/ensurepip fail).
+    The isolated Semgrep venv does not have to match the project's interpreter."""
+    if venv.exists():
+        shutil.rmtree(venv)
+    subprocess.run(['uv', 'venv', '--python', '3.13', str(venv)], check=True, timeout=1200)
+    subprocess.run(['uv', 'pip', 'install', '--python', str(python),
+                    f'semgrep=={SEMGREP_VERSION}'], check=True, timeout=1800)
 
 
 def install_semgrep():
     venv, python, executable = semgrep_paths()
-    if executable.is_file() and installed_semgrep(python) == SEMGREP_VERSION:
+    if python.is_file() and installed_semgrep(python) == SEMGREP_VERSION:
         return f'Semgrep {SEMGREP_VERSION} mavjud.'
-    if not python.is_file():
-        subprocess.run([sys.executable, '-m', 'venv', str(venv)], check=True, timeout=600)
-    subprocess.run([str(python), '-m', 'pip', 'install', '--disable-pip-version-check', '--quiet',
-                    f'semgrep=={SEMGREP_VERSION}'], check=True, timeout=1800)
+    source = 'PyPI via pip over HTTPS'
+    try:
+        _venv_pip_install(venv, python)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as pip_error:
+        if not shutil.which('uv'):
+            raise ValueError('Semgrep pip bilan o‘rnatilmadi va uv topilmadi '
+                             f'({type(pip_error).__name__}). Python/pip ni tuzating yoki uv o‘rnating.') from None
+        _uv_install(venv, python)
+        source = 'PyPI via uv over HTTPS (pip ishlamadi, uv zaxira yo‘li)'
     if installed_semgrep(python) != SEMGREP_VERSION:
         raise ValueError('Semgrep o‘rnatildi, lekin versiyasi kutilganiga mos emas.')
     write_json(venv / 'provenance.json', {
-        'version': SEMGREP_VERSION, 'source': 'PyPI via pip over HTTPS',
-        'verification': 'Version pinned; pip --require-hashes not used, so package hashes are not pinned.'})
+        'version': SEMGREP_VERSION, 'source': source,
+        'verification': 'Version pinned; package hashes are not pinned.'})
     return f'Semgrep {SEMGREP_VERSION} o‘rnatildi ({venv.relative_to(ROOT)}).'
 
 

@@ -22,7 +22,7 @@
                  A04: 'A04 · Kriptografiya', A05: 'A05 · Injection', A06: 'A06 · Xavfli dizayn',
                  A07: 'A07 · Autentifikatsiya', A08: 'A08 · Yaxlitlik', A09: 'A09 · Jurnal va monitoring',
                  A10: 'A10 · Istisno holatlar'};
-  const STAGE: Record<string, string[]> = {code: ['Kod', 'i-code'], repository: ['Repository', 'i-server'], dependencies: ['CVE', 'i-package'],
+  const STAGE: Record<string, string[]> = {code: ['Kod', 'i-code'], repository: ['Compose', 'i-server'], dependencies: ['CVE', 'i-package'],
                  iac: ['IaC', 'i-sliders'], images: ['Image', 'i-box'], web: ['Sayt', 'i-globe'],
                  chain: ['Zanjir', 'i-link']};
   const STATE_ICON: Record<string, string> = {completed: 'i-check', partial: 'i-alert', failed: 'i-x', cancelled: 'i-x',
@@ -95,9 +95,18 @@
     const rows = entries.filter(([, value]: ApiData) => value > 0);
     if (!rows.length) return `<p class="cell-sub">Ma’lumot yo‘q.</p>`;
     const top = Math.max(...rows.map(([, value]: ApiData) => value));
+    // The fill width is a `w-<n>` class and only multiples of five exist (with a
+    // 2% floor for a still-visible sliver); an arbitrary percentage would name a
+    // class the stylesheet has no rule for, and the fill would then default to
+    // the full track width -- which made every bar look identical regardless of
+    // its number. Snapping to the grid keeps the lengths in proportion.
+    const width = (value: number) => {
+      const pct = Math.round(value / top * 20) * 5;
+      return pct < 2 ? 2 : pct;
+    };
     return `<ul class="bars ${wide ? 'named' : ''}">${rows.map(([key, value, label]: ApiData) => `<li>
       <span class="bar-label">${iconOf ? icon(iconOf(key)) : ''}${e(label || key)}</span>
-      <span class="bar-track"><span class="bar-fill w-${Math.max(2, Math.round(value / top * 100))}"></span></span>
+      <span class="bar-track"><span class="bar-fill w-${width(value)}"></span></span>
       <b>${value}</b></li>`).join('')}</ul>`;
   }
 
@@ -146,7 +155,12 @@
       <span class="feed-count ${r.state === 'completed' ? '' : 'state-partial'}">${r.count ?? '—'}</span></li>`).join('')}</ul>`;
   }
 
-  async function load() {
+  async function load(btn?: HTMLButtonElement) {
+    // The refresh button re-fetches identical data when nothing changed, so
+    // without a visible signal it looks dead. Spin and disable it while the
+    // request is in flight, and stamp the time so a no-change refresh is still
+    // visibly a refresh.
+    if (btn) { btn.classList.add('spinning'); btn.disabled = true; }
     try {
       const d = await api('/api/dashboard');
       document.dispatchEvent(new CustomEvent('dashboard-data', {detail: d}));
@@ -154,6 +168,7 @@
       const gaps = c.unscanned + c.incomplete;
       const decided = t.findings - (st.untriaged || 0);
       $('dash').innerHTML = `
+      <p class="refresh-stamp">${e(new Date().toLocaleTimeString())}</p>
       <div class="tile-row">
         ${tile(t.findings, 'Jami topilma', 'i-shield', 'tone-teal', 'findings', 'Ro‘yxatni ochish')}
         ${tile(t.severity.CRITICAL, 'Kritik topilma', 'i-alert', 'tone-red', 'findings', 'Topilmalar')}
@@ -210,6 +225,7 @@
         <p class="cell-sub">${e(t.note)}</p>
       </section>`;
     } catch (error) { showError(error); }
+    finally { if (btn) { btn.classList.remove('spinning'); btn.disabled = false; } }
   }
 
   /* The tiles are rebuilt on every load, so their links are handled here rather
@@ -218,7 +234,7 @@
     const link = (event.target as Field).closest('[data-goto]');
     if (link) view(link.dataset.goto ?? '');
   });
-  $('readiness-refresh').addEventListener('click', load);
+  $('readiness-refresh').addEventListener('click', event => load(event.currentTarget as HTMLButtonElement));
   $('open-assessment').addEventListener('click', () => view('assessments'));
   document.addEventListener('view-shown', event => { if ((event as CustomEvent).detail === 'readiness') load(); });
 })();

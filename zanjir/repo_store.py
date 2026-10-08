@@ -111,8 +111,11 @@ def register_project(profile_id, root, compose, env_file=None, bindings=None, na
         if not isinstance(binding,dict):
             raise ValueError('Proxy mapping noto‘g‘ri.')
         safe_read(source,binding.get('path'))
-    # Fail on invalid Compose input. Coverage gaps remain visible instead of being called safe.
-    preview=scan_repository(source,compose,env_file,bindings)
+    # A Compose file is validated now (fail fast on a bad one), but it is optional:
+    # a project without one still registers, and the code, dependency and IaC
+    # stages read the source root directly. Only the repository and chain layers
+    # need Compose, and they say so when it is absent.
+    preview=scan_repository(source,compose,env_file,bindings) if compose else None
     profile={'id':profile_id,'name':name or profile_id,'root':str(source),'registered_root':str(source),
              'compose':compose,'env_file':env_file,'bindings':bindings,'owner':owner,'mode':'registered_local'}
     # Credentials must not be persisted in profile template overrides.
@@ -121,8 +124,9 @@ def register_project(profile_id, root, compose, env_file=None, bindings=None, na
     LOCAL_PROFILES.mkdir(parents=True,exist_ok=True)
     with path.open('x',encoding='utf-8') as file:
         json.dump(profile,file,ensure_ascii=False,indent=2)
-    return {'id':profile_id,'name':profile['name'],'services':preview['summary']['services'],
-            'unknowns':preview['unknowns'],'mode':'registered_local'}
+    return {'id':profile_id,'name':profile['name'],
+            'services':preview['summary']['services'] if preview else [],
+            'unknowns':preview['unknowns'] if preview else [],'mode':'registered_local'}
 
 
 def write_json(path,value):
@@ -177,6 +181,10 @@ def scan_profile(profile_id):
             raise ValueError('Ro‘yxatdan o‘tgan papka yo‘li o‘zgargan; qayta ro‘yxatdan o‘tkazing.')
         provenance={'repository':profile['name'],'commit':None,'source_type':'registered_local',
                     'note':'Commit avtomatik olinmagan. Aniq o‘qilgan fayllar xeshlari hisobotda saqlanadi.'}
+    if not profile.get('compose'):
+        raise ValueError('Bu loyiha docker-compose.yml’siz ro‘yxatga olingan; Repository qatlami Compose faylini talab '
+                         'qiladi. Loyihada compose bo‘lsa, uni compose fayli bilan qayta ro‘yxatga oling — aks holda '
+                         'faqat Kod, CVE va IaC skanlaridan foydalaning.')
     report=scan_repository(source,profile['compose'],profile.get('env_file'),profile.get('bindings'),provenance)
     report['profile_id']=profile_id
     report['profile_name']=profile['name']

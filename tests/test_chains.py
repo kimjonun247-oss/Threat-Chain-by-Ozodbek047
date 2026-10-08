@@ -13,6 +13,11 @@ def service(sid, build_context, loopback=False):
     return {'id': sid, 'build_context': build_context, 'ports': [{'scope': scope}]}
 
 
+def weakness(path, cwe='CWE-89', tool='semgrep', severity='ERROR', rule_id='sql-injection', line=42):
+    return {'tool': tool, 'rule_id': rule_id, 'path': path, 'line': line, 'severity': severity,
+            'cwe_ids': [cwe], 'fingerprint': path + ':' + cwe}
+
+
 class ChainSecretsTests(unittest.TestCase):
     def test_secret_in_exposed_service_source_is_flagged(self):
         # Individually plausible: a hardcoded value in dev code, and publishing
@@ -265,3 +270,139 @@ class ImageLinkTests(unittest.TestCase):
                                        targets=[{'id': 'img-app', 'reference': 'acme/app@sha256:' + 'a' * 64}])
         self.assertEqual(result['links'], {})
         self.assertEqual(result['ambiguous'], [{'image': 'img-app', 'services': ['web', 'worker']}])
+
+
+class CodeWeaknessChainTests(unittest.TestCase):
+    """SX-004: an externally exploitable code weakness reachable through an
+    exposed service's own port -- 'reachable' becomes 'directly attackable'."""
+
+    def test_exploitable_weakness_in_exposed_service_is_flagged(self):
+        code = {'findings': [weakness('services/web/db.py')]}
+        repo = {'services': [service('web', 'services/web')]}
+        findings = chains.code_weakness_chains(code, repo)
+        self.assertEqual([f['rule_id'] for f in findings], ['SX-004'])
+        self.assertIn('CWE-89', findings[0]['cwe_ids'])
+        self.assertIn('CWE-668', findings[0]['cwe_ids'])
+        self.assertEqual(findings[0]['level'], 'error')
+
+    def test_non_exploitable_class_is_not_chained(self):
+        code = {'findings': [weakness('services/web/crypto.py', cwe='CWE-327')]}
+        repo = {'services': [service('web', 'services/web')]}
+        self.assertEqual(chains.code_weakness_chains(code, repo), [])
+
+    def test_info_level_weakness_is_not_chained(self):
+        code = {'findings': [weakness('services/web/db.py', severity='INFO')]}
+        repo = {'services': [service('web', 'services/web')]}
+        self.assertEqual(chains.code_weakness_chains(code, repo), [])
+
+    def test_gitleaks_secret_is_not_double_counted_here(self):
+        code = {'findings': [gitleaks('services/web/config.py')]}
+        repo = {'services': [service('web', 'services/web')]}
+        self.assertEqual(chains.code_weakness_chains(code, repo), [])
+
+    def test_loopback_only_service_is_not_flagged(self):
+        code = {'findings': [weakness('services/web/db.py')]}
+        repo = {'services': [service('web', 'services/web', loopback=True)]}
+        self.assertEqual(chains.code_weakness_chains(code, repo), [])
+
+    def test_weakness_under_unrelated_service_path_is_not_flagged(self):
+        code = {'findings': [weakness('services/other/db.py')]}
+        repo = {'services': [service('web', 'services/web')]}
+        self.assertEqual(chains.code_weakness_chains(code, repo), [])
+
+
+class EolImageChainTests(unittest.TestCase):
+    """SX-005: an exposed service whose base image is past end-of-life -- no
+    vendor fix will come, so the exposure is permanent, not a race."""
+
+    @staticmethod
+    def _image(eosl=True, name='9'):
+        return {'state': 'completed', 'os': {'Family': 'debian', 'Name': name, 'EOSL': eosl}, 'findings': []}
+
+    def test_eol_base_image_on_exposed_service_is_flagged(self):
+        repo = {'services': [service('web', 'services/web')]}
+        findings = chains.eol_image_chains(repo, {'img-web': self._image()},
+                                           {'img-web': {'service': 'web', 'how': 'tag'}})
+        self.assertEqual([f['rule_id'] for f in findings], ['SX-005'])
+        self.assertIn('CWE-1104', findings[0]['cwe_ids'])
+        self.assertEqual(findings[0]['level'], 'error')
+
+    def test_supported_os_is_not_flagged(self):
+        repo = {'services': [service('web', 'services/web')]}
+        self.assertEqual(chains.eol_image_chains(repo, {'img-web': self._image(eosl=False, name='12')},
+                                                 {'img-web': {'service': 'web', 'how': 'tag'}}), [])
+
+    def test_eol_image_on_loopback_service_is_not_flagged(self):
+        repo = {'services': [service('web', 'services/web', loopback=True)]}
+        self.assertEqual(chains.eol_image_chains(repo, {'img-web': self._image()},
+                                                 {'img-web': {'service': 'web', 'how': 'tag'}}), [])
+
+    def test_unlinked_eol_image_is_not_flagged(self):
+        repo = {'services': [service('web', 'services/web')]}
+        self.assertEqual(chains.eol_image_chains(repo, {'img-web': self._image()}, {}), [])
+
+
+def dep_finding(manifest, priority='P1', kev=True, advisory='CVE-2021-1', cwe='CWE-502', pkg='badlib'):
+    return {'priority': priority, 'known_exploited': kev, 'advisory_id': advisory, 'cwe_ids': [cwe],
+            'package': {'ecosystem': 'PyPI', 'name': pkg, 'version': '1.0'}, 'fingerprint': advisory,
+            'occurrences': [{'manifest': manifest, 'locator': 'line:3', 'scope': 'declared'}]}
+
+
+class DependencyChainTests(unittest.TestCase):
+    """SX-006: an exposed service whose source dependencies carry a KEV or
+    critical CVE -- caught at source, no built image needed."""
+
+    def test_p1_dependency_in_exposed_service_is_flagged(self):
+        dep = {'findings': [dep_finding('services/web/requirements.txt')]}
+        repo = {'services': [service('web', 'services/web')]}
+        findings = chains.dependency_chains(dep, repo)
+        self.assertEqual([f['rule_id'] for f in findings], ['SX-006'])
+        self.assertIn('CWE-668', findings[0]['cwe_ids'])
+        self.assertEqual(findings[0]['level'], 'error')
+
+    def test_lower_priority_dependency_is_not_chained(self):
+        dep = {'findings': [dep_finding('services/web/requirements.txt', priority='P3', kev=False)]}
+        repo = {'services': [service('web', 'services/web')]}
+        self.assertEqual(chains.dependency_chains(dep, repo), [])
+
+    def test_dependency_outside_the_service_is_not_chained(self):
+        dep = {'findings': [dep_finding('services/other/requirements.txt')]}
+        repo = {'services': [service('web', 'services/web')]}
+        self.assertEqual(chains.dependency_chains(dep, repo), [])
+
+    def test_loopback_service_is_not_chained(self):
+        dep = {'findings': [dep_finding('services/web/requirements.txt')]}
+        repo = {'services': [service('web', 'services/web', loopback=True)]}
+        self.assertEqual(chains.dependency_chains(dep, repo), [])
+
+
+class EscapeEscalationChainTests(unittest.TestCase):
+    """SX-007: an exposed service that can be broken into (code weakness or
+    secret) and break out (docker.sock / privileged)."""
+
+    @staticmethod
+    def _repo(escape_rule='RP-007'):
+        return {'services': [service('web', 'services/web')],
+                'findings': [{'rule_id': escape_rule, 'service_id': 'web'}]}
+
+    def test_exploitable_weakness_on_escape_service_is_flagged(self):
+        code = {'findings': [weakness('services/web/db.py')]}
+        findings = chains.escape_escalation_chains(code, self._repo('RP-007'))
+        self.assertEqual([f['rule_id'] for f in findings], ['SX-007'])
+        self.assertIn('CWE-250', findings[0]['cwe_ids'])
+        self.assertEqual(findings[0]['evidence']['entry_kind'], 'code_weakness')
+
+    def test_secret_on_privileged_service_is_flagged(self):
+        code = {'findings': [gitleaks('services/web/config.py')]}
+        findings = chains.escape_escalation_chains(code, self._repo('RP-008'))
+        self.assertEqual([f['rule_id'] for f in findings], ['SX-007'])
+        self.assertEqual(findings[0]['evidence']['entry_kind'], 'secret')
+
+    def test_without_escape_primitive_nothing_is_flagged(self):
+        code = {'findings': [weakness('services/web/db.py')]}
+        repo = {'services': [service('web', 'services/web')], 'findings': []}
+        self.assertEqual(chains.escape_escalation_chains(code, repo), [])
+
+    def test_without_code_entry_nothing_is_flagged(self):
+        code = {'findings': [weakness('services/web/crypto.py', cwe='CWE-327')]}  # not exploitable-class
+        self.assertEqual(chains.escape_escalation_chains(code, self._repo()), [])

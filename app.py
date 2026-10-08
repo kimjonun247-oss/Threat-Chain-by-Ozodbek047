@@ -17,7 +17,7 @@ from urllib.parse import urlsplit, parse_qs
 from zanjir.engine import ROOT
 from zanjir import repo_store
 from zanjir import scanners, dependencies, images, readiness, webscan, pipeline, custom_rules, portfolio, triage, baseline, iac, sbom
-from zanjir import findings_index, settings, code_targets, dashboard, browse, jobs, notify, auth
+from zanjir import findings_index, settings, code_targets, dashboard, browse, jobs, notify, auth, reset
 from zanjir.repository import scan_repository, sarif
 
 RUN_LOCK = threading.Lock()
@@ -596,14 +596,19 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as error:
                 return self.send(400, {'error': str(error)})
         if path.startswith('/api/jobs') or path.startswith('/api/schedules') or path.startswith('/api/notifications') \
-                or path in ('/api/settings/notifications', '/api/settings/queue', '/api/settings/deep-analysis'):
+                or path in ('/api/settings/notifications', '/api/settings/queue', '/api/settings/deep-analysis',
+                            '/api/settings/allow-registration', '/api/reset/results'):
             try:
+                if path == '/api/reset/results' and payload.get('confirm') is True:
+                    return self.send(200, reset.clear_results())
                 if path == '/api/jobs' and {'kind'} <= set(payload) <= {'kind', 'target', 'payload', 'notify'}:
                     return self.send(202, jobs.enqueue(payload['kind'], payload.get('target'), payload.get('payload'),
                                                        notify=payload.get('notify', 'never'),
                                                        requested_by=(self._user or {}).get('name')))
                 if path == '/api/jobs/cancel' and set(payload) == {'id'}:
                     return self.send(200, jobs.cancel(payload['id']))
+                if path == '/api/jobs/remove' and set(payload) == {'id'}:
+                    return self.send(200, jobs.remove(payload['id']))
                 if path == '/api/schedules':
                     return self.send(200, jobs.save_schedule(payload))
                 if path == '/api/schedules/remove' and set(payload) == {'id'}:
@@ -612,6 +617,15 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(200, settings.set_notifications(payload))
                 if path == '/api/settings/deep-analysis' and set(payload) == {'codeql'}:
                     return self.send(200, settings.set_deep_analysis(payload['codeql']))
+                if path == '/api/settings/allow-registration' and set(payload) == {'enabled'} and isinstance(payload['enabled'], bool):
+                    # The operator turns folder registration on from the interface
+                    # rather than restarting with --allow-registration. It is the
+                    # same conscious decision -- and the same boundary: the folder
+                    # browser stays confined to the home directory (zanjir/browse.py).
+                    # Not persisted: it resets to off on restart, so a shared server
+                    # never comes up with it silently enabled.
+                    ALLOW_REGISTRATION[0] = payload['enabled']
+                    return self.send(200, {'registration_enabled': ALLOW_REGISTRATION[0]})
                 if path == '/api/settings/queue' and set(payload) == {'max_parallel_scans'}:
                     return self.send(200, settings.set_max_parallel(payload['max_parallel_scans']))
                 if path == '/api/notifications/test' and payload == {'confirm': True}:
@@ -834,7 +848,18 @@ LOOPBACK = ('127.0.0.1', 'localhost', '::1')
 def make_server(args, parser):
     """The HTTP(S) server; refuses a team setup that would expose data unprotected."""
     import ssl
-    loopback = args.bind in LOOPBACK
+    # THREATCHAIN_TRUST_BIND=1 lets the server bind 0.0.0.0 without TLS. It exists
+    # for the container image, where the app must bind 0.0.0.0 to be reachable
+    # through Docker's port forwarder, yet the published port is mapped only to the
+    # host's loopback (127.0.0.1:8765 in docker-compose.yml) -- so nothing on the
+    # network can reach it, exactly as a plain loopback bind. Setting it while
+    # publishing the port to a routable address exposes data unprotected: that is
+    # the operator's deliberate choice, named so it can never happen by accident.
+    trusted = os.environ.get('THREATCHAIN_TRUST_BIND') == '1'
+    loopback = args.bind in LOOPBACK or trusted
+    if trusted and args.bind not in LOOPBACK:
+        print(f'THREATCHAIN_TRUST_BIND=1: {args.bind} ishonchli deb qabul qilindi '
+              '(port faqat host loopback’iga ochilishi kerak).', file=sys.stderr)
     if bool(args.tls_cert) != bool(args.tls_key):
         parser.error('--tls-cert va --tls-key birga beriladi.')
     if not loopback:

@@ -166,7 +166,12 @@ def crapi_root():
     if override:
         return Path(override)
     candidates=[ROOT/'work/repositories/crapi-stable']
-    candidates.append(ROOT.parents[1]/'work/repositories/crapi-stable')
+    # The historical sibling checkout sits two levels above the application
+    # folder. In a container the app lives at /app, which has no grandparent, so
+    # guard the index -- otherwise readiness and every target listing raise
+    # IndexError. ROOT/'work/...' above still covers the in-folder copy.
+    if len(ROOT.parents)>=2:
+        candidates.append(ROOT.parents[1]/'work/repositories/crapi-stable')
     for candidate in candidates:
         try:
             if candidate.is_dir():return candidate
@@ -607,6 +612,42 @@ def source_line(source,path,line):
     return ''
 
 
+def source_snippet(target,path,line,span=3):
+    """A few source lines around `line` of `path`, for the finding detail panel.
+
+    Read from the live registered source -- the scan snapshot is gone by now --
+    so a file edited since the scan shows its current lines, and the caller says
+    so. The path is validated against the target's own root and never read
+    outside it; a missing, oversized or unreadable file yields no snippet rather
+    than an error, and secrets are never passed here (gitleaks redacts its own)."""
+    try:
+        root=target_root(target)
+        line=int(line)
+    except (TypeError,ValueError,OSError):
+        return None
+    raw=str(path or '').replace('\\','/')
+    if not raw or raw.startswith('/') or '..' in Path(raw).parts or ':' in raw:
+        return None
+    file=root/raw
+    try:
+        if not file.resolve().is_relative_to(root.resolve()) or not file.is_file() or file.stat().st_size>2_000_000:
+            return None
+        rows,lo,hi=[],max(1,line-span),line+span
+        with file.open('r',encoding='utf-8',errors='replace') as handle:
+            for number,text in enumerate(handle,1):
+                if number<lo:continue
+                if number>hi:break
+                # Safety net: mask any long unbroken key-like token (an API key,
+                # hash or base64 blob) so an incidental secret on a line never
+                # reaches the panel. Normal code -- keywords, short names, SQL with
+                # spaces -- is untouched; detail() skips secret findings outright.
+                safe=re.sub(r'[A-Za-z0-9+/=_.\-]{24,}',lambda m:m.group()[:4]+'***',text.rstrip('\n'))
+                rows.append({'n':number,'text':safe[:300],'hit':number==line})
+        return rows or None
+    except OSError:
+        return None
+
+
 def normalize(tool,data,source,messages=None):
     if tool=='pmd':rows=pmd_rows(data)
     else:rows=data.get('results') if tool=='semgrep' and isinstance(data,dict) else data
@@ -781,8 +822,9 @@ def execute(target,rid):
                 report['findings']+=extra
                 report['count']=len(report['findings']);report['verification_summary']=verification_mod.summarize(report['findings'])
             write(folder/'report.json',report)
-    except (OSError,ValueError) as error:
-        report.update(state='failed',message=str(error))
+    except Exception as error:  # noqa: BLE001 -- any failure marks the scan failed rather than leaving it 'running'; dependencies.py, iac.py and images.py do the same
+        report.update(state='failed',error_type=type(error).__name__)
+        if isinstance(error,(OSError,ValueError)):report['message']=str(error)[:300]
     finally:
         report['finished_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
         write(folder/'report.json',report)

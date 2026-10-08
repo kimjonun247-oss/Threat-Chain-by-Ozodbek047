@@ -50,3 +50,16 @@ jobs/
 
 # Dashboard dev tools (npm ci in web/); dist/ is the committed build output.
 web/node_modules/
+
+# Docker: skanerlanadigan nishonlar (mazmuni kuzatilmaydi)
+targets/*
+!targets/README.md
+
+# Docker build uchun oldindan yuklangan CodeQL bundle (katta, commit qilinmaydi)
+vendor-cache/
+
+# Eksport qilingan Docker image arxivlari
+*.tar.gz
+
+# setup_cwe.py yaratadigan CWE->OWASP xaritasi (asos xarita taxonomy.py ichida)
+scanner-rules/cwe-owasp.json

@@ -2,17 +2,35 @@
 "use strict";
 (() => {
   const e = escapeHTML;
-  const KEYS = ["q", "stage", "project", "severity", "owasp", "status", "state", "target"];
-  const FACET_TITLES = { severity: "Og‘irlik", stage: "Skaner", project: "Loyiha", owasp: "OWASP", status: "Holat" };
+  const KEYS = ["q", "stage", "project", "severity", "status", "state", "target"];
+  const FACET_TITLES = { severity: "Og‘irlik", stage: "Skaner", project: "Loyiha", status: "Holat" };
   const STAGE_NAMES = {
     code: "Kod",
     dependencies: "CVE",
     images: "Image",
     web: "Sayt",
     iac: "IaC",
-    repository: "Repository",
+    repository: "Compose",
     chain: "Zanjir"
   };
+  const ROLE_BY_STAGE = {
+    code: "Developer",
+    dependencies: "Developer",
+    repository: "DevOps",
+    iac: "DevOps",
+    images: "DevOps",
+    web: "Tarmoq"
+  };
+  const ROLE_BY_CHAIN = {
+    "SX-001": "Developer + DevOps",
+    "SX-002": "DevOps",
+    "SX-003": "DevOps",
+    "SX-004": "Developer",
+    "SX-005": "DevOps",
+    "SX-006": "Developer",
+    "SX-007": "DevOps + Developer"
+  };
+  const responsibleOf = (row) => row.stage === "chain" ? ROLE_BY_CHAIN[row.rule_id] || "Developer + DevOps" : ROLE_BY_STAGE[row.stage] || "—";
   const STATUS_NAMES = {
     untriaged: "Ko‘rilmagan",
     investigating: "Tekshirilmoqda",
@@ -79,7 +97,7 @@
     return parts.map((p) => `<p>${p}</p>`).join("");
   }
   function tags(row) {
-    const out = [];
+    const out = [`<span class="tag tag-role" title="Kim tuzatadi">${e(responsibleOf(row))}</span>`];
     if (row.known_exploited === true) out.push('<span class="tag tag-kev">CISA KEV</span>');
     if (row.overdue) out.push(`<span class="tag tag-overdue">SLA ${e(row.sla?.days_remaining)} kun</span>`);
     if (row.epss != null) out.push(`<span class="tag">EPSS ${(row.epss * 100).toFixed(1)}%</span>`);
@@ -103,15 +121,14 @@
             <span class="cell-sub">${e(row.rule_id)} · ${e(row.subject)}</span>
             <span class="cell-sub">${tags(row)}</span></td>
         <td>${e(STAGE_NAMES[row.stage] || row.stage)}<span class="cell-sub">${e(row.target)}</span></td>
-        <td>${(row.owasp || []).map((o) => `<span class="tag">${e(o)}</span>`).join("") || '<span class="cell-sub">—</span>'}
-            <span class="cell-sub">${e((row.cwe_ids || []).join(", ") || "CWE yo‘q")}</span></td>
+        <td>${e((row.cwe_ids || []).join(", ") || "CWE yo‘q")}</td>
         <td>${e(STATUS_NAMES[row.status || "untriaged"])}<span class="cell-sub">${row.owner ? e(row.owner) : ""}</span></td>
         <td><span class="cell-sub">${row.first_seen ? e(time(row.first_seen)) : "noma’lum"}</span></td>
       </tr>`;
     }).join("");
     return `<table class="findings-table"><thead><tr>
       <th><input type="checkbox" id="findings-all" aria-label="Sahifadagi hammasini tanlash"></th>
-      <th>Og‘irlik</th><th>Topilma</th><th>Skaner / nishon</th><th>OWASP / CWE</th><th>Holat</th><th>Birinchi ko‘rilgan</th>
+      <th>Og‘irlik</th><th>Topilma</th><th>Skaner / nishon</th><th>CWE</th><th>Holat</th><th>Birinchi ko‘rilgan</th>
     </tr></thead><tbody>${body}</tbody></table>`;
   }
   function paint() {
@@ -181,12 +198,13 @@
           <tr><td>Nishon</td><td>${e(row.target)}</td></tr>
           <tr><td>Loyiha</td><td>${e(row.project || "—")}</td></tr>
           <tr><td>Joy</td><td>${e(row.subject || "—")}</td></tr>
-          <tr><td>CWE / OWASP</td><td>${e((row.cwe_ids || []).join(", ") || "—")} ${(row.owasp || []).map((o) => `<span class="tag">${e(o)}</span>`).join("")}</td></tr>
+          <tr><td>CWE</td><td>${e((row.cwe_ids || []).join(", ") || "—")}</td></tr>
           <tr><td>SLA</td><td>${e(sla)}</td></tr>
           <tr><td>Birinchi / oxirgi ko‘rilgan</td><td>${row.first_seen ? e(time(row.first_seen)) : "—"} / ${row.last_seen ? e(time(row.last_seen)) : "—"}</td></tr>
           <tr><td>Hisobot</td><td>${e(row.report_id)} · ${e(row.report_state)}</td></tr>
           <tr><td>Identifikator</td><td class="hash">${e(row.fingerprint)}</td></tr>
         </tbody></table>
+        ${detail.snippet ? `<h3>Kod — aynan shu yerda</h3><pre class="snippet">${detail.snippet.map((l) => `<span class="snippet-line ${l.hit ? "snippet-hit" : ""}"><span class="snippet-n">${e(l.n)}</span><span class="snippet-code">${e(l.text) || " "}</span></span>`).join("")}</pre>` : detail.snippet_state === "secret" ? '<p class="cell-sub">Kod satri ataylab ko‘rsatilmaydi: bu qatorda sir qiymat bor va u himoyalanadi.</p>' : detail.snippet_state === "unavailable" ? '<p class="cell-sub">Kod satri ko‘rsatilmadi: manba papka o‘zgargan yoki o‘qib bo‘lmadi.</p>' : ""}
         ${detail.related.length ? `<h3>Bog‘liq topilmalar</h3>${detail.related.map((r) => `<p><button class="cell-title" data-open="${e(r.fingerprint)}">${e(r.rule_id)} — ${e(r.title)}</button><span class="cell-sub">${r.escalates === row.fingerprint ? "Bu topilmani kuchaytiradi" : r.duplicate_of === row.fingerprint ? "Shu topilmaning takrori" : "Bog‘liq"}</span></p>`).join("")}` : ""}
         <h3>Qaror</h3>
         <form id="drawer-triage">
@@ -256,7 +274,15 @@
     state.selected.clear();
     paint();
   });
-  $("findings-refresh").addEventListener("click", load);
+  $("findings-refresh").addEventListener("click", (event) => {
+    const btn = event.currentTarget;
+    btn.classList.add("spinning");
+    btn.disabled = true;
+    Promise.resolve(load()).finally(() => {
+      btn.classList.remove("spinning");
+      btn.disabled = false;
+    });
+  });
   $("findings-reset").addEventListener("click", () => {
     state.filters = {};
     state.offset = 0;

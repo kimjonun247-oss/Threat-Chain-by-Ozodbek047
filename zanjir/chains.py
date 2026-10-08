@@ -40,6 +40,19 @@ RULES = {
     'SX-003': ('Debug rejimida ishlayotgan ochiq xizmatda tuzatilishi mumkin bo‘lgan CVE bor',
                'Debug/dev rejimini o‘chiring va image’ni tuzatilgan versiyaga yangilang. Debug rejimi xato '
                'xabarlari orqali ichki tuzilmani ochadi va bu CVE’dan foydalanishni osonlashtiradi.'),
+    'SX-004': ('Tashqariga ochiq xizmat manbasida ekspluatatsiyaga yaroqli zaiflik bor',
+               'Zaif kod yo‘lini tuzating (parametrlangan so‘rov, kirishni tozalash, xavfsiz deserializatsiya). '
+               'Tuzatilmaguncha xizmatni host portidan olib tashlang yoki faqat ichki tarmoqqa cheklang.'),
+    'SX-005': ('Tashqariga ochiq xizmatning asos image’i qo‘llab-quvvatlanmaydi (EOL)',
+               'Asos image’ni qo‘llab-quvvatlanadigan versiyaga yangilang va qayta yig‘ing. EOL OS uchun yangi '
+               'tuzatish chiqmaydi — ochiq qoldirish doimiy, tuzalmaydigan xavf.'),
+    'SX-006': ('Tashqariga ochiq xizmatning manba bog‘liqligida ekspluatatsiya qilinayotgan yoki kritik CVE bor',
+               'Zaif kutubxonani tuzatilgan versiyaga yangilang va qayta yig‘ing. Darhol imkoni bo‘lmasa, xizmatni '
+               'host portidan olib tashlang yoki ichki tarmoqqa cheklang — CVE tuzatilmaguncha ochiq qoldirmang.'),
+    'SX-007': ('Konteynerdan chiqish imtiyozli, tashqariga ochiq xizmatda ekspluatatsiyaga yaroqli zaiflik yoki sir bor',
+               'Avval konteyner chiqish yo‘lini yoping (docker.sock mount’ini olib tashlang, privileged/xavfli cap’ni '
+               'bekor qiling), so‘ng zaiflik yoki sirni tuzating. Bu ikkisi birga — kodni ekspluatatsiya qilish host '
+               'nazoratiga olib boradi.'),
 }
 # SX-001: CWE-798 Use of Hard-coded Credentials + CWE-668 Exposure to Wrong Sphere.
 CWE_IDS = [798, 668]
@@ -49,6 +62,24 @@ CWE_IDS = [798, 668]
 SUPPLY_CHAIN_CWE = [1395, 668]
 # The severity that makes a CVE worth chaining on its own, when KEV says nothing.
 CHAIN_SEVERITY = 'CRITICAL'
+
+# SX-004: the code-weakness classes an attacker reaches *through* a service's own
+# port -- injection, traversal, SSRF, deserialization, template/expression. A
+# weakness of another class (weak crypto, missing header) is real but is not
+# turned into a remote entry point by exposure, so it is not chained here.
+EXPLOITABLE_CWE = {22, 74, 77, 78, 79, 89, 90, 91, 94, 98, 434, 502, 611, 776, 917, 918, 943, 1336}
+
+
+def _cwe_number(cwe):
+    try:
+        return int(str(cwe).split('-')[-1])
+    except (TypeError, ValueError):
+        return -1
+
+
+def _exploitable(cwe_ids):
+    """The exploitable-class CWE tags of a code finding, in the order given."""
+    return [c for c in (cwe_ids or []) if _cwe_number(c) in EXPLOITABLE_CWE]
 
 
 def exposed_services(repository_report):
@@ -98,6 +129,188 @@ def correlate(code_report, repository_report):
                                       'portning tashqi ochiqligi alohida-alohida qo‘lda tasdiqlanishi shart.',
                 'evidence': {'gitleaks_path': path, 'gitleaks_line': gf.get('line'), 'gitleaks_rule_id': gf.get('rule_id'),
                              'compose_service': service['id'], 'build_context': context},
+            })
+    return results
+
+
+def code_weakness_chains(code_report, repository_report):
+    """SX-004: an exposed service with an externally exploitable weakness in its
+    own source. SX-001 chains a hard-coded secret; this chains an injection,
+    SSRF, traversal or deserialization flaw -- the classes an attacker reaches
+    through the very port the service exposes, so 'reachable' becomes 'directly
+    attackable'. INFO-level findings are left out: they are style notes, not the
+    remote entry point the pairing is about."""
+    weaknesses = [f for f in (code_report or {}).get('findings', [])
+                  if f.get('tool') in ('semgrep', 'codeql', 'pmd')
+                  and str(f.get('severity') or '').upper() != 'INFO'
+                  and _exploitable(f.get('cwe_ids'))]
+    if not weaknesses:
+        return []
+    reachable = [s for s in (repository_report or {}).get('services', [])
+                 if s.get('build_context') and any(p['scope'] != 'loopback' for p in s.get('ports', []))]
+    results = []
+    for service in reachable:
+        context = service['build_context']
+        prefix = context + '/'
+        for wf in weaknesses:
+            path = wf.get('path', '')
+            if path != context and not path.startswith(prefix):
+                continue
+            hit = _exploitable(wf.get('cwe_ids'))
+            cwe_ids = sorted(set(hit + ['CWE-668']))
+            results.append({
+                'rule_id': 'SX-004', 'title': RULES['SX-004'][0], 'service_id': service['id'],
+                'fingerprint': findings_mod.derived('SX-004', [service['id'], wf.get('fingerprint') or path]),
+                'detail': (f"{service['id']} xizmati host portidan ochiq ({port_summary(service)}) va uning manba "
+                           f"katalogida ({context}) {wf.get('tool')} {wf.get('rule_id', '?')} zaifligini topdi "
+                           f"({path}:{wf.get('line', '?')}, {', '.join(hit)}). Bu sinf aynan ochiq port orqali "
+                           "hujumchi yeta oladigan turdagi: alohida har biri statik topilma, birga esa "
+                           "to‘g‘ridan-to‘g‘ri ekspluatatsiya yuzasi."),
+                'remediation': RULES['SX-004'][1], 'cwe_ids': cwe_ids,
+                'owasp_top10_2025': taxonomy.classify([_cwe_number(c) for c in cwe_ids]),
+                'level': 'error', 'verified': False, 'runtime_verified': False,
+                'verification_note': ('Ikki mustaqil statik skaner bog‘landi: Compose portni, kod skaneri esa '
+                                      'zaif naqshni ko‘rsatadi. Zaif kod yo‘li amalda chaqirilishi va tashqaridan '
+                                      'yetib borilishi qo‘lda tasdiqlanishi shart.'),
+                'evidence': {'code_tool': wf.get('tool'), 'code_rule': wf.get('rule_id'),
+                             'code_path': f"{path}:{wf.get('line', '?')}", 'code_cwe': hit,
+                             'compose_service': service['id'], 'host_ports': port_summary(service),
+                             'build_context': context},
+            })
+    return results
+
+
+def eol_image_chains(repository_report, image_reports, links):
+    """SX-005: an exposed service whose base image is past end-of-life. No vendor
+    fix will come for the next CVE, so the exposure is permanent rather than a
+    race against a patch -- and a low CVE count on an EOL OS reads as 'safe' when
+    it only means the feed stopped tracking it."""
+    exposed = {s['id']: s for s in exposed_services(repository_report)}
+    results = []
+    for target, report in sorted((image_reports or {}).items()):
+        os_info = (report or {}).get('os') or {}
+        if not os_info.get('EOSL'):
+            continue
+        link = (links or {}).get(target)
+        service = exposed.get(link['service']) if link else None
+        if service is None:
+            continue
+        name = f"{os_info.get('Family', '')} {os_info.get('Name', '')}".strip()
+        results.append({
+            'rule_id': 'SX-005', 'title': RULES['SX-005'][0], 'service_id': service['id'],
+            'fingerprint': findings_mod.derived('SX-005', [service['id'], target, str(os_info.get('Name'))]),
+            'detail': (f"{service['id']} xizmati host portidan ochiq ({port_summary(service)}) va uning {target} "
+                       f"image’i {name} — qo‘llab-quvvatlash muddati tugagan (EOL). Bunday OS uchun yangi "
+                       "zaifliklar bazaga kiritilmaydi va tuzatish chiqmaydi: kam CVE ko‘rinishi 'xavfsiz' "
+                       "degani emas, aksincha doimiy, tuzalmaydigan ochiq xavf."),
+            'remediation': RULES['SX-005'][1],
+            'cwe_ids': ['CWE-668', 'CWE-1104'], 'owasp_top10_2025': taxonomy.classify([668, 1104]),
+            'level': 'error', 'verified': False, 'runtime_verified': False,
+            'verification_note': ('Compose portni, Trivy esa asos OS ning EOL holatini ko‘rsatdi. Amaliy ta’sir '
+                                  'asos image qo‘llab-quvvatlanadigan versiyaga yangilangach yo‘qoladi.'),
+            'evidence': {'compose_service': service['id'], 'host_ports': port_summary(service),
+                         'image_target': target, 'os': name},
+        })
+    return results
+
+
+def dependency_chains(dependency_report, repository_report):
+    """SX-006: an exposed service whose own source dependencies carry a
+    known-exploited or critical CVE. SX-002 catches this in the built image;
+    this catches it at source -- before a build, or for a project that ships no
+    image at all -- by matching the manifest that declares the package to the
+    service's build context. Only P1 (KEV-exploited or CRITICAL) findings chain:
+    a reachable service with an actively exploited library is the toxic pair."""
+    high = [f for f in (dependency_report or {}).get('findings', []) if f.get('priority') == 'P1']
+    if not high:
+        return []
+    reachable = [s for s in (repository_report or {}).get('services', [])
+                 if s.get('build_context') and any(p['scope'] != 'loopback' for p in s.get('ports', []))]
+    results = []
+    for service in reachable:
+        context = service['build_context']
+        prefix = context + '/'
+        for f in high:
+            locs = [o for o in f.get('occurrences') or []
+                    if (o.get('manifest') or '') == context or str(o.get('manifest') or '').startswith(prefix)]
+            if not locs:
+                continue
+            pkg = f.get('package') or {}
+            cwe_ids = sorted(set((f.get('cwe_ids') or []) + [f'CWE-{c}' for c in SUPPLY_CHAIN_CWE]))
+            results.append({
+                'rule_id': 'SX-006', 'title': RULES['SX-006'][0], 'service_id': service['id'],
+                'fingerprint': findings_mod.derived('SX-006', [service['id'], f.get('fingerprint') or f.get('advisory_id') or '']),
+                'detail': (f"{service['id']} xizmati host portidan ochiq ({port_summary(service)}) va uning manba "
+                           f"bog‘liqligida {pkg.get('ecosystem')} {pkg.get('name')} {pkg.get('version')} paketida "
+                           f"{f.get('advisory_id')} bor ({locs[0].get('manifest')}). "
+                           + ('CISA KEV: real hujumlarda ishlatilgani ma’lum.' if f.get('known_exploited') else 'Kritik og‘irlik bahosi.')
+                           + ' Zaif kutubxona tashqariga ochiq xizmatda ishlaydi — alohida har biri odatiy, birga esa hujum yuzasi.'),
+                'remediation': RULES['SX-006'][1],
+                'cwe_ids': cwe_ids,
+                'owasp_top10_2025': taxonomy.classify([_cwe_number(c) for c in cwe_ids]),
+                'level': 'error', 'verified': False, 'runtime_verified': False,
+                'verification_note': ('Kutubxona CVE mosligi (OSV/CISA KEV) va Compose port ochiqligi bog‘landi; '
+                                      'image ishga tushirilmagan va zaif kutubxona yo‘li amalda chaqirilishi tekshirilmagan.'),
+                'evidence': {'compose_service': service['id'], 'host_ports': port_summary(service),
+                             'package': f"{pkg.get('name')} {pkg.get('version')}", 'advisory_id': f.get('advisory_id'),
+                             'manifest': locs[0].get('manifest'), 'known_exploited': f.get('known_exploited'),
+                             'build_context': context},
+            })
+    return results
+
+
+# SX-007: the privileges that turn code execution in a container into control of
+# the host. CWE-250 Execution with Unnecessary Privileges + CWE-668.
+ESCAPE_CWE = [250, 668]
+
+
+def escape_escalation_chains(code_report, repository_report):
+    """SX-007: an exposed service that can both be broken into and break out.
+
+    It fires only when one service carries all three facts: it is exposed, it has
+    a container-escape primitive (RP-007 docker.sock or RP-008 privileged/caps),
+    and its own source holds an externally exploitable weakness or a hard-coded
+    secret. Each is already its own finding; together they are the full path --
+    exploit the code, then escape the container to the host -- so this is the one
+    chain reported at the top of the list."""
+    repo = repository_report or {}
+    escape = {f.get('service_id') for f in repo.get('findings') or [] if f.get('rule_id') in ('RP-007', 'RP-008')}
+    if not escape:
+        return []
+    exposed = {s['id']: s for s in exposed_services(repo) if s.get('build_context') and s['id'] in escape}
+    if not exposed:
+        return []
+    entries = [f for f in (code_report or {}).get('findings', [])
+               if (f.get('tool') == 'gitleaks')
+               or (f.get('tool') in ('semgrep', 'codeql', 'pmd')
+                   and str(f.get('severity') or '').upper() != 'INFO' and _exploitable(f.get('cwe_ids')))]
+    results = []
+    for sid, service in sorted(exposed.items()):
+        context = service['build_context']
+        prefix = context + '/'
+        for f in entries:
+            path = f.get('path', '')
+            if path != context and not path.startswith(prefix):
+                continue
+            is_secret = f.get('tool') == 'gitleaks'
+            kind = 'qattiq kodlangan sir' if is_secret else f"ekspluatatsion zaiflik ({', '.join(_exploitable(f.get('cwe_ids')))})"
+            results.append({
+                'rule_id': 'SX-007', 'title': RULES['SX-007'][0], 'service_id': sid,
+                'fingerprint': findings_mod.derived('SX-007', [sid, f.get('fingerprint') or path]),
+                'detail': (f"{sid} xizmati host portidan ochiq va konteynerdan chiqish imtiyoziga ega "
+                           "(docker.sock yoki privileged/xavfli capability), ayni paytda uning manba katalogida "
+                           f"({context}) {kind} bor ({path}:{f.get('line', '?')}). Uchalasi birga: kodni "
+                           "ekspluatatsiya qilish konteynerni, keyin esa host’ni egallashga olib boradi."),
+                'remediation': RULES['SX-007'][1],
+                'cwe_ids': sorted(set((_exploitable(f.get('cwe_ids')) if not is_secret else []) + [f'CWE-{c}' for c in ESCAPE_CWE])),
+                'owasp_top10_2025': taxonomy.classify(ESCAPE_CWE + [_cwe_number(c) for c in (_exploitable(f.get('cwe_ids')) if not is_secret else [])]),
+                'level': 'error', 'verified': False, 'runtime_verified': False,
+                'verification_note': ('Compose konteyner imtiyozini va host portini, kod skaneri esa manbadagi '
+                                      'kirish nuqtasini ko‘rsatdi; amaliy zanjir qo‘lda tasdiqlanishi shart.'),
+                'evidence': {'compose_service': sid, 'host_ports': port_summary(service), 'build_context': context,
+                             'entry_kind': 'secret' if is_secret else 'code_weakness',
+                             'entry_tool': f.get('tool'), 'entry_rule': f.get('rule_id'),
+                             'entry_path': f"{path}:{f.get('line', '?')}"},
             })
     return results
 
@@ -225,17 +438,23 @@ def correlate_all(stage_reports, links=None, image_reports=None, ambiguous=None)
     """
     code = stage_reports.get('code')
     repository = stage_reports.get('repository')
+    deps = stage_reports.get('dependencies')
     results, gaps = [], []
     if code and repository:
-        results += correlate(code, repository)
+        results += correlate(code, repository)                  # SX-001
+        results += code_weakness_chains(code, repository)       # SX-004
+        results += escape_escalation_chains(code, repository)   # SX-007
     elif repository and not code:
         gaps.append({'kind': 'stage_missing', 'detail': 'Kod bosqichi tanlanmagan; SX-001 (sir + ochiq port) '
                                                         'tekshirilmadi.'})
     if repository and image_reports:
         rp006 = {f.get('service_id') for f in repository.get('findings') or [] if f.get('rule_id') == 'RP-006'}
         rows, image_gaps = image_chains(repository, image_reports, links or {}, rp006, ambiguous or ())
-        results += rows
+        results += rows                                          # SX-002, SX-003
+        results += eol_image_chains(repository, image_reports, links or {})  # SX-005
         gaps += image_gaps
+    if deps and repository:
+        results += dependency_chains(deps, repository)          # SX-006
     elif repository and not image_reports:
         gaps.append({'kind': 'stage_missing', 'detail': 'Image bosqichi tanlanmagan; SX-002 va SX-003 '
                                                         '(ochiq xizmat + CVE) tekshirilmadi.'})

@@ -32,13 +32,15 @@
       const change = job.change ? (job.change.first ? 'birinchi skan'
         : `+${job.change.counts.new} / −${job.change.counts.gone}${job.change.changed ? '' : ' (o‘zgarmadi)'}`) : '';
       const sent = (job.notifications || []).map((n: ApiData) => `${e(n.channel)}: ${n.ok ? '✓' : '✗ ' + e(n.error || '')}`).join(', ');
-      const cancel = ['queued', 'waiting', 'running'].includes(job.state)
-        ? `<button class="ghost small" data-cancel="${e(job.id)}">Bekor qilish</button>` : '';
+      // Active jobs can be cancelled; finished ones can be removed from the list.
+      const action = ['queued', 'waiting', 'running'].includes(job.state)
+        ? `<button class="ghost small" data-cancel="${e(job.id)}">Bekor qilish</button>`
+        : `<button class="ghost small" data-remove-job="${e(job.id)}">O‘chirish</button>`;
       return `<tr><td>${badge(job.state)}</td><td>${e(KINDS[job.kind] || job.kind)}</td><td>${e(job.target || '—')}</td>
         <td>${job.source === 'schedule' ? 'jadval · ' + e(job.schedule_id) : 'qo‘lda'}</td>
         <td>${when(job.created_at)}</td><td>${job.not_before && job.state !== 'running' ? when(job.not_before) : '—'}</td>
         <td><small>${e(job.message || '')}</small>${change ? `<br><small>${e(change)}</small>` : ''}${sent ? `<br><small>${sent}</small>` : ''}</td>
-        <td>${e(job.report_id || '')}</td><td>${cancel}</td></tr>`;
+        <td>${e(job.report_id || '')}</td><td>${action}</td></tr>`;
     }).join('');
     $('jobs-list').innerHTML = rows ? `<div class="table-wrap"><table><thead><tr><th>Holat</th><th>Tur</th><th>Nishon</th><th>Manba</th>
       <th>Qo‘shilgan</th><th>Eng erta</th><th>Izoh</th><th>Hisobot</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
@@ -106,8 +108,10 @@
     $('jobs-view').addEventListener('click', async event => {
       const cancel = (event.target as Field).closest('[data-cancel]');
       const remove = (event.target as Field).closest('[data-remove-schedule]');
+      const removeJob = (event.target as Field).closest('[data-remove-job]');
       try {
         if (cancel) { await api('/api/jobs/cancel', {id: cancel.dataset.cancel}); await load(); }
+        if (removeJob) { await api('/api/jobs/remove', {id: removeJob.dataset.removeJob}); await load(); }
         if (remove && confirm(`“${remove.dataset.removeSchedule}” jadvali o‘chirilsinmi?`)) {
           await api('/api/schedules/remove', {id: remove.dataset.removeSchedule}); await load();
         }

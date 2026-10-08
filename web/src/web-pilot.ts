@@ -18,6 +18,7 @@
     else if (r.selection) {
       syncTarget('assessment-target', r.selection.target); syncTarget('assessment-repository', r.selection.repository_target);
       syncTarget('assessment-web', r.selection.web_target); syncTarget('assessment-image', r.selection.image_target);
+      syncTarget('assessment-iac', r.selection.iac_target);
     }
     const target = $(kind+'-result'); target.className = '';
     const start = `<div class="scanner-summary"><strong>${e(labels[r.state]||r.state)}</strong><span>${e(time(r.created_at))}</span><span>${link(prefixes[kind],r.id,kind==='assessment')}</span></div><p id="${kind}-baseline" class="muted"></p>`;
@@ -37,7 +38,11 @@
   // without it the reader cannot tell a chain from an ordinary finding.
   const chainSources: Record<string, string> = {'SX-001':'Kod (Gitleaks) + Repository (Compose)',
                         'SX-002':'Repository (Compose) + Docker image (Trivy)',
-                        'SX-003':'Repository (RP-006) + Docker image (Trivy)'};
+                        'SX-003':'Repository (RP-006) + Docker image (Trivy)',
+                        'SX-004':'Kod (Semgrep/CodeQL/PMD) + Repository (Compose)',
+                        'SX-005':'Repository (Compose) + Docker image (Trivy · EOL)',
+                        'SX-006':'CVE (OSV/KEV) + Repository (Compose)',
+                        'SX-007':'Kod (sir/zaiflik) + Repository (RP-007/008)'};
   function chainEvidence(f: ApiData) {
     const v = f.evidence || {};
     const rows = [['Compose xizmati', v.compose_service], ['Host portlari', v.host_ports],
@@ -80,7 +85,7 @@
     $(kind+'-scan').addEventListener('click',async()=>{
       try {
         $('error').hidden=true;
-        const payload=kind==='web'?{target:$('web-target').value,online:true}:{target:$('assessment-target').value,web_target:$('assessment-web').value,image_target:$('assessment-image').value,repository_target:$('assessment-repository').value,online:true};
+        const payload=kind==='web'?{target:$('web-target').value,online:true}:{target:$('assessment-target').value,web_target:$('assessment-web').value,image_target:$('assessment-image').value,repository_target:$('assessment-repository').value,iac_target:$('assessment-iac').value,online:true};
         const r=await api(prefixes[kind]+'/scan',payload);await follow(kind,r.id);
       } catch(error) {showError(error);}
     });
@@ -88,15 +93,52 @@
   }
   function scope(){const t=webTargets.find(t=>t.id===$('web-target').value);$('web-scope').textContent=t?`${t.url} · mas’ul: ${t.owner}`:'';}
   $('web-target').addEventListener('change',scope);
+  // The assessment form's targets and its "project quick-fill", loaded once and
+  // reloaded whenever a project is created, so a new grouping appears at once.
+  const optionRows=(rows: ApiData[])=>rows.map((t: ApiData)=>`<option value="${e(t.id)}">${e(t.name)}</option>`).join('');
+  const NONE='<option value="">Tanlanmagan</option>';
+  const STAGE_TO_SELECT: Record<string, string>={code:'assessment-target',repository:'assessment-repository',images:'assessment-image',iac:'assessment-iac',web:'assessment-web'};
+  let assessmentProjects: ApiData[]=[], quickFillBound=false;
+  function applyProject(pid: string){
+    const proj=assessmentProjects.find((p: ApiData)=>p.id===pid);
+    if(!proj)return;
+    // A project's target for a stage goes into that stage's dropdown; a stage the
+    // project never registered is left empty (it is skipped, not silently clean).
+    for(const [stage,sel] of Object.entries(STAGE_TO_SELECT)){
+      const wanted=((proj.stages?.[stage]?.targets)||[])[0]||'';
+      const box=$(sel);
+      box.value=[...box.options].some((o: ApiData)=>o.value===wanted)?wanted:'';
+    }
+  }
+  async function loadAssessmentTargets(){
+    const [sources,webs,images,repositories,iacs,portfolio]=await Promise.all([api('/api/scanners/targets'),api('/api/web/targets'),api('/api/images/targets'),api('/api/repository/profiles'),api('/api/iac/targets'),api('/api/portfolio')]);
+    webTargets=webs;$('web-target').innerHTML=optionRows(webs);scope();
+    const codeValue=$('assessment-target').value;
+    $('assessment-target').innerHTML=NONE+optionRows(sources.filter((s: ApiData)=>s.available));
+    $('assessment-target').value=codeValue||'crapi-full';
+    $('assessment-web').innerHTML=NONE+optionRows(webs);$('assessment-image').innerHTML=NONE+optionRows(images);
+    $('assessment-repository').innerHTML=NONE+optionRows(repositories);
+    $('assessment-iac').innerHTML=NONE+optionRows((iacs||[]).filter((t: ApiData)=>t.available));
+    assessmentProjects=(portfolio&&portfolio.projects)||[];
+    const chosen=$('assessment-project').value;
+    $('assessment-project').innerHTML='<option value="">— qatlamlarni qo‘lda tanlash —</option>'+optionRows(assessmentProjects);
+    if([...$('assessment-project').options].some((o: ApiData)=>o.value===chosen))$('assessment-project').value=chosen;
+    if(!quickFillBound){quickFillBound=true;$('assessment-project').addEventListener('change',()=>applyProject($('assessment-project').value));}
+  }
+  // Fired by the project wizard (shell.js) after a grouping is created: reload the
+  // lists, select the new project, fill its layers and show the assessment.
+  document.addEventListener('assessment-project',async(event: ApiData)=>{
+    try{
+      await loadAssessmentTargets();
+      const pid=(event as CustomEvent).detail;
+      const sel=$('assessment-project');
+      if([...sel.options].some((o: ApiData)=>o.value===pid)){sel.value=pid;applyProject(pid);}
+      view('assessments');
+    }catch(error){showError(error);}
+  });
   async function init() {
     try {
-      const [sources,webs,images,repositories]=await Promise.all([api('/api/scanners/targets'),api('/api/web/targets'),api('/api/images/targets'),api('/api/repository/profiles')]);
-      const options=(rows: ApiData[])=>rows.map((t: ApiData)=>`<option value="${e(t.id)}">${e(t.name)}</option>`).join('');
-      const none='<option value="">Tanlanmagan</option>';
-      webTargets=webs;$('web-target').innerHTML=options(webs);scope();
-      $('assessment-target').innerHTML=none+options(sources.filter((s: ApiData)=>s.available));$('assessment-target').value='crapi-full';
-      $('assessment-web').innerHTML=none+options(webs);$('assessment-image').innerHTML=none+options(images);
-      $('assessment-repository').innerHTML=none+options(repositories);
+      await loadAssessmentTargets();
       const control=await api('/api/web/control-evidence');
       const controlNames: Record<string, string>={vulnerable:'Zaif sun’iy misol',fixed:'Tuzatilgan sun’iy misol',soft404:'Har bir yo‘lga bir xil javob','full-range':'Bo‘lak so‘ralganda to‘liq kelgan javob'};
       $('web-control').innerHTML=`<p>${control.passed?'Nazorat sinovi o‘tgan.':'Nazorat sinovi tasdiqlanmagan.'} Bu real kompaniya skani emas.</p>${(control.results||[]).map((r: ApiData)=>`<p>${e(controlNames[r.mode]||r.mode)}: ${e(r.nuclei_matches)} Nuclei mosligi · ${e(r.requests)} so‘rov · ${e(labels[r.state]||r.state)}</p>`).join('')}<p>Fallback javobdagi sezgir mazmun alohida tekshiriladi; bir xil javob ma’lumot sizib chiqishini inkor qilmaydi.</p>`;

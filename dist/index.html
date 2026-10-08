@@ -58,19 +58,19 @@
       <button class="nav active" data-view="readiness" aria-current="page"><svg class="ic"><use href="#i-home"/></svg> Bosh sahifa</button>
 
       <p class="nav-group">TEKSHIRUV</p>
-      <button class="nav" data-view="assessments"><svg class="ic"><use href="#i-play"/></svg> Umumiy tekshiruv</button>
+      <button class="nav" data-view="assessments"><svg class="ic"><use href="#i-play"/></svg> To‘liq tekshiruv</button>
       <button class="nav" data-view="code"><svg class="ic"><use href="#i-code"/></svg> Kod va sirlar</button>
-      <button class="nav" data-view="dependencies"><svg class="ic"><use href="#i-package"/></svg> Kutubxona (CVE)</button>
+      <button class="nav" data-view="dependencies"><svg class="ic"><use href="#i-package"/></svg> Bog‘liqliklar (CVE)</button>
       <button class="nav" data-view="images"><svg class="ic"><use href="#i-box"/></svg> Docker image</button>
-      <button class="nav" data-view="repository"><svg class="ic"><use href="#i-server"/></svg> Repository</button>
-      <button class="nav" data-view="iac"><svg class="ic"><use href="#i-sliders"/></svg> IaC</button>
+      <button class="nav" data-view="repository"><svg class="ic"><use href="#i-server"/></svg> Compose va tarmoq</button>
+      <button class="nav" data-view="iac"><svg class="ic"><use href="#i-sliders"/></svg> Infratuzilma (IaC)</button>
       <button class="nav" data-view="web"><svg class="ic"><use href="#i-globe"/></svg> Sayt va API</button>
       <button class="nav" data-view="jobs"><svg class="ic"><use href="#i-clock"/></svg> Navbat va jadval</button>
 
       <p class="nav-group">NATIJALAR</p>
       <button class="nav" data-view="findings"><svg class="ic"><use href="#i-list"/></svg> Topilmalar <span class="nav-count" id="nav-findings-count" hidden></span></button>
-      <button class="nav" data-view="portfolio"><svg class="ic"><use href="#i-grid"/></svg> Loyihalar</button>
-      <button class="nav" data-view="project"><svg class="ic"><use href="#i-folder"/></svg> Loyiha kartasi</button>
+      <button class="nav" data-view="portfolio"><svg class="ic"><use href="#i-grid"/></svg> Qamrov (loyihalar)</button>
+      <button class="nav" data-view="project"><svg class="ic"><use href="#i-folder"/></svg> Loyiha tafsiloti</button>
 
       <p class="nav-group">SOZLAMALAR</p>
       <button class="nav" data-modal="register"><svg class="ic"><use href="#i-target"/></svg> Nishon qo‘shish</button>
@@ -96,18 +96,28 @@
     <div class="content">
 
       <section id="readiness-view" class="view">
-        <div class="section-heading"><div><p class="eyebrow">BOSHQARUV PANELI</p><h2>Holat</h2></div><div class="heading-actions"><button id="readiness-refresh" class="ghost" title="Yangilash" aria-label="Yangilash"><svg class="ic"><use href="#i-refresh"/></svg></button><button id="open-assessment" class="primary"><svg class="ic"><use href="#i-play"/></svg> Tekshiruv</button></div></div>
+        <div class="section-heading"><div><p class="eyebrow">BOSHQARUV PANELI</p><h2>Holat</h2><p class="section-intro">Yangi bo‘lsangiz: 1) chapdan <b>Nishon qo‘shish</b> → 2) <b>To‘liq tekshiruv</b> → 3) natijalar shu panelda va <b>Topilmalar</b>da ko‘rinadi.</p></div><div class="heading-actions"><button id="readiness-refresh" class="ghost" title="Yangilash" aria-label="Yangilash"><svg class="ic"><use href="#i-refresh"/></svg></button><button id="open-assessment" class="primary"><svg class="ic"><use href="#i-play"/></svg> Tekshiruv</button></div></div>
         <div id="dash" class="dash"><p class="empty">Yuklanmoqda…</p></div>
       </section>
       <section id="assessments-view" class="view" hidden>
-        <div class="section-heading"><div><p class="eyebrow">KOD + CVE + WEB + IMAGE</p><h2>Bitta jarayon, alohida dalillar</h2></div><button id="assessment-scan" class="primary">Tekshiruvni boshlash</button></div>
-        <div class="dep-filters"><label>Manba kodi<select id="assessment-target"></select></label><label>Repository (Compose)<select id="assessment-repository"></select></label><label>Sayt / API<select id="assessment-web"></select></label><label>Docker image<select id="assessment-image"></select></label></div>
+        <div class="section-heading"><div><p class="eyebrow">KOD · CVE · REPOSITORY · IMAGE · IAC · WEB</p><h2>Bitta jarayon, alohida dalillar</h2><p class="section-intro">Bitta loyihaning hamma qatlamini bir bosishda ketma-ket tekshiradi — har biri o‘z dalilini beradi.</p></div><button id="assessment-scan" class="primary"><svg class="ic"><use href="#i-play"/></svg> Tekshiruvni boshlash</button></div>
+        <div class="assessment-form">
+          <div class="assessment-quick"><label><span>Loyiha — barcha qatlamni bir bosishda to‘ldirish</span><select id="assessment-project"><option value="">— qatlamlarni qo‘lda tanlash —</option></select></label><button type="button" id="assessment-new-project" class="secondary"><svg class="ic"><use href="#i-grid"/></svg> Yangi loyiha</button></div>
+          <div class="assessment-layers">
+            <label><span class="alh"><svg class="ic"><use href="#i-code"/></svg> Manba kodi <small>Kod + CVE</small></span><select id="assessment-target"></select></label>
+            <label><span class="alh"><svg class="ic"><use href="#i-server"/></svg> Repository <small>Compose / env</small></span><select id="assessment-repository"></select></label>
+            <label><span class="alh"><svg class="ic"><use href="#i-box"/></svg> Docker image <small>Trivy</small></span><select id="assessment-image"></select></label>
+            <label><span class="alh"><svg class="ic"><use href="#i-sliders"/></svg> Konfiguratsiya <small>IaC · Trivy config</small></span><select id="assessment-iac"></select></label>
+            <label><span class="alh"><svg class="ic"><use href="#i-globe"/></svg> Sayt / API <small>ruxsatli GET</small></span><select id="assessment-web"></select></label>
+          </div>
+          <p class="assessment-hint muted"><svg class="ic"><use href="#i-alert"/></svg> Tanlangan qatlamlar ketma-ket tekshiriladi; tanlanmagani o‘tkazib yuboriladi (bu «toza» degani emas). Har qatlam o‘z dalilini beradi — umumiy ball chiqarilmaydi. Web/image online rejimda ishlaydi.</p>
+        </div>
         <p id="assessment-progress" role="status" aria-live="polite"></p><button id="assessment-cancel" class="secondary" hidden>Bekor qilish</button>
         <div id="assessment-result" class="empty">Tanlovni tekshirib jarayonni boshlang.</div>
         <details class="pilot-help"><summary>Umumiy tekshiruvlar tarixi</summary><div id="assessment-history"></div></details>
       </section>
       <section id="web-view" class="view" hidden>
-        <div class="section-heading"><div><p class="eyebrow">NUCLEI + HTTP · CHEKLANGAN GET PROFILI</p><h2>Ishlayotgan sayt va API</h2></div><button id="web-scan" class="primary">Saytni tekshirish</button></div>
+        <div class="section-heading"><div><p class="eyebrow">NUCLEI + HTTP · CHEKLANGAN GET PROFILI</p><h2>Ishlayotgan sayt va API</h2><p class="section-intro">Ruxsat berilgan sayt/API’ni faqat GET so‘rovlari bilan, zarar yetkazmasdan tekshiradi.</p></div><button id="web-scan" class="primary"><svg class="ic"><use href="#i-play"/></svg> Saytni tekshirish</button></div>
         <div class="project-picker"><label for="web-target">Ruxsat berilgan nishon</label><select id="web-target"></select><p id="web-scope"></p></div>
         <p id="web-progress" role="status" aria-live="polite"></p><button id="web-cancel" class="secondary" hidden>Bekor qilish</button>
         <div id="web-result" class="empty">Nishonni tanlab tekshiruvni boshlang.</div>
@@ -115,16 +125,16 @@
         <details class="pilot-help"><summary>Sayt tekshiruvlari tarixi</summary><div id="web-history"></div></details>
       </section>
       <section id="images-view" class="view" hidden>
-        <div class="section-heading"><div><p class="eyebrow">TRIVY · ANIQ IMAGE DIGEST</p><h2>Docker image kutubxonalari</h2></div><button id="image-scan" class="primary">Image tekshiruvini boshlash ↗</button></div>
+        <div class="section-heading"><div><p class="eyebrow">TRIVY · ANIQ IMAGE DIGEST</p><h2>Docker image kutubxonalari</h2><p class="section-intro">Container image ichidagi OS va paket zaifliklarini (Trivy) aniq digest bo‘yicha topadi.</p></div><button id="image-scan" class="primary"><svg class="ic"><use href="#i-play"/></svg> Image tekshiruvini boshlash ↗</button></div>
         <div class="project-picker"><label for="image-target">Oldindan ro‘yxatga olingan public image</label><select id="image-target"></select></div>
         <p id="image-progress" role="status" aria-live="polite"></p><button id="image-cancel" class="secondary" hidden>Bekor qilish</button>
         <div id="image-result" class="empty">Hali image tekshirilmagan.</div>
         <details class="pilot-help"><summary>Image tekshiruvlari tarixi</summary><div id="image-history"></div></details>
       </section>
       <div id="error" class="error" role="alert" hidden></div><p id="progress" class="progress" role="status" aria-live="polite"></p>
-      <section id="repository-view" class="view"><div class="section-heading"><div><p class="eyebrow">REPOSITORY · STATIK DALILLAR</p><h2>Repositorydagi ishonch chegaralari</h2></div><button id="repo-scan" class="secondary">Tanlangan loyihani tahlil qilish ↗</button></div><div class="project-picker"><label for="project">Ulangan loyiha</label><select id="project" disabled><option>Yuklanmoqda…</option></select><p id="project-scope" class="muted"></p></div><div id="repository-result" class="empty">Repository hisoboti yuklanmoqda…</div></section>
+      <section id="repository-view" class="view"><div class="section-heading"><div><p class="eyebrow">COMPOSE VA NGINX · STATIK DALILLAR</p><h2>Compose va tarmoq ishonch chegaralari</h2><p class="section-intro">docker-compose va nginx sozlamalaridagi ochiq portlar, tarmoq ekspozitsiyasi va ishonch muammolarini topadi.</p></div><button id="repo-scan" class="secondary"><svg class="ic"><use href="#i-play"/></svg> Tanlangan loyihani tahlil qilish ↗</button></div><div class="project-picker"><label for="project">Ulangan loyiha</label><select id="project" disabled><option>Yuklanmoqda…</option></select><p id="project-scope" class="muted"></p></div><div id="repository-result" class="empty">Repository hisoboti yuklanmoqda…</div></section>
       <section id="code-view" class="view" hidden>
-        <div class="section-heading"><div><p class="eyebrow">SEMGREP + GITLEAKS</p><h2>Kod va maxfiy qiymatlar</h2></div><button id="code-scan" class="primary">Tekshiruvni boshlash ↗</button></div>
+        <div class="section-heading"><div><p class="eyebrow">SEMGREP + GITLEAKS</p><h2>Kod va maxfiy qiymatlar</h2><p class="section-intro">Manba kodidagi zaifliklar (Semgrep) va qattiq yozilgan sirlarni (Gitleaks) topadi.</p></div><button id="code-scan" class="primary"><svg class="ic"><use href="#i-play"/></svg> Tekshiruvni boshlash ↗</button></div>
         <div class="project-picker"><label for="code-target">Tekshiriladigan manba</label><select id="code-target"><option value="crapi-full">OWASP crAPI · to‘liq manba nusxasi</option></select></div>
         <p id="code-progress" role="status" aria-live="polite"></p>
         <div id="code-result" class="empty">Natijalar yuklanmoqda…</div>
@@ -133,7 +143,7 @@
         <div id="pilot-result" class="empty">Amaliy dalil yuklanmoqda…</div>
       </section>
       <section id="findings-view" class="view" hidden>
-        <div class="section-heading"><div><p class="eyebrow">BARCHA SKANERLAR · BITTA JADVAL</p><h2>Topilmalar</h2></div><div class="heading-actions"><button id="findings-refresh" class="secondary">Yangilash</button><button id="findings-reset" class="ghost">Filtrlarni tozalash</button></div></div>
+        <div class="section-heading"><div><p class="eyebrow">BARCHA SKANERLAR · BITTA JADVAL</p><h2>Topilmalar</h2></div><div class="heading-actions"><button id="findings-refresh" class="ghost" title="Yangilash" aria-label="Yangilash"><svg class="ic"><use href="#i-refresh"/></svg></button><button id="findings-reset" class="secondary">Filtrlarni tozalash</button></div></div>
         
         <div id="findings-coverage" class="coverage-note"></div>
         <div id="findings-facets" class="facets"></div>
@@ -148,11 +158,11 @@
         <div class="scanner-summary"><button id="findings-prev" class="secondary">← Oldingi</button><span id="findings-page"></span><button id="findings-next" class="secondary">Keyingi →</button></div>
       </section>
       <section id="project-view" class="view" hidden>
-        <div class="section-heading"><div><p class="eyebrow">BITTA LOYIHA · BARCHA QATLAMLAR</p><h2>Loyiha sahifasi</h2></div><label class="inline-field">Loyiha <select id="project-picker"></select></label></div>
+        <div class="section-heading"><div><p class="eyebrow">BITTA LOYIHA · BARCHA QATLAMLAR</p><h2>Loyiha tafsiloti</h2></div><label class="inline-field">Loyiha <select id="project-picker"></select></label></div>
         <div id="project-result" class="empty">Loyiha tanlang.</div>
       </section>
       <section id="iac-view" class="view" hidden>
-        <div class="section-heading"><div><p class="eyebrow">TRIVY CONFIG</p><h2>Konfiguratsiya va IaC</h2></div><button id="iac-scan" class="primary">Tekshiruvni boshlash ↗</button></div>
+        <div class="section-heading"><div><p class="eyebrow">TRIVY CONFIG</p><h2>Konfiguratsiya va IaC</h2><p class="section-intro">Dockerfile, Kubernetes va Terraform noto‘g‘ri sozlamalarini (Trivy config) topadi.</p></div><button id="iac-scan" class="primary"><svg class="ic"><use href="#i-play"/></svg> Tekshiruvni boshlash ↗</button></div>
         
         <div class="project-picker"><label for="iac-target">Loyiha</label><select id="iac-target"></select></div>
         <p id="iac-progress" role="status" aria-live="polite"></p>
@@ -161,7 +171,7 @@
         <details class="pilot-help"><summary>Oldingi konfiguratsiya tekshiruvlari</summary><div id="iac-history"></div></details>
       </section>
       <section id="dependencies-view" class="view" hidden>
-        <div class="section-heading"><div><p class="eyebrow">OSV + CISA KEV</p><h2>CVE va kutubxonalar</h2></div><button id="dep-scan" class="primary">Tekshiruvni boshlash ↗</button></div>
+        <div class="section-heading"><div><p class="eyebrow">OSV + CISA KEV</p><h2>Bog‘liqliklar va CVE</h2><p class="section-intro">Ishlatilayotgan kutubxonalardagi ma’lum zaifliklarni (CVE) OSV va CISA KEV bo‘yicha topadi.</p></div><button id="dep-scan" class="primary"><svg class="ic"><use href="#i-play"/></svg> Tekshiruvni boshlash ↗</button></div>
         
         <div class="project-picker"><label for="dep-target">Loyiha</label><select id="dep-target"></select></div>
         <div class="scanner-summary"><p id="dep-progress" role="status" aria-live="polite"></p><button id="dep-cancel" class="secondary" hidden>Bekor qilish</button></div>
@@ -195,7 +205,7 @@
         <p class="hint-text">Xabar kanallari (webhook, Slack, email) “Umumiy sozlamalar”da. Server o‘chiq paytda o‘tib ketgan vaqt qaytganda bir marta bajariladi (24 soat ichida).</p>
       </section>
       <section id="portfolio-view" class="view" hidden>
-        <div class="section-heading"><div><p class="eyebrow">PORTFEL · BARCHA LOYIHALAR</p><h2>Qaysi loyihaning qaysi qatlami tekshirilmagan?</h2></div><button id="portfolio-refresh" class="secondary">Yangilash</button></div>
+        <div class="section-heading"><div><p class="eyebrow">PORTFEL · BARCHA LOYIHALAR</p><h2>Qaysi loyihaning qaysi qatlami tekshirilmagan?</h2></div><button id="portfolio-refresh" class="ghost" title="Yangilash" aria-label="Yangilash"><svg class="ic"><use href="#i-refresh"/></svg></button></div>
         
         <div id="portfolio-result" class="empty">Yuklanmoqda…</div>
         <div class="section-heading"><h2>Vaqt bo‘yicha o‘zgarish</h2></div>

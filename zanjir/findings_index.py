@@ -20,10 +20,32 @@ Four rules keep the flattening honest:
      that came from a `partial` scan says so, because partial coverage is not a
      clean result.
 """
+import re
 import threading
 import time
 
 from . import triage
+
+# CWE numbers whose whole point is a secret sitting in the source: a hard-coded
+# credential, password, key or token. A snippet of such a line would re-expose
+# the very value the scanner flagged, so the panel never shows source for them.
+SECRET_CWES = frozenset({256, 257, 258, 259, 260, 261, 312, 319, 321, 322,
+                         323, 324, 522, 540, 547, 798})
+# Backstop for secret rules that carry no CWE (many semgrep/gitleaks secret
+# rules). Matched against the rule id, title and message, word-ish boundaries.
+SECRET_WORDS = re.compile(
+    r'(?i)(?:secret|password|passwd|credential|api[_-]?key|private[_-]?key'
+    r'|access[_-]?key|auth[_-]?token|\btoken\b|\bkey\b)')
+
+
+def _is_secret_finding(finding):
+    """True when a finding's source line is likely to contain a secret value."""
+    for cwe in finding.get('cwe_ids') or []:
+        match = re.search(r'(\d+)', str(cwe))
+        if match and int(match.group(1)) in SECRET_CWES:
+            return True
+    blob = ' '.join(str(finding.get(k) or '') for k in ('rule_id', 'title', 'message'))
+    return bool(SECRET_WORDS.search(blob))
 
 # Stage -> how to read its newest reports. Imported lazily inside functions:
 # these modules import triage, which this one uses.
@@ -330,7 +352,29 @@ def detail(fingerprint):
                (i.get('duplicate_of') == fingerprint or i.get('escalates') == fingerprint
                 or (item.get('duplicate_of') and i['fingerprint'] == item['duplicate_of'])
                 or (item.get('escalates') and i['fingerprint'] == item['escalates']))]
-    return {'row': item, 'finding': original, 'events': events, 'related': related}
+    # The exact source lines the code scanners flagged, read from the live source
+    # so the operator sees what was found without leaving the panel. Only code
+    # findings, and never a secret finding -- gitleaks, or any rule (semgrep
+    # included) whose line holds the credential it flagged. source_snippet also
+    # masks long key-like tokens, but the surest fix is to not read the line.
+    # snippet_state tells the panel why there is no snippet, so a deliberately
+    # withheld secret is never mislabelled as a read error:
+    #   'secret'      -- withheld on purpose (the line holds the credential)
+    #   'unavailable' -- a code line was expected but could not be read
+    #   None          -- not a code finding; no snippet is expected at all
+    snippet, snippet_state = None, None
+    if item['stage'] == 'code' and original:
+        if original.get('tool') == 'gitleaks' or _is_secret_finding(original):
+            snippet_state = 'secret'
+        elif original.get('path') and original.get('line'):
+            try:
+                from . import scanners
+                snippet = scanners.source_snippet(item['target'], original['path'], original['line'])
+            except (OSError, ValueError):
+                snippet = None
+            snippet_state = 'unavailable' if snippet is None else None
+    return {'row': item, 'finding': original, 'events': events, 'related': related,
+            'snippet': snippet, 'snippet_state': snippet_state}
 
 
 def invalidate():

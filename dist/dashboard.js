@@ -27,7 +27,7 @@
   };
   const STAGE = {
     code: ["Kod", "i-code"],
-    repository: ["Repository", "i-server"],
+    repository: ["Compose", "i-server"],
     dependencies: ["CVE", "i-package"],
     iac: ["IaC", "i-sliders"],
     images: ["Image", "i-box"],
@@ -95,9 +95,13 @@
     const rows = entries.filter(([, value]) => value > 0);
     if (!rows.length) return `<p class="cell-sub">Ma’lumot yo‘q.</p>`;
     const top = Math.max(...rows.map(([, value]) => value));
+    const width = (value) => {
+      const pct = Math.round(value / top * 20) * 5;
+      return pct < 2 ? 2 : pct;
+    };
     return `<ul class="bars ${wide ? "named" : ""}">${rows.map(([key, value, label]) => `<li>
       <span class="bar-label">${iconOf ? icon(iconOf(key)) : ""}${e(label || key)}</span>
-      <span class="bar-track"><span class="bar-fill w-${Math.max(2, Math.round(value / top * 100))}"></span></span>
+      <span class="bar-track"><span class="bar-fill w-${width(value)}"></span></span>
       <b>${value}</b></li>`).join("")}</ul>`;
   }
   function tools(list) {
@@ -143,7 +147,11 @@
       <span class="cell-sub">${e(time(r.created_at))}</span></span>
       <span class="feed-count ${r.state === "completed" ? "" : "state-partial"}">${r.count ?? "—"}</span></li>`).join("")}</ul>`;
   }
-  async function load() {
+  async function load(btn) {
+    if (btn) {
+      btn.classList.add("spinning");
+      btn.disabled = true;
+    }
     try {
       const d = await api("/api/dashboard");
       document.dispatchEvent(new CustomEvent("dashboard-data", { detail: d }));
@@ -151,6 +159,7 @@
       const gaps = c.unscanned + c.incomplete;
       const decided = t.findings - (st.untriaged || 0);
       $("dash").innerHTML = `
+      <p class="refresh-stamp">${e((/* @__PURE__ */ new Date()).toLocaleTimeString())}</p>
       <div class="tile-row">
         ${tile(t.findings, "Jami topilma", "i-shield", "tone-teal", "findings", "Ro‘yxatni ochish")}
         ${tile(t.severity.CRITICAL, "Kritik topilma", "i-alert", "tone-red", "findings", "Topilmalar")}
@@ -213,13 +222,18 @@
       </section>`;
     } catch (error) {
       showError(error);
+    } finally {
+      if (btn) {
+        btn.classList.remove("spinning");
+        btn.disabled = false;
+      }
     }
   }
   $("dash").addEventListener("click", (event) => {
     const link = event.target.closest("[data-goto]");
     if (link) view(link.dataset.goto ?? "");
   });
-  $("readiness-refresh").addEventListener("click", load);
+  $("readiness-refresh").addEventListener("click", (event) => load(event.currentTarget));
   $("open-assessment").addEventListener("click", () => view("assessments"));
   document.addEventListener("view-shown", (event) => {
     if (event.detail === "readiness") load();

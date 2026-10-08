@@ -158,7 +158,8 @@ def correlate_stages(report):
     if repository:
         images_by_target = project_images(report, repository)
     linked = image_links(repository, images_by_target)
-    return chains.correlate_all({'code': stage_report(report, 'code'), 'repository': repository},
+    return chains.correlate_all({'code': stage_report(report, 'code'), 'repository': repository,
+                                 'dependencies': stage_report(report, 'dependencies')},
                                 links=linked.get('links'), image_reports=images_by_target,
                                 ambiguous=linked.get('ambiguous'))
 
@@ -315,9 +316,10 @@ def start(payload, background=True):
 
 def cancel(rid):
     read(rid)
-    if rid not in CANCEL:
+    event = CANCEL.get(rid)  # one atomic get: 'in' then '[rid]' can race the scan thread popping rid on finish
+    if event is None:
         raise ValueError('Jarayon ushbu serverda ishlamayapti.')
-    CANCEL[rid].set()
+    event.set()
     return {'id': rid, 'state': 'cancellation_requested', 'message': 'Joriy kod bosqichi tugashi kutilishi mumkin; keyingi bosqichlar boshlanmaydi.'}
 
 
