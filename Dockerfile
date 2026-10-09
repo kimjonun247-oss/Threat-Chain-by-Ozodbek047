@@ -14,9 +14,11 @@
 #   docker compose up --build        # then open http://127.0.0.1:8765
 #   docker build -t threatchain .    # plain build without compose
 #
-# Pinned to linux/amd64 on purpose: the CodeQL bundle is x86_64-only, so pinning
-# the whole image keeps every tool on one architecture (it runs under emulation
-# on Apple Silicon / arm64 hosts).
+# Pinned to linux/amd64 so the image is byte-for-byte identical on EVERY host --
+# Windows, Linux and macOS alike -- and because the CodeQL bundle is x86_64-only.
+# On an amd64 host (most Windows/Linux PCs and Intel Macs) it runs natively; on an
+# arm64 host Docker runs it under its built-in emulation. Either way it is the same
+# image and behaves the same everywhere -- nothing here is tuned for one OS.
 FROM --platform=linux/amd64 python:3.14-slim-bookworm
 
 # git             -- remote-repo scans, Gitleaks history, Semgrep rule-pack fetch

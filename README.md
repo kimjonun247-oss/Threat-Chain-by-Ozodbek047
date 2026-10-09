@@ -99,8 +99,11 @@ docker compose down           # to'xtatish (volume'lar saqlanadi)
 docker compose down -v        # to'xtatish + barcha ma'lumotni o'chirish
 ```
 
-Image `linux/amd64` ga pinlangan (CodeQL faqat x86_64) — Apple Silicon'da emulyatsiya orqali
-ishlaydi. "Doim online" dizayn Docker'da ham saqlanadi: skan vaqtida OSV/NVD baribir so'raladi.
+Image **har qanday OS'da bir xil ishlaydi** — Windows, Linux va macOS'da farqsiz. `linux/amd64`
+ga pinlangani uchun image hamma joyda **aynan bir xil**: amd64 kompyuterда (ko'pchilik
+Windows/Linux va Intel Mac) native, arm64'да (Apple Silicon) Docker'ning o'z emulyatsiyasi orqali.
+Hech narsa biror OS'ga sozlanmagan. "Doim online" dizayn Docker'da ham saqlanadi: skan vaqtида
+jonli zaiflik ma'lumoti (OSV/NVD) baribir so'raladi.
 
 ## Web panel tezligi (2026-09-25 optimallashtirish)
 
