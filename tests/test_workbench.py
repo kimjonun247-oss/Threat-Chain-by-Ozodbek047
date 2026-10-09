@@ -160,6 +160,60 @@ class IndexTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             findings_index.detail('f' * 24)
 
+    def test_l_an_unchanged_board_is_not_re_parsed_but_a_new_report_is(self):
+        """Steady polling must not re-read reports; a new scan must be seen.
+
+        The signature is built from the summary listings alone, so between scans
+        a request past CACHE_TTL reuses the last build without touching a report
+        body. When a listing names a newer report the signature changes and the
+        board is rebuilt -- the correctness the cheap path must never cost.
+        """
+        reads = {'n': 0}
+        listing = [{'id': '20260101T000000-aaaaaaaa', 'target': 'app', 'state': 'completed'}]
+
+        def counting_read(rid):
+            reads['n'] += 1
+            return report([finding('a' * 24, 'ERROR')], rid=rid)
+
+        world = dict(self.world)
+        world['code'] = (counting_read, lambda limit: list(listing), 'target')
+        with patch.object(findings_index, 'sources', lambda: world), \
+             patch.object(findings_index, 'CACHE_TTL', 0.0):   # force the signature path every call
+            findings_index.invalidate()
+            findings_index.collect()
+            self.assertEqual(reads['n'], 1)
+            findings_index.collect()                           # nothing changed
+            self.assertEqual(reads['n'], 1, 'an unchanged board must not re-parse a report')
+            listing[:] = [{'id': '20260101T000000-dddddddd', 'target': 'app', 'state': 'completed'}]
+            findings_index.collect()                           # a newer report appeared
+            self.assertEqual(reads['n'], 2, 'a new report must be read')
+
+    def test_m_a_stale_but_unchanged_board_rebuilds_once_past_max_ttl(self):
+        """Time-based fields (an SLA going overdue) cannot sit stale forever."""
+        reads = {'n': 0}
+
+        def counting_read(rid):
+            reads['n'] += 1
+            return report([finding('a' * 24, 'ERROR')], rid=rid)
+
+        world = dict(self.world)
+        world['code'] = (counting_read, lambda limit: [{'id': '20260101T000000-aaaaaaaa',
+                                                        'target': 'app', 'state': 'completed'}], 'target')
+        clock = {'t': 1000.0}
+        with patch.object(findings_index, 'sources', lambda: world), \
+             patch.object(findings_index, 'CACHE_TTL', 0.0), \
+             patch.object(findings_index, 'MAX_TTL', 30.0), \
+             patch.object(findings_index.time, 'monotonic', lambda: clock['t']):
+            findings_index.invalidate()
+            findings_index.collect()
+            self.assertEqual(reads['n'], 1)
+            clock['t'] += 10                                   # within MAX_TTL: reuse
+            findings_index.collect()
+            self.assertEqual(reads['n'], 1)
+            clock['t'] += 40                                   # past MAX_TTL: refresh once
+            findings_index.collect()
+            self.assertEqual(reads['n'], 2)
+
 
 class SettingsTests(unittest.TestCase):
     def setUp(self):
