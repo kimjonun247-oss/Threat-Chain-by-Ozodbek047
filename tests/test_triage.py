@@ -319,6 +319,14 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(status, 200, body)
         self.assertEqual(sorted(body['decisions']), ['a' * 24, 'b' * 24])
 
+    def test_b2_a_bulk_decision_writes_the_decisions_file_once(self):
+        # The whole batch is one file write, not one per finding (load-test #6).
+        with patch.object(triage, 'write', wraps=triage.write) as writer:
+            status, _ = self.call('POST', '/api/triage/bulk',
+                                  self.decision(fingerprints=['a' * 24, 'b' * 24]))
+        self.assertEqual(status, 200)
+        self.assertEqual(writer.call_count, 1)
+
     def test_c_a_fingerprint_that_is_not_in_the_report_is_refused(self):
         status, body = self.call('POST', '/api/triage', self.decision(fingerprint='f' * 24))
         self.assertEqual(status, 400)

@@ -168,25 +168,41 @@ def events(scope):
     return sorted(rows, key=lambda row: str(row.get('updated_at') or ''))
 
 
-def decide(scope, fingerprint, status, owner, note, bound_to=None, stage='', target=''):
-    """Record one decision. Every field is required because an unexplained status
-    is what makes a triage list untrustworthy a month later."""
+def _decision_record(status, owner, note, bound_to, stage, target):
+    """Validate a decision's shared fields and build the stored record. Every
+    field is required because an unexplained status is what makes a triage list
+    untrustworthy a month later."""
     if status not in STATUSES:
         raise ValueError('Triage holati noto‘g‘ri: ' + ', '.join(STATUSES))
-    if not re.fullmatch(r'[0-9a-f]{24}', str(fingerprint or '')):
-        raise ValueError('Topilma identifikatori noto‘g‘ri.')
     if not isinstance(owner, str) or not 1 <= len(owner.strip()) <= 120:
         raise ValueError('Qaror uchun mas’ul kerak (120 belgigacha).')
     if not isinstance(note, str) or not 1 <= len(note.strip()) <= 1000:
         raise ValueError('Qaror uchun asos kerak (1000 belgigacha).')
-    record = {'status': status, 'owner': owner.strip(), 'note': note.strip(),
-              'updated_at': now().isoformat(), 'bound_to': bound_to or None,
-              'stage': str(stage or '')[:40], 'target': str(target or '')[:120]}
+    return {'status': status, 'owner': owner.strip(), 'note': note.strip(),
+            'updated_at': now().isoformat(), 'bound_to': bound_to or None,
+            'stage': str(stage or '')[:40], 'target': str(target or '')[:120]}
+
+
+def decide(scope, fingerprint, status, owner, note, bound_to=None, stage='', target=''):
+    """Record one decision."""
+    return decide_many(scope, [fingerprint], status, owner, note, bound_to, stage, target)[fingerprint]
+
+
+def decide_many(scope, fingerprints, status, owner, note, bound_to=None, stage='', target=''):
+    """Record decisions for one or many findings in a SINGLE decisions-file write,
+    so a bulk of 200 does not rewrite (and re-read) the whole file 200 times."""
+    base = _decision_record(status, owner, note, bound_to, stage, target)
+    records = {}
     with LOCK:
         data = read(scope)
-        event(scope, {'scope': scope, 'fingerprint': fingerprint, **record})
-        data['decisions'][fingerprint] = record
-        write(scope, data)
+        for fingerprint in dict.fromkeys(fingerprints):
+            if not re.fullmatch(r'[0-9a-f]{24}', str(fingerprint or '')):
+                raise ValueError('Topilma identifikatori noto‘g‘ri.')
+            record = dict(base)
+            event(scope, {'scope': scope, 'fingerprint': fingerprint, **record})
+            data['decisions'][fingerprint] = record
+            records[fingerprint] = record
+        write(scope, data)   # one write for the whole batch, not one per finding
     # The findings board caches its flattened view for a few seconds; a decision
     # taken from that screen has to show on it immediately.
     try:
@@ -194,7 +210,7 @@ def decide(scope, fingerprint, status, owner, note, bound_to=None, stage='', tar
         findings_index.invalidate()
     except ImportError:
         pass
-    return record
+    return records
 
 
 def observe(scope, findings, at=None):
@@ -375,10 +391,8 @@ def apply(payload):
     # Repository reviews have always been bound to one source snapshot, and that
     # is kept: a decision about a file does not carry over to a changed file.
     bound = report.get('input_sha256') if payload['stage'] == 'repository' else None
-    records = {}
-    for fingerprint in dict.fromkeys(wanted):
-        records[fingerprint] = decide(scope, fingerprint, payload['status'], payload['owner'],
-                                      payload['note'], bound, payload['stage'], target)
+    records = decide_many(scope, wanted, payload['status'], payload['owner'],
+                          payload['note'], bound, payload['stage'], target)
     return {'scope': scope, 'stage': payload['stage'], 'target': target,
             'report_id': report.get('id'), 'decisions': records}
 
