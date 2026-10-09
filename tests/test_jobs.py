@@ -175,6 +175,18 @@ class QueueTests(Isolated):
         jobs.recover()
         self.assertEqual(jobs.load()[0]['state'], 'interrupted')
 
+    def test_a_report_left_running_by_a_killed_process_is_recovered(self):
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder, True)
+        run = folder / 'scanner-runs' / '20260101T000000-abcdef12'
+        run.mkdir(parents=True)
+        (run / 'report.json').write_text(json.dumps({'id': 'x', 'state': 'running'}))
+        (run / 'work-leftover').mkdir()                 # temp source copy a kill left behind
+        with mock.patch.object(jobs, 'DATA', folder):
+            jobs.recover_reports()
+        self.assertEqual(json.loads((run / 'report.json').read_text())['state'], 'interrupted')
+        self.assertFalse((run / 'work-leftover').exists())
+
 
 class ScheduleTests(Isolated):
     def schedule(self, **extra):
