@@ -97,6 +97,19 @@ class ScannerTests(unittest.TestCase):
             self.assertEqual(report['skipped']['binary'],1)
             self.assertEqual((base/'copy/setup.py').read_text(),(source/'setup.py').read_text())
 
+    def test_snapshot_skips_an_unreadable_file_and_keeps_utf16(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source=(Path(temp)/'repo').resolve();source.mkdir()
+            (source/'a.py').write_text('x=1\n')
+            (source/'utf16.py').write_bytes('y=2\n'.encode('utf-16'))   # NUL bytes, but real source
+            bad=source/'bad.py';bad.write_text('z=3\n');os.chmod(bad,0o000)
+            report=s.snapshot(source,Path(temp)/'copy')
+            # One bad file is skipped, not fatal; UTF-16 is kept as UTF-8.
+            self.assertEqual(report['skipped']['unreadable'],1)
+            self.assertEqual(report['files'],2)
+            self.assertIn('utf16.py',[e['path'] for e in report['manifest']])
+            self.assertEqual((Path(temp)/'copy/utf16.py').read_text(encoding='utf-8'),'y=2\n')
+
     def test_secret_and_snippet_never_enter_normalized_report(self):
         with tempfile.TemporaryDirectory() as temp:
             source=Path(temp);(source/'demo.txt').write_text('placeholder')
