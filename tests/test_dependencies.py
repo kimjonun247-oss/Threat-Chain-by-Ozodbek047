@@ -110,6 +110,34 @@ class AdvisoryTests(unittest.TestCase):
         record['withdrawn']='2025-01-01'
         self.assertEqual(adv.normalize([p],{key:[record['id']]},{record['id']:record},{},True),[])
 
+    def test_cvss_v3_base_score_matches_reference_vectors(self):
+        # Reference scores from the FIRST.org CVSS v3.1 specification examples.
+        self.assertEqual(adv.cvss3_base_score('CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H'), 10.0)  # Log4Shell
+        self.assertEqual(adv.cvss3_base_score('CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N'), 7.5)    # HIGH
+        self.assertEqual(adv.cvss3_base_score('CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N'), 0.0)    # no impact
+        self.assertIsNone(adv.cvss3_base_score('CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H'))    # v4: not parsed here
+        self.assertIsNone(adv.cvss3_base_score('not a vector'))
+        for score, band in [(10.0, 'CRITICAL'), (9.0, 'CRITICAL'), (8.9, 'HIGH'), (7.0, 'HIGH'),
+                            (6.9, 'MEDIUM'), (4.0, 'MEDIUM'), (3.9, 'LOW'), (0.1, 'LOW'), (0.0, None), (None, None)]:
+            self.assertEqual(adv.severity_band(score), band)
+
+    def test_a_cvss_only_record_is_rated_not_left_unknown(self):
+        # A record with a CVSS vector but no qualitative database_specific label
+        # (common for NVD/PySEC sources) used to score UNKNOWN -> REVIEW. It must
+        # now take the band the CVSS vector states, and with it a real priority.
+        p=fixture();key=(p['ecosystem'],p['name'],p['version'])
+        record={'id':'CVE-2025-99999','aliases':['CVE-2025-99999'],'summary':'CVSS only',
+                'severity':[{'type':'CVSS_V3','score':'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H'}],
+                'affected':[{'package':{'ecosystem':'PyPI','name':'demo-pkg'},
+                             'ranges':[{'type':'ECOSYSTEM','events':[{'introduced':'0'},{'fixed':'2.0'}]}]}]}
+        rows=adv.normalize([p],{key:[record['id']]},{record['id']:record},{},True)
+        self.assertEqual(rows[0]['severity'],'CRITICAL')
+        self.assertEqual(rows[0]['priority'],'P1')
+        # And the higher of the label and the CVSS band wins when both are present.
+        record['database_specific']={'severity':'LOW'}
+        rows=adv.normalize([p],{key:[record['id']]},{record['id']:record},{},True)
+        self.assertEqual(rows[0]['severity'],'CRITICAL')
+
     def test_arbitrary_network_endpoint_rejected(self):
         for url in ('http://api.osv.dev/v1/querybatch','https://evil.invalid/','https://api.osv.dev/v1/vulns/../secret'):
             with self.assertRaises(adv.FeedError):adv.fetch(url)

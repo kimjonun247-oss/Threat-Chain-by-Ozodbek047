@@ -130,6 +130,73 @@ def clean_text(value,limit=1500):
     return ''.join(c for c in str(value or '') if c.isprintable() or c in '\n\t')[:limit]
 
 
+# CVSS v3.0/3.1 base-score metric weights. The base equation is identical for
+# 3.0 and 3.1 (3.1 only changed the Roundup step); see the FIRST.org CVSS v3.1
+# specification, section 7.1. Only the base vector is read -- never temporal or
+# environmental, which OSV does not carry.
+_CVSS3={'AV':{'N':0.85,'A':0.62,'L':0.55,'P':0.2},'AC':{'L':0.77,'H':0.44},
+        'UI':{'N':0.85,'R':0.62},'C':{'H':0.56,'L':0.22,'N':0.0},
+        'I':{'H':0.56,'L':0.22,'N':0.0},'A':{'H':0.56,'L':0.22,'N':0.0}}
+# Privileges Required is weighted differently when the scope is Changed.
+_CVSS3_PR={'U':{'N':0.85,'L':0.62,'H':0.27},'C':{'N':0.85,'L':0.68,'H':0.50}}
+
+
+def cvss3_base_score(vector):
+    """CVSS v3.0/3.1 base score from a vector string, or None if unparseable.
+
+    OSV records carry the CVSS *vector*, not a number, so the score has to be
+    computed. Returns a float in [0, 10]; v4 and non-CVSS strings return None and
+    fall through to the qualitative label.
+    """
+    import math
+    parts={}
+    for item in str(vector or '').split('/'):
+        key,_,value=item.partition(':')
+        if key:parts[key]=value
+    if not parts.get('CVSS','').startswith('3'):
+        return None
+    try:
+        scope=parts['S']
+        av,ac,ui=_CVSS3['AV'][parts['AV']],_CVSS3['AC'][parts['AC']],_CVSS3['UI'][parts['UI']]
+        pr=_CVSS3_PR['C' if scope=='C' else 'U'][parts['PR']]
+        c,i,a=_CVSS3['C'][parts['C']],_CVSS3['I'][parts['I']],_CVSS3['A'][parts['A']]
+    except KeyError:
+        return None
+    iss=1-(1-c)*(1-i)*(1-a)
+    impact=(7.52*(iss-0.029)-3.25*(iss-0.02)**15) if scope=='C' else 6.42*iss
+    if impact<=0:
+        return 0.0
+    exploitability=8.22*av*ac*pr*ui
+    raw=1.08*(impact+exploitability) if scope=='C' else impact+exploitability
+    return min(math.ceil(raw*10)/10,10.0)   # CVSS Roundup to one decimal place
+
+
+def severity_band(score):
+    """CVSS base score -> the project's qualitative band (OSV/NVD thresholds)."""
+    if score is None:return None
+    if score>=9.0:return 'CRITICAL'
+    if score>=7.0:return 'HIGH'
+    if score>=4.0:return 'MEDIUM'
+    if score>=0.1:return 'LOW'
+    return None
+
+
+def record_ratings(record):
+    """Every severity band a single OSV record states: its qualitative label and
+    the band of each CVSS v3 vector it carries. Before this, only the label was
+    read, so a record with a CVSS vector but no label (common for NVD/PySEC
+    sources) was scored UNKNOWN and de-prioritised."""
+    ratings=[]
+    label=str((record.get('database_specific') or {}).get('severity','UNKNOWN')).upper()
+    if label in {'CRITICAL','HIGH','MODERATE','MEDIUM','LOW'}:
+        ratings.append('MEDIUM' if label=='MODERATE' else label)
+    for entry in record.get('severity') or []:
+        if isinstance(entry,dict) and str(entry.get('type','')).upper().startswith('CVSS_V3'):
+            band=severity_band(cvss3_base_score(entry.get('score')))
+            if band:ratings.append(band)
+    return ratings
+
+
 def normalize(packages,matches,details,kev,kev_available):
     occurrences={}
     for row in packages:occurrences.setdefault((row['ecosystem'],row['name'],row['version']),[]).append(row)
@@ -154,8 +221,9 @@ def normalize(packages,matches,details,kev,kev_available):
             primary=cves[0] if len(cves)==1 else matched_ids[0]
             fixed=set();ratings=[];references=[];cwe_ids=set()
             for record in records:
-                severity=str(record.get('database_specific',{}).get('severity','UNKNOWN')).upper()
-                if severity in {'CRITICAL','HIGH','MODERATE','MEDIUM','LOW'}:ratings.append('MEDIUM' if severity=='MODERATE' else severity)
+                # Qualitative label plus every CVSS v3 vector the record carries,
+                # so a record scored only by CVSS is no longer read as UNKNOWN.
+                ratings+=record_ratings(record)
                 for raw_cwe in record.get('database_specific',{}).get('cwe_ids') or []:
                     match=re.fullmatch(r'CWE-(\d+)',str(raw_cwe))
                     if match:cwe_ids.add(int(match.group(1)))
