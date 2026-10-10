@@ -86,6 +86,14 @@ class DecisionTests(Base):
             with self.assertRaises(ValueError):
                 triage.decide('demo', bad, 'confirmed', 'AX', 'asos')
 
+    def test_d2_an_invalid_fingerprint_in_a_batch_writes_no_events_at_all(self):
+        """A bad fingerprint found mid-batch must not leave the earlier findings'
+        append-only events behind with no decision in the state file."""
+        with self.assertRaises(ValueError):
+            triage.decide_many('demo', ['a' * 24, 'b' * 24, 'NOT-HEX'], 'confirmed', 'AX', 'asos')
+        self.assertEqual(triage.events('demo'), [], 'no event may be written when the batch is rejected')
+        self.assertEqual(triage.read('demo')['decisions'], {})
+
     def test_e_the_audit_trail_only_grows(self):
         for status in ('investigating', 'confirmed', 'fixed'):
             triage.decide('demo', 'd' * 24, status, 'AX', 'asos ' + status)

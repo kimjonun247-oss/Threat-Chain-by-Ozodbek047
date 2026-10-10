@@ -73,6 +73,44 @@ class PasswordAndUserTests(Isolated):
         self.assertFalse(auth.allowed(operator, 'GET', '/api/audit'))
         self.assertTrue(auth.allowed(admin, 'POST', '/api/schedules'))
         self.assertTrue(auth.allowed(admin, 'GET', '/api/audit'))
+        # Wiping every result and the triage history is an admin decision, not an
+        # operator's: it destroys the record, heavier than running a scan.
+        self.assertEqual(auth.required_role('POST', '/api/reset/results'), 'admin')
+        self.assertFalse(auth.allowed(operator, 'POST', '/api/reset/results'))
+        self.assertTrue(auth.allowed(admin, 'POST', '/api/reset/results'))
+
+    def test_the_login_decoy_hash_costs_the_same_as_a_real_check(self):
+        """An unknown user must not return faster than a known one, or the
+        response time enumerates which usernames exist. The decoy hash has to use
+        the real iteration count, not a cheap constant."""
+        seen = []
+        real = auth.hashlib.pbkdf2_hmac
+
+        def spy(name, password, salt, iterations, *rest):
+            seen.append(iterations)
+            return real(name, password, salt, iterations, *rest)
+
+        self.addCleanup(auth._DECOY.clear)
+        with mock.patch.object(auth, 'ITERATIONS', 2345):
+            # Store the user at the very iteration count the decoy will use, so a
+            # mismatch can only come from the decoy using a different (cheaper)
+            # count -- which is the bug this test guards against.
+            auth.save({'alice': {'role': 'operator', 'password': auth.hash_password(PASSWORD, iterations=2345),
+                                 'disabled': False, 'created_at': auth.now()}})
+            auth._DECOY.clear()
+            auth._decoy_hash()                             # warm the decoy cache, as a live server would
+            with mock.patch.object(auth.hashlib, 'pbkdf2_hmac', spy):
+                with self.assertRaises(ValueError):
+                    auth.login('ghost', 'some password here', '10.0.0.9')    # unknown user
+                unknown_cost = list(seen)
+                seen.clear()
+                with self.assertRaises(ValueError):
+                    auth.login('alice', 'wrong password here', '10.0.0.10')  # known, wrong pw
+                known_cost = list(seen)
+        # One PBKDF2 of the same iteration count on each path -- no cheaper, no
+        # extra: an unknown name is indistinguishable from a wrong password.
+        self.assertEqual(unknown_cost, known_cost)
+        self.assertEqual(unknown_cost, [2345])
 
 
 class SessionTests(Isolated):
@@ -102,6 +140,16 @@ class SessionTests(Isolated):
         token, _ = auth.login('alice', PASSWORD, '127.0.0.1')
         auth.set_password('alice', 'another long passphrase')
         self.assertIsNone(auth.session(token))
+
+    def test_read_audit_returns_only_the_tail_without_reading_the_whole_file(self):
+        """The audit log grows without bound; a read must stay bounded to the
+        requested tail, never load the whole file (readlines did)."""
+        for n in range(500):
+            auth.audit('request', user='alice', path='/api/x', status=200, details={'n': n})
+        rows = auth.read_audit(10)
+        self.assertEqual(len(rows), 10)
+        # Newest first, and exactly the last ten that were written.
+        self.assertEqual([r['details']['n'] for r in rows], list(range(499, 489, -1)))
 
     def test_only_ids_reach_the_audit_log(self):
         picked = auth.payload_ids({'id': 'shop', 'url': 'https://user:secret@shop.example.test/x?token=abc',

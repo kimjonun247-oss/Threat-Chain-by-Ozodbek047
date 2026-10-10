@@ -192,12 +192,19 @@ def decide_many(scope, fingerprints, status, owner, note, bound_to=None, stage='
     """Record decisions for one or many findings in a SINGLE decisions-file write,
     so a bulk of 200 does not rewrite (and re-read) the whole file 200 times."""
     base = _decision_record(status, owner, note, bound_to, stage, target)
+    # Validate the whole batch before writing anything. An invalid fingerprint
+    # found mid-loop used to raise after earlier findings had already written
+    # their append-only event files, leaving the audit trail ahead of a
+    # decisions file that was never written -- orphan events for a decision the
+    # state never records. All-or-nothing instead.
+    unique = list(dict.fromkeys(fingerprints))
+    for fingerprint in unique:
+        if not re.fullmatch(r'[0-9a-f]{24}', str(fingerprint or '')):
+            raise ValueError('Topilma identifikatori noto‘g‘ri.')
     records = {}
     with LOCK:
         data = read(scope)
-        for fingerprint in dict.fromkeys(fingerprints):
-            if not re.fullmatch(r'[0-9a-f]{24}', str(fingerprint or '')):
-                raise ValueError('Topilma identifikatori noto‘g‘ri.')
+        for fingerprint in unique:
             record = dict(base)
             event(scope, {'scope': scope, 'fingerprint': fingerprint, **record})
             data['decisions'][fingerprint] = record
