@@ -102,6 +102,9 @@ class DecisionTests(Base):
         self.assertEqual(len({e['event_id'] for e in events}), 3)
         # The current view holds only the latest; the history holds all of them.
         self.assertEqual(triage.read('demo')['decisions']['d' * 24]['status'], 'fixed')
+        # count_events() must agree with events() without opening the files.
+        self.assertEqual(triage.count_events('demo'), len(events))
+        self.assertEqual(triage.overview('demo')['events'], len(events))
 
     def test_f_decisions_of_one_project_do_not_leak_into_another(self):
         triage.decide('demo', 'e' * 24, 'false_positive', 'AX', 'asos')

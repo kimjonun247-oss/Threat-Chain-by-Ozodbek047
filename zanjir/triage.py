@@ -28,6 +28,7 @@ medium/low. No DefectDojo code is used.
 """
 import datetime
 import json
+import os
 import re
 import threading
 import time
@@ -166,6 +167,20 @@ def events(scope):
         except (OSError, ValueError):
             continue
     return sorted(rows, key=lambda row: str(row.get('updated_at') or ''))
+
+
+def count_events(scope):
+    """How many events the trail holds, without opening any of them.
+
+    The audit trail is one append-only file per event and grows without bound;
+    overview() needs only its size, so it counts names rather than parsing every
+    file (which readLoad did, turning a count into O(events) JSON reads)."""
+    directory = folder(scope) / 'review-events'
+    try:
+        with os.scandir(directory) as entries:
+            return sum(1 for entry in entries if entry.name.endswith('.json') and entry.is_file())
+    except OSError:
+        return 0
 
 
 def _decision_record(status, owner, note, bound_to, stage, target):
@@ -416,7 +431,7 @@ def overview(scope, at=None):
                      'severity_scale': severity,
                      'sla': sla(severity, seen.get('first_seen'), at) if decision['status'] not in CLOSED else None})
     open_rows = [r for r in rows if r['status'] not in CLOSED]
-    return {'scope': scope, 'decisions': rows, 'seen': len(data['seen']), 'events': len(events(scope)),
+    return {'scope': scope, 'decisions': rows, 'seen': len(data['seen']), 'events': count_events(scope),
             'sla_days': dict(SLA_DAYS),
             'overdue': sum(1 for r in open_rows if (r['sla'] or {}).get('overdue')),
             'note': ('Qarorlar loyiha va topilma identifikatori bo‘yicha saqlanadi, hisobot bo‘yicha emas — '

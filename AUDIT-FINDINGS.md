@@ -70,7 +70,7 @@ eventlar). API (`apply`) fingerprintlarni hisobotda borligini oldindan tekshirga
 hozir triggerlanmaydi, lekin `decide_many` to'g'ridan chaqirilsa latent. **Tuzatma:**
 barcha fingerprintlarni event yozishdan OLDIN validatsiya qilish (pre-pass).
 
-### TRIAGE-3 🟡 `events()` sanash uchun barcha event fayllarini pars qiladi — ochiq
+### TRIAGE-3 ✅ `events()` sanash uchun barcha event fayllarini pars qiladi — ochiq
 `overview()` (triage.py:412) `len(events(scope))` — faqat SONI uchun har bir event
 JSON faylini ochib pars qiladi. Tarix o'sgani sari sekinlashadi (AUTH-2 klassi, lekin
 yengilroq: kichik fayllar). **Tuzatma:** `os.scandir` bilan parslashsiz sanash.
