@@ -83,3 +83,30 @@ yengilroq: kichik fayllar). **Tuzatma:** `os.scandir` bilan parslashsiz sanash.
 **REMOTE-1 ✅** — `remote_source.guard_destination()` qo'shildi: `clone()` git'ni ishga tushirishdan oldin host'ni resolve qilib loopback/link-local/metadata/multicast/unspecified manzillarni rad etadi. Xususiy intranet (10.x, 192.168.x) ruxsat etiladi (ichki git serveri qonuniy; code-target'da opt-in yo'q). Eng-yaxshi-harakat (git ulanishda qayta resolve qiladi — rebinding'ga kafolat emas, lekin statik metadata/loopback hujumini to'xtatadi). webscan SSRF bilan izchil.
 
 **TRIAGE-1 ✅** — `decisions` va `seen` alohida fayllarga ajratildi (decisions.json / seen.json). observe() faqat seen.json, decide_many() faqat decisions.json yozadi — jarayonlararo bir-birini bosib o'chirmaydi, inson qarori yo'qolmaydi. Legacy birlashgan fayl orqaga-moslik bilan o'qiladi va keyingi yozuvda ajraladi (seen yo'qolmaydi). Inter-process lock qo'shilmadi — loyihaning atomik-replace dizayniga izchil.
+
+---
+
+## Frontend (TypeScript) auditi
+
+Butun `web/src/*.ts` (13 fayl) ko'rib chiqildi: XSS, holat poygalari, routing, listener
+leak, error handling.
+
+**Xavfsizlik — toza:** `escapeHTML` `[&<>"']` ni escape qiladi (HTML matn + atribut
+konteksti) va barcha render yo'llarida izchil ishlatiladi — shu jumladan eng ishonchsiz
+ma'lumot (web-skan tashqi saytlardan, kod/image/iac/CVE topilmalari). `sourceLink` raw
+URL'ni faqat qat'iy github regex + `[a-f0-9]{40}` commit tekshiruvidan keyin ishlatadi,
+yo'l segmentlari `encodeURIComponent`. CSP (`script-src 'self'`, `unsafe-inline` yo'q)
+kuchli backstop. **XSS, injection yoki auth-bypass topilmadi.**
+
+**Core to'g'ri:** `api()` inflight-dedup (bir xil GET'lar ulashadi), `login()` 401-da
+qayta-auth (`loginPromise` muvaffaqiyatdan keyin null ga qaytadi — cheksiz tsikl yo'q),
+`pollReport` (tab yashirilganda to'xtaydi, 1s→5s). `view()` faqat haqiqiy nomlar bilan,
+listener leak yo'q (innerHTML yangi elementlarga biriktiradi). Qidiruv inputida
+`results()` faqat ro'yxatni qayta render qiladi — fokus yo'qolmaydi.
+
+### FE-1 🟡 Ro'yxat yuklovchilarida javob-tartibi poygasi — findings.ts tuzatildi
+`load()` (findings.ts) tez filtr/sahifa bosishda bir-birini bosib yuboradi — sekin eski
+javob tez yangi javobdan keyin kelib eski qatorlarni chizishi mumkin. **Tuzatildi:**
+sekvens raqami guard — faqat eng yangi load paint qiladi. Xuddi shu naqsh skaner
+modullaridagi tarix-element bosishida ham bor (past xavf, single-user'da o'z-o'zini
+tuzatadi) — kuzatuv sifatida qoldirildi.

@@ -157,16 +157,24 @@
     $('findings-selected').textContent = `${state.selected.size} ta tanlandi`;
   }
 
+  // Rapid filter/paging clicks fire overlapping loads; without a guard a slower
+  // earlier response can land after a faster later one and paint stale rows over
+  // the current view. Each load takes a sequence number and only the newest one
+  // is allowed to paint.
+  let loadSeq = 0;
   async function load() {
     writeUrl();
     $('findings-table').innerHTML = '<p class="empty">Yuklanmoqda…</p>';
     const params = new URLSearchParams(state.filters);
     params.set('offset', String(state.offset));
     params.set('limit', String(state.limit));
+    const seq = ++loadSeq;
     try {
-      state.data = await api('/api/findings?' + params.toString());
+      const data = await api('/api/findings?' + params.toString());
+      if (seq !== loadSeq) return;         // a newer load has superseded this one
+      state.data = data;
       paint();
-    } catch (error) { showError(error); }
+    } catch (error) { if (seq === loadSeq) showError(error); }
   }
 
   /* ---- detail drawer --------------------------------------------------- */
