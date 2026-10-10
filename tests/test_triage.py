@@ -106,6 +106,39 @@ class DecisionTests(Base):
         self.assertEqual(triage.count_events('demo'), len(events))
         self.assertEqual(triage.overview('demo')['events'], len(events))
 
+    def test_g_a_stale_seen_write_cannot_erase_a_human_decision(self):
+        """The cross-process race: a scan reads the ledger, a decision is made,
+        then the scan writes its now-stale ledger. The decision must survive --
+        it does because decisions and seen are separate files now."""
+        stale = triage.read('demo')                       # a scan reads first (no decision yet)
+        stale['seen']['a' * 24] = {'first_seen': '2026-01-01T00:00:00+00:00',
+                                   'last_seen': '2026-01-01T00:00:00+00:00', 'severity': 'HIGH'}
+        triage.decide('demo', 'a' * 24, 'false_positive', 'AX', 'asos')   # ...a decision lands...
+        triage._write_seen('demo', stale['seen'])         # ...and only now the scan writes its seen
+        data = triage.read('demo')
+        self.assertEqual(data['decisions']['a' * 24]['status'], 'false_positive')
+        self.assertIn('a' * 24, data['seen'])
+
+    def test_h_a_legacy_combined_file_still_reads_and_then_splits(self):
+        """Old stores kept decisions and seen in one decisions.json; it must keep
+        working and move `seen` into seen.json on the next decision, losing nothing."""
+        folder = triage.folder('demo')
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / 'decisions.json').write_text(json.dumps({'scope': 'demo',
+            'decisions': {'b' * 24: {'status': 'accepted_risk', 'owner': 'AX', 'note': 'eski',
+                                     'updated_at': '2026-01-01T00:00:00+00:00', 'bound_to': None,
+                                     'stage': 'code', 'target': 'demo-src'}},
+            'seen': {'b' * 24: {'first_seen': '2026-01-01T00:00:00+00:00',
+                                'last_seen': '2026-01-01T00:00:00+00:00', 'severity': 'HIGH'}}}), encoding='utf-8')
+        first = triage.read('demo')
+        self.assertEqual(first['decisions']['b' * 24]['status'], 'accepted_risk')
+        self.assertIn('b' * 24, first['seen'])            # seen still read from the legacy file
+        triage.decide('demo', 'c' * 24, 'confirmed', 'AX', 'asos')   # a write splits the files
+        self.assertTrue((folder / 'seen.json').exists())
+        after = triage.read('demo')
+        self.assertIn('b' * 24, after['seen'])            # legacy seen was preserved, not dropped
+        self.assertEqual(sorted(after['decisions']), sorted(['b' * 24, 'c' * 24]))
+
     def test_f_decisions_of_one_project_do_not_leak_into_another(self):
         triage.decide('demo', 'e' * 24, 'false_positive', 'AX', 'asos')
         other = triage.attach('code', 'boshqa-loyiha', {'findings': [finding('e' * 24)]})
@@ -332,7 +365,7 @@ class ApiTests(unittest.TestCase):
 
     def test_b2_a_bulk_decision_writes_the_decisions_file_once(self):
         # The whole batch is one file write, not one per finding (load-test #6).
-        with patch.object(triage, 'write', wraps=triage.write) as writer:
+        with patch.object(triage, '_write_decisions', wraps=triage._write_decisions) as writer:
             status, _ = self.call('POST', '/api/triage/bulk',
                                   self.decision(fingerprints=['a' * 24, 'b' * 24]))
         self.assertEqual(status, 200)

@@ -22,9 +22,11 @@ Four rules, each of them a deliberate limit rather than an omission:
      local path pretending to be a URL, or a scheme git would treat as a command
      is refused, and the reason is stated.
 """
+import ipaddress
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -69,6 +71,50 @@ def check_url(url):
     if not path.strip('/'):
         raise ValueError('Manzilda repozitoriy yo‘li ko‘rsatilmagan.')
     return text
+
+
+def host_of(url):
+    """The host of an already-validated URL (https://, ssh:// or git@host:path)."""
+    if '://' in url:
+        authority = url.split('://', 1)[1].split('/', 1)[0]
+        host = authority.rsplit('@', 1)[-1]
+    else:
+        host = url.partition('@')[2].partition(':')[0]
+    # check_url's HOST pattern allows only a trailing :port and no IPv6 brackets,
+    # so the port (if any) is a plain suffix after the last colon.
+    return host.rsplit(':', 1)[0] if ':' in host else host
+
+
+def guard_destination(url):
+    """Refuse a git remote that resolves to a machine-local or metadata address.
+
+    The web scanner already blocks these (zanjir/webscan.py resolve); git clone
+    did not, so an operator could aim the server's git client at 169.254.169.254
+    (cloud metadata), a loopback service or a link-local address. Those are never
+    a real remote git host, so they are refused. Private intranet ranges
+    (10/8, 172.16/12, 192.168/16) ARE allowed: an internal git server is a
+    legitimate target and, unlike a web target, a code target carries no
+    per-target allow_private switch.
+
+    Best effort, not rebinding-proof: git re-resolves the name when it connects,
+    so a name that flips to a blocked address between this check and the clone is
+    not caught. It stops the static case -- a URL pointing straight at metadata
+    or loopback -- which is the one an operator can be tricked into.
+    """
+    host = host_of(url)
+    try:
+        infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    except (socket.gaierror, UnicodeError, ValueError):
+        return                      # a name that will not resolve fails later as git's own error
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            continue
+        if ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified or ip.is_reserved:
+            raise ValueError('Repozitoriy manzili mashina-ichki yoki metadata manziliga ishora qiladi '
+                             '(loopback/link-local/metadata). Bunday manzil masofaviy git uchun qabul '
+                             'qilinmaydi. Ichki tarmoqdagi git serveri (10.x, 192.168.x) qo‘llanadi.')
 
 
 def check_ref(ref):
@@ -124,7 +170,9 @@ def needed_whatever_size(path):
 
 def clone(url, ref='', into=None):
     """Shallow-clone `url` and return (path, provenance). The caller removes it."""
-    return fetch(check_url(url), check_ref(ref), into)
+    url = check_url(url)
+    guard_destination(url)
+    return fetch(url, check_ref(ref), into)
 
 
 def fetch(url, ref='', into=None):

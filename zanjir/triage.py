@@ -132,22 +132,60 @@ def folder(scope):
     return TRIAGE / scope
 
 
-def read(scope):
-    """The stored state of one project: decisions plus the first/last-seen ledger."""
-    path = folder(scope) / 'decisions.json'
+# Decisions and the first/last-seen ledger live in SEPARATE files. They used to
+# share decisions.json, and `write()` wrote the whole thing: a CLI scan's
+# observe() (which touches only `seen`) running at the same time as the server's
+# decide_many() (which touches only `decisions`) each read the combined file and
+# wrote it back, so whichever finished last erased the other's change -- and when
+# observe won, it erased a human's triage decision. Splitting the files makes the
+# two writers touch disjoint files, so neither can clobber the other. decisions
+# come only from the server UI, seen from either, so the dangerous case (a lost
+# decision) cannot happen once they are apart. Within one process LOCK still
+# serialises; across processes the atomic replace is now per-file.
+def _load(path):
     try:
         data = json.loads(path.read_text(encoding='utf-8'))
     except FileNotFoundError:
-        return {'scope': scope, 'decisions': {}, 'seen': {}}
+        return None
     except (OSError, ValueError):
         raise ValueError('Triage faylini o‘qib bo‘lmadi.') from None
-    if not isinstance(data, dict) or not isinstance(data.get('decisions'), dict) or not isinstance(data.get('seen'), dict):
+    if not isinstance(data, dict):
         raise ValueError('Triage fayli formati noto‘g‘ri.')
     return data
 
 
-def write(scope, data):
-    repo_store.write_json(folder(scope) / 'decisions.json', data)
+def read(scope):
+    """The stored state of one project: decisions plus the first/last-seen ledger.
+
+    Reads the split files, falling back to a legacy combined decisions.json for
+    `seen` until the next write of each kind moves it into seen.json.
+    """
+    base = folder(scope)
+    combined = _load(base / 'decisions.json') or {}
+    seen_file = _load(base / 'seen.json')
+    decisions = combined.get('decisions')
+    seen = seen_file.get('seen') if seen_file is not None else combined.get('seen')
+    if not isinstance(decisions, dict):
+        decisions = {}
+    if not isinstance(seen, dict):
+        seen = {}
+    return {'scope': scope, 'decisions': decisions, 'seen': seen}
+
+
+def _write_decisions(scope, decisions):
+    repo_store.write_json(folder(scope) / 'decisions.json', {'scope': scope, 'decisions': decisions})
+
+
+def _write_seen(scope, seen):
+    repo_store.write_json(folder(scope) / 'seen.json', {'scope': scope, 'seen': seen})
+
+
+def _ensure_seen_split(scope, data):
+    """Before decisions.json is rewritten without its legacy `seen`, make sure
+    that `seen` is already safe in seen.json -- otherwise the one-time migration
+    would drop it."""
+    if data.get('seen') and not (folder(scope) / 'seen.json').exists():
+        _write_seen(scope, data['seen'])
 
 
 def event(scope, record):
@@ -219,12 +257,13 @@ def decide_many(scope, fingerprints, status, owner, note, bound_to=None, stage='
     records = {}
     with LOCK:
         data = read(scope)
+        _ensure_seen_split(scope, data)   # keep legacy `seen` before dropping it from decisions.json
         for fingerprint in unique:
             record = dict(base)
             event(scope, {'scope': scope, 'fingerprint': fingerprint, **record})
             data['decisions'][fingerprint] = record
             records[fingerprint] = record
-        write(scope, data)   # one write for the whole batch, not one per finding
+        _write_decisions(scope, data['decisions'])   # one write for the whole batch, not one per finding
     # The findings board caches its flattened view for a few seconds; a decision
     # taken from that screen has to show on it immediately.
     try:
@@ -260,7 +299,7 @@ def observe(scope, findings, at=None):
                 entry['last_seen'] = moment
                 entry['severity'] = severity
         if changed:
-            write(scope, data)
+            _write_seen(scope, data['seen'])
     return changed
 
 

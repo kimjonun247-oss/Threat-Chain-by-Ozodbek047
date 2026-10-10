@@ -41,7 +41,7 @@ tozalaydi. Past xavf.
 
 ## remote_source.py
 
-### REMOTE-1 🟡 git clone'da SSRF/xususiy-IP himoyasi yo'q — ochiq
+### REMOTE-1 ✅ git clone'da SSRF/xususiy-IP himoyasi yo'q — tuzatildi
 `check_url` (remote_source.py:43) host sintaksisini tekshiradi, lekin ichki/xususiy
 manzillarni (192.168.x, 10.x, 169.254.169.254 metadata, localhost) rad etmaydi.
 Operator server'ni ichki git serverlariga yoki metadata endpoint'ga ulanishga
@@ -54,7 +54,7 @@ xususiy/loopback/link-local diapazonlarni rad etish, nettrust bilan bir xil.
 
 ## triage.py
 
-### TRIAGE-1 🟡 Jarayonlararo yangilanish yo'qolishi (lost update) — ochiq
+### TRIAGE-1 ✅ Jarayonlararo yangilanish yo'qolishi (lost update) — tuzatildi
 `decide_many`/`observe` (triage.py:196,224) modul-ichi `LOCK` bilan read-modify-write
 qiladi — bu faqat BIR jarayonda serializatsiya. CLI skani `observe()` ni server UI
 `decide_many()` bilan bir vaqtda bitta scope'ga yozsa, atomik replace oxirgi yozuvchi
@@ -74,3 +74,12 @@ barcha fingerprintlarni event yozishdan OLDIN validatsiya qilish (pre-pass).
 `overview()` (triage.py:412) `len(events(scope))` — faqat SONI uchun har bir event
 JSON faylini ochib pars qiladi. Tarix o'sgani sari sekinlashadi (AUTH-2 klassi, lekin
 yengilroq: kichik fayllar). **Tuzatma:** `os.scandir` bilan parslashsiz sanash.
+
+
+---
+
+## Tuzatish qaydlari (REMOTE-1, TRIAGE-1)
+
+**REMOTE-1 ✅** — `remote_source.guard_destination()` qo'shildi: `clone()` git'ni ishga tushirishdan oldin host'ni resolve qilib loopback/link-local/metadata/multicast/unspecified manzillarni rad etadi. Xususiy intranet (10.x, 192.168.x) ruxsat etiladi (ichki git serveri qonuniy; code-target'da opt-in yo'q). Eng-yaxshi-harakat (git ulanishda qayta resolve qiladi — rebinding'ga kafolat emas, lekin statik metadata/loopback hujumini to'xtatadi). webscan SSRF bilan izchil.
+
+**TRIAGE-1 ✅** — `decisions` va `seen` alohida fayllarga ajratildi (decisions.json / seen.json). observe() faqat seen.json, decide_many() faqat decisions.json yozadi — jarayonlararo bir-birini bosib o'chirmaydi, inson qarori yo'qolmaydi. Legacy birlashgan fayl orqaga-moslik bilan o'qiladi va keyingi yozuvda ajraladi (seen yo'qolmaydi). Inter-process lock qo'shilmadi — loyihaning atomik-replace dizayniga izchil.
