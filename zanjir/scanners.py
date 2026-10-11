@@ -715,7 +715,13 @@ def normalize(tool,data,source,messages=None):
 
 def version(tool,command,env,work):
     args=command[:1]+(['--version'] if tool in ('semgrep','pmd') else ['version'])
-    process=subprocess.run(args,cwd=work,env=env,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30)
+    # 120 s, not 30: Semgrep is a Python program whose first start under an amd64
+    # image emulated on an arm64 host takes ~47 s (measured), and the pre-flight
+    # version check was timing out there before the scan even began -- so the
+    # whole code scan's primary tool silently failed on an arm64 Docker host. A
+    # native run returns in well under a second, so the wider bound costs it
+    # nothing. Gitleaks and Trivy (Go) start in ~5 s even emulated.
+    process=subprocess.run(args,cwd=work,env=env,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=120)
     if 'CertOpenSystemStore returned NULL' in process.stderr:raise RuntimeError('windows_certificate_store')
     if process.returncode!=0:raise ValueError('Skaner versiyasini tekshirib bo‘lmadi.')
     match=re.search(r'\b\d+\.\d+\.\d+\b',process.stdout)
