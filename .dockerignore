@@ -7,6 +7,11 @@
 *.pyc
 *.tmp
 
+# A saved image archive (docker save | gzip) dropped in the project folder: it is
+# the image itself, multiple GB, and must never be copied back into a build.
+*.tar.gz
+*.tar
+
 # Frontend dev tree (dist/ is committed and copied; node_modules is not needed).
 web/node_modules/
 
@@ -38,6 +43,13 @@ profiles/users.json
 profiles/triage/
 profiles/schedules/
 profiles/local/
+# Operator-registered targets (image/web/repository/portfolio) are runtime state,
+# not bundled samples: only crapi.json and chain-demo.json ship. Without these a
+# build bakes the developer's own registered targets -- and their authorization
+# records (owner, allow_private, authorized_at) -- into every user's image.
+profiles/images/
+profiles/web/
+profiles/portfolio/
 pilot/runtime/
 pilot/evidence/
 pilot/tls-runs/
