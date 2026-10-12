@@ -58,9 +58,19 @@ nuqsonlar auditdan o'tgan, lekin haqiqiy Windows yurish-natijasi hali tasdiqlanm
 
 ## Docker bilan ishga tushirish (hech narsa o'rnatmasdan)
 
-Yangi kompyuterda `setup_all.py` ham, Java ham, venv ham o'rnatishni istamasangiz — barcha skaner
-(Semgrep, Gitleaks, Trivy, Nuclei, PMD) va CodeQL bundle **image ichiga pishirilgan**. Kompyuterда
-faqat **Docker** bo'lishi kerak:
+Yangi kompyuterda `setup_all.py` ham, Java ham, venv ham, pip ham o'rnatishni istamasangiz —
+**hamma narsa image ichiga pishirilgan**. Kompyuterда faqat **Docker** bo'lishi kerak.
+
+Image ichida:
+- 7 ta skaner: **Semgrep, Gitleaks, Trivy** (+ zaiflik bazasi), **Nuclei** (+ shablonlar),
+  **PMD** (+ Java), va pinlangan Semgrep qoida paketi
+- **CodeQL bundle + query-paketlari** — tahlil `--no-download` bilan ishlaydi, ya'ni chuqur
+  tahlil konteyner ichida **to'liq offline** ishlaydi (skan vaqtida internet kerak emas)
+- **CWE → OWASP xaritasi** (build vaqtida MITRE'dan yaratiladi)
+- ixtiyoriy Python kutubxonalari (cryptography, certifi) — barcha funksiya ishlashi uchun
+
+> Faqat **jonli zaiflik ma'lumoti** (OSV / NVD / EPSS / Trivy baza yangilanishi) skan vaqtida
+> internetdan olinadi — bu "doim online" dizayn, o'rnatish qadami emas.
 
 ```bash
 git clone https://github.com/kimjonun247-oss/Kim-Jon-Un.git
@@ -89,8 +99,11 @@ docker compose down           # to'xtatish (volume'lar saqlanadi)
 docker compose down -v        # to'xtatish + barcha ma'lumotni o'chirish
 ```
 
-Image `linux/amd64` ga pinlangan (CodeQL faqat x86_64) — Apple Silicon'da emulyatsiya orqali
-ishlaydi. "Doim online" dizayn Docker'da ham saqlanadi: skan vaqtida OSV/NVD baribir so'raladi.
+Image **har qanday OS'da bir xil ishlaydi** — Windows, Linux va macOS'da farqsiz. `linux/amd64`
+ga pinlangani uchun image hamma joyda **aynan bir xil**: amd64 kompyuterда (ko'pchilik
+Windows/Linux va Intel Mac) native, arm64'да (Apple Silicon) Docker'ning o'z emulyatsiyasi orqali.
+Hech narsa biror OS'ga sozlanmagan. "Doim online" dizayn Docker'da ham saqlanadi: skan vaqtида
+jonli zaiflik ma'lumoti (OSV/NVD) baribir so'raladi.
 
 ## Web panel tezligi (2026-09-25 optimallashtirish)
 

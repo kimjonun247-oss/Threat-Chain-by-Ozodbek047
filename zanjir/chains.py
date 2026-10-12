@@ -93,12 +93,41 @@ def port_summary(service):
                      for p in service.get('ports') or [] if p.get('scope') != 'loopback')[:300]
 
 
+def has_source(service):
+    """True for a service built from local source, so its findings can be chained.
+
+    build_context is '' for a service built from the repository root, a sub-path
+    for a service built from a folder, and None for an image-only service with no
+    local source. Only None is excluded here -- '' is the root build, a real
+    context, not the absence of one.
+    """
+    return (service or {}).get('build_context') is not None
+
+
+def in_context(path, context):
+    """Whether a source or manifest path belongs to a service's build context.
+
+    The empty context is the repository root: the whole source tree is this
+    service's, so every path belongs to it. This is the match that `build: .`
+    needs -- a finding at `app.py` has no `./` prefix to match against `.`.
+    """
+    path = path or ''
+    if context == '':
+        return True
+    return path == context or path.startswith(context + '/')
+
+
+def context_label(context):
+    """A human-readable name for a build context in a finding's detail text."""
+    return context or 'loyiha ildizi'
+
+
 def correlate(code_report, repository_report):
     gitleaks_findings = [f for f in (code_report or {}).get('findings', []) if f.get('tool') == 'gitleaks']
     if not gitleaks_findings:
         return []
     reachable = [s for s in (repository_report or {}).get('services', [])
-                 if s.get('build_context') and any(p['scope'] != 'loopback' for p in s.get('ports', []))]
+                 if has_source(s) and any(p['scope'] != 'loopback' for p in s.get('ports', []))]
     if not reachable:
         return []
     cwe_ids = [f'CWE-{c}' for c in CWE_IDS]
@@ -106,10 +135,9 @@ def correlate(code_report, repository_report):
     results = []
     for service in reachable:
         context = service['build_context']
-        prefix = context + '/'
         for gf in gitleaks_findings:
             path = gf.get('path', '')
-            if path != context and not path.startswith(prefix):
+            if not in_context(path, context):
                 continue
             results.append({
                 'rule_id': 'SX-001', 'title': RULES['SX-001'][0], 'service_id': service['id'],
@@ -119,7 +147,7 @@ def correlate(code_report, repository_report):
                 # documented fallback there, which is weaker but never wrong.
                 'fingerprint': findings_mod.derived('SX-001', [service['id'], gf.get('fingerprint') or path]),
                 'detail': (f"{service['id']} xizmati host portidan to‘g‘ridan-to‘g‘ri ochiq va uning manba katalogida "
-                           f"({context}) Gitleaks {gf.get('rule_id', '?')} sirini topdi ({path}:{gf.get('line', '?')}). "
+                           f"({context_label(context)}) Gitleaks {gf.get('rule_id', '?')} sirini topdi ({path}:{gf.get('line', '?')}). "
                            "Ikkalasi alohida to‘g‘ri: kodda test/dev qiymati qolishi va portni ochish alohida hodisalar. "
                            "Ammo birgalikda: bu xizmat boshqa yo‘l bilan (masalan boshqa zanjir topilmasi orqali) "
                            "buzilsa, sirning o‘zi darhol qo‘lga tushadi."),
@@ -147,14 +175,13 @@ def code_weakness_chains(code_report, repository_report):
     if not weaknesses:
         return []
     reachable = [s for s in (repository_report or {}).get('services', [])
-                 if s.get('build_context') and any(p['scope'] != 'loopback' for p in s.get('ports', []))]
+                 if has_source(s) and any(p['scope'] != 'loopback' for p in s.get('ports', []))]
     results = []
     for service in reachable:
         context = service['build_context']
-        prefix = context + '/'
         for wf in weaknesses:
             path = wf.get('path', '')
-            if path != context and not path.startswith(prefix):
+            if not in_context(path, context):
                 continue
             hit = _exploitable(wf.get('cwe_ids'))
             cwe_ids = sorted(set(hit + ['CWE-668']))
@@ -162,7 +189,7 @@ def code_weakness_chains(code_report, repository_report):
                 'rule_id': 'SX-004', 'title': RULES['SX-004'][0], 'service_id': service['id'],
                 'fingerprint': findings_mod.derived('SX-004', [service['id'], wf.get('fingerprint') or path]),
                 'detail': (f"{service['id']} xizmati host portidan ochiq ({port_summary(service)}) va uning manba "
-                           f"katalogida ({context}) {wf.get('tool')} {wf.get('rule_id', '?')} zaifligini topdi "
+                           f"katalogida ({context_label(context)}) {wf.get('tool')} {wf.get('rule_id', '?')} zaifligini topdi "
                            f"({path}:{wf.get('line', '?')}, {', '.join(hit)}). Bu sinf aynan ochiq port orqali "
                            "hujumchi yeta oladigan turdagi: alohida har biri statik topilma, birga esa "
                            "to‘g‘ridan-to‘g‘ri ekspluatatsiya yuzasi."),
@@ -225,14 +252,13 @@ def dependency_chains(dependency_report, repository_report):
     if not high:
         return []
     reachable = [s for s in (repository_report or {}).get('services', [])
-                 if s.get('build_context') and any(p['scope'] != 'loopback' for p in s.get('ports', []))]
+                 if has_source(s) and any(p['scope'] != 'loopback' for p in s.get('ports', []))]
     results = []
     for service in reachable:
         context = service['build_context']
-        prefix = context + '/'
         for f in high:
             locs = [o for o in f.get('occurrences') or []
-                    if (o.get('manifest') or '') == context or str(o.get('manifest') or '').startswith(prefix)]
+                    if in_context(o.get('manifest'), context)]
             if not locs:
                 continue
             pkg = f.get('package') or {}
@@ -277,7 +303,7 @@ def escape_escalation_chains(code_report, repository_report):
     escape = {f.get('service_id') for f in repo.get('findings') or [] if f.get('rule_id') in ('RP-007', 'RP-008')}
     if not escape:
         return []
-    exposed = {s['id']: s for s in exposed_services(repo) if s.get('build_context') and s['id'] in escape}
+    exposed = {s['id']: s for s in exposed_services(repo) if has_source(s) and s['id'] in escape}
     if not exposed:
         return []
     entries = [f for f in (code_report or {}).get('findings', [])
@@ -287,10 +313,9 @@ def escape_escalation_chains(code_report, repository_report):
     results = []
     for sid, service in sorted(exposed.items()):
         context = service['build_context']
-        prefix = context + '/'
         for f in entries:
             path = f.get('path', '')
-            if path != context and not path.startswith(prefix):
+            if not in_context(path, context):
                 continue
             is_secret = f.get('tool') == 'gitleaks'
             kind = 'qattiq kodlangan sir' if is_secret else f"ekspluatatsion zaiflik ({', '.join(_exploitable(f.get('cwe_ids')))})"
@@ -299,7 +324,7 @@ def escape_escalation_chains(code_report, repository_report):
                 'fingerprint': findings_mod.derived('SX-007', [sid, f.get('fingerprint') or path]),
                 'detail': (f"{sid} xizmati host portidan ochiq va konteynerdan chiqish imtiyoziga ega "
                            "(docker.sock yoki privileged/xavfli capability), ayni paytda uning manba katalogida "
-                           f"({context}) {kind} bor ({path}:{f.get('line', '?')}). Uchalasi birga: kodni "
+                           f"({context_label(context)}) {kind} bor ({path}:{f.get('line', '?')}). Uchalasi birga: kodni "
                            "ekspluatatsiya qilish konteynerni, keyin esa host’ni egallashga olib boradi."),
                 'remediation': RULES['SX-007'][1],
                 'cwe_ids': sorted(set((_exploitable(f.get('cwe_ids')) if not is_secret else []) + [f'CWE-{c}' for c in ESCAPE_CWE])),

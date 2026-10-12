@@ -163,17 +163,21 @@
     $("findings-bulk").hidden = state.selected.size === 0;
     $("findings-selected").textContent = `${state.selected.size} ta tanlandi`;
   }
+  let loadSeq = 0;
   async function load() {
     writeUrl();
     $("findings-table").innerHTML = '<p class="empty">Yuklanmoqda…</p>';
     const params = new URLSearchParams(state.filters);
     params.set("offset", String(state.offset));
     params.set("limit", String(state.limit));
+    const seq = ++loadSeq;
     try {
-      state.data = await api("/api/findings?" + params.toString());
+      const data = await api("/api/findings?" + params.toString());
+      if (seq !== loadSeq) return;
+      state.data = data;
       paint();
     } catch (error) {
-      showError(error);
+      if (seq === loadSeq) showError(error);
     }
   }
   function evidence(finding) {

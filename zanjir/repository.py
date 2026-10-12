@@ -507,11 +507,21 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
             build_context=raw_build['context']
         else:
             build_context=None
-        if build_context:
+        # The build context names the folder a service's source lives in, so a
+        # code/secret/dependency finding under it can be chained to the service.
+        # The repository root ('.', './' or a bare '') is kept as '' -- a real
+        # context meaning "the whole source tree is this service's" -- and never
+        # collapsed to None, which means "no local source" (an image-only
+        # service). Collapsing root to None (or leaving it as '.', which no
+        # finding path starts with) is what silently killed SX-001/004/006/007
+        # for the common `build: .` layout.
+        if build_context is not None:
             build_context=build_context.strip()
             if build_context.startswith('./'):
                 build_context=build_context[2:]
-            build_context=build_context.rstrip('/') or None
+            build_context=build_context.rstrip('/')
+            if build_context=='.':
+                build_context=''
         inventory.append({'id':sid,'ports':ports,'networks':nets,'image':str(service.get('image','')),
                           'build_context':build_context,
                           'evidence_id':service_id,'auth_status':'unknown','runtime_verified':False})

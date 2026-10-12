@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import uuid
 
 from vendor import yaml
@@ -144,6 +145,9 @@ def _verify_registry_manifest():
             raise ValueError('Birlashtirilgan qoida fayli o‘zgargan: '+merged['file'])
     return manifest
 LOCK=threading.Lock()
+# rid -> cancel Event, so a running code scan can be stopped (its subprocess is
+# killed and the temporary source copy is removed). Mirrors zanjir/iac.py.
+CANCEL={}
 ID=run_index.RUN_ID  # one definition shared by every scanner
 EXCLUDED={'.git','.tools','.venv','venv','node_modules','vendor','__pycache__','scanner-runs','dependency-runs','image-runs','web-runs','assessment-runs','validation-runs','advisory-cache','repository-runs','runs','pilot','profiles'}
 IGNORE_FILES={'.semgrepignore','.gitleaksignore','.gitleaks.toml'}
@@ -318,7 +322,7 @@ def scanner_environment(work):
 def snapshot(source,destination):
     destination.mkdir()
     entries=[]
-    skipped={'excluded':0,'links':0,'binary':0,'large':0}
+    skipped={'excluded':0,'links':0,'binary':0,'large':0,'unreadable':0}
     total=0
     def linked(path):
         info=path.lstat()
@@ -336,15 +340,29 @@ def snapshot(source,destination):
             if name in IGNORE_FILES:skipped['excluded']+=1;continue
             if linked(path):skipped['links']+=1;continue
             if not path.resolve().is_relative_to(source):raise ValueError('Manba yo‘li loyiha chegarasidan chiqdi.')
-            if path.stat().st_size>MAX_FILE:skipped['large']+=1;continue
-            raw=path.read_bytes()
-            if b'\0' in raw:skipped['binary']+=1;continue
+            try:
+                if path.stat().st_size>MAX_FILE:skipped['large']+=1;continue
+                raw=path.read_bytes()
+            except OSError:
+                # One file that cannot be read (permissions, a path too long for
+                # the OS, a partial clone, a race) is skipped and counted -- never
+                # fatal. A single bad file must not take the whole scan down.
+                skipped['unreadable']+=1;continue
+            # UTF-16 text has NUL bytes but is real source: re-encode it as UTF-8
+            # and keep it, instead of discarding it as binary.
+            if raw[:2] in (b'\xff\xfe',b'\xfe\xff'):
+                try:raw=raw.decode('utf-16').encode('utf-8')
+                except (UnicodeDecodeError,UnicodeEncodeError):skipped['binary']+=1;continue
+            elif b'\0' in raw:skipped['binary']+=1;continue
             total+=len(raw)
             if total>MAX_TOTAL or len(entries)>=10000:raise ValueError('Loyiha 50 MB yoki 10000 fayl chegarasidan oshdi.')
             relative=path.relative_to(source)
             target=destination/relative
-            target.parent.mkdir(parents=True,exist_ok=True)
-            target.write_bytes(raw)
+            try:
+                target.parent.mkdir(parents=True,exist_ok=True)
+                target.write_bytes(raw)
+            except OSError:
+                skipped['unreadable']+=1;total-=len(raw);continue
             entries.append({'path':relative.as_posix(),'sha256':hashlib.sha256(raw).hexdigest()})
     if not entries:raise ValueError('Tekshiriladigan matn fayli topilmadi.')
     digest=hashlib.sha256(json.dumps(entries,sort_keys=True).encode()).hexdigest()
@@ -697,7 +715,13 @@ def normalize(tool,data,source,messages=None):
 
 def version(tool,command,env,work):
     args=command[:1]+(['--version'] if tool in ('semgrep','pmd') else ['version'])
-    process=subprocess.run(args,cwd=work,env=env,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30)
+    # 120 s, not 30: Semgrep is a Python program whose first start under an amd64
+    # image emulated on an arm64 host takes ~47 s (measured), and the pre-flight
+    # version check was timing out there before the scan even began -- so the
+    # whole code scan's primary tool silently failed on an arm64 Docker host. A
+    # native run returns in well under a second, so the wider bound costs it
+    # nothing. Gitleaks and Trivy (Go) start in ~5 s even emulated.
+    process=subprocess.run(args,cwd=work,env=env,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=120)
     if 'CertOpenSystemStore returned NULL' in process.stderr:raise RuntimeError('windows_certificate_store')
     if process.returncode!=0:raise ValueError('Skaner versiyasini tekshirib bo‘lmadi.')
     match=re.search(r'\b\d+\.\d+\.\d+\b',process.stdout)
@@ -741,6 +765,7 @@ def pilot_summary():
 
 def execute(target,rid):
     folder=RUNS/rid
+    event=CANCEL.get(rid)
     report=read_report(rid)
     report.update(state='running',tools={},findings=[])
     write(folder/'report.json',report)
@@ -772,12 +797,24 @@ def execute(target,rid):
                     # scan legitimately takes minutes rather than seconds.
                     limit=900 if (tool=='semgrep' and manifest) else 240
                     run_command,low=priority.gentle(command)
-                    process=subprocess.run(run_command,cwd=work,env=env,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=limit,**low)
+                    # Stream output to a file, not a PIPE: a 50k-finding JSON would
+                    # fill a pipe buffer and deadlock, and a file keeps the scan's
+                    # peak memory flat. Poll so the scan can be cancelled or time out
+                    # without blocking on the subprocess.
+                    out_path=work/(tool+'-out.json')
+                    with out_path.open('wb') as out,(work/(tool+'-err.log')).open('wb') as errlog:
+                        process=subprocess.Popen(run_command,cwd=work,env=env,stdout=out,stderr=errlog,stdin=subprocess.DEVNULL,**low)
+                        deadline=time.monotonic()+limit
+                        while process.poll() is None:
+                            if event is not None and event.wait(0.5):
+                                process.kill();raise InterruptedError('Kod tekshiruvi bekor qilindi.')
+                            if time.monotonic()>deadline:
+                                process.kill();raise subprocess.TimeoutExpired(run_command,limit)
                     # Semgrep scan (without --error): findings exit 0. Gitleaks: findings exit 1.
                     allowed=(0,) if tool in ('semgrep','pmd') else (0,1)
                     if process.returncode not in allowed:raise ValueError('Skaner xato bilan tugadi (kod '+str(process.returncode)+').')
                     stage='parse_json'
-                    data=json.loads(process.stdout)
+                    data=json.loads(out_path.read_text(encoding='utf-8',errors='replace'))
                     stage='normalize'
                     findings=normalize(tool,data,work/'source',messages)
                     if tool=='gitleaks' and ((process.returncode==1)!=bool(findings)):raise ValueError('Gitleaks exit kodi va natija mos emas.')
@@ -791,6 +828,8 @@ def execute(target,rid):
                         report['tools'][tool]['error_kinds']=error_kinds(data.get('errors',[]))
                         report['tools'][tool]['error_files']=error_files(data.get('errors',[]),work/'source')
                     report['findings']+=findings
+                except InterruptedError:  # cancellation (an OSError subclass) is not a tool failure -- let it end the scan as 'cancelled'
+                    raise
                 except (OSError,ValueError,RuntimeError,KeyError,TypeError,subprocess.TimeoutExpired) as error:
                     report['tools'][tool]={'state':'failed','count':0,'message':'Tekshiruv tugallanmadi. O‘rnatish, qoidalar yoki bajarish cheklovini tekshiring.','error_type':type(error).__name__}
                     report['tools'][tool]['failure_stage']=stage
@@ -808,7 +847,11 @@ def execute(target,rid):
             if deep_analysis.enabled():
                 report['progress']='CodeQL: fayllararo ma’lumot oqimi tahlili (bir necha daqiqa)'
                 write(folder/'report.json',report)
-                record,deep=deep_analysis.run(work/'source',work,env)
+                try:
+                    record,deep=deep_analysis.run(work/'source',work,env)
+                except Exception as error:  # noqa: BLE001 -- a CodeQL failure is one tool failing, like Semgrep/Gitleaks, not the whole scan; Semgrep/Gitleaks results stay.
+                    record,deep={'state':'failed','count':0,'error_type':type(error).__name__,
+                                 'message':'CodeQL chuqur tahlili bajarilmadi; Semgrep va Gitleaks natijalari saqlandi.'},[]
                 report['tools']['codeql']=record
                 report['findings']+=deep
                 report['count']=len(report['findings']);report['verification_summary']=verification_mod.summarize(report['findings'])
@@ -822,6 +865,8 @@ def execute(target,rid):
                 report['findings']+=extra
                 report['count']=len(report['findings']);report['verification_summary']=verification_mod.summarize(report['findings'])
             write(folder/'report.json',report)
+    except InterruptedError:
+        report.update(state='cancelled',progress='Kod tekshiruvi bekor qilindi')
     except Exception as error:  # noqa: BLE001 -- any failure marks the scan failed rather than leaving it 'running'; dependencies.py, iac.py and images.py do the same
         report.update(state='failed',error_type=type(error).__name__)
         if isinstance(error,(OSError,ValueError)):report['message']=str(error)[:300]
@@ -829,6 +874,7 @@ def execute(target,rid):
         report['finished_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
         write(folder/'report.json',report)
         triage.record_scan('code',report)
+        CANCEL.pop(rid,None)
         LOCK.release()
     return report
 
@@ -877,7 +923,17 @@ def start(target,background=True):
                 'state':'queued','count':0,'findings':[],'tools':{},'verification':'unverified_static',
                 'limits':'Topilmalar qo‘lda tekshiriladi. Maxfiy qiymat va kod parchasi hisobotga kiritilmaydi. Bu amaliy hujum tasdig‘i emas.'})
     except Exception:LOCK.release();raise
+    CANCEL[rid]=threading.Event()
     if background:
         threading.Thread(target=execute,args=(target,rid),daemon=True).start()
         return {'id':rid,'state':'queued'}
     return execute(target,rid)
+
+
+def cancel(rid):
+    """Signal a running code scan to stop. jobs.cancel() calls this for a running
+    'code' job; the scan then kills its subprocess and ends as 'cancelled'."""
+    event=CANCEL.get(rid)
+    if event is None:raise ValueError('Bu kod tekshiruvi faol emas.')
+    event.set()
+    return {'id':rid,'message':'Bekor qilish so‘raldi.'}

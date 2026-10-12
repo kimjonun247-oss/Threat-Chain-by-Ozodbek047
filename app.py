@@ -751,6 +751,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(400,{'error':'Ro‘yxatdan o‘tgan loyiha ID kerak.'})
             try:return self.send(202,scanners.start(payload['target']))
             except ValueError as error:return self.send(400,{'error':str(error)})
+        if path=='/api/scanners/cancel' and set(payload)=={'report_id'}:
+            try:return self.send(200,scanners.cancel(payload['report_id']))
+            except ValueError as error:return self.send(400,{'error':str(error)})
         if path.startswith('/api/dependencies/'):
             try:
                 if path=='/api/dependencies/scan' and set(payload)=={'target'} and isinstance(payload['target'],str):

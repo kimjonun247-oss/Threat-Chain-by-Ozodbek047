@@ -22,6 +22,8 @@ Jobs survive a restart: a job that was running when the server stopped is
 marked `interrupted` (its report says what happened), queued ones stay queued.
 """
 import datetime
+import json
+import shutil
 import threading
 import time
 import uuid
@@ -378,8 +380,45 @@ def tick():
     return started
 
 
+# Every scanner's report directory, swept on startup for stale 'running' reports.
+REPORT_DIRS = ('scanner-runs', 'dependency-runs', 'image-runs', 'repository-runs',
+               'iac-runs', 'web-runs', 'assessment-runs')
+
+
+def recover_reports():
+    """A report left 'running' by a killed process is stale -- no scan can be
+    running at startup -- so mark it 'interrupted', and remove the temporary
+    source copies (work-*, diagnostic-*) such a process leaves behind."""
+    for name in REPORT_DIRS:
+        base = DATA / name
+        if not base.is_dir():
+            continue
+        for folder in base.iterdir():
+            if not folder.is_dir():
+                continue
+            for temp in list(folder.glob('work-*')) + list(folder.glob('diagnostic-*')):
+                try:
+                    shutil.rmtree(temp)
+                except OSError:
+                    pass
+            report_path = folder / 'report.json'
+            try:
+                report = json.loads(report_path.read_text(encoding='utf-8'))
+            except (OSError, ValueError):
+                continue
+            if report.get('state') == 'running':
+                report.update(state='interrupted', finished_at=now().isoformat(),
+                              message='Server to‘xtagan paytda ishlayotgan edi; bu toza natija emas.')
+                try:
+                    report_path.write_text(json.dumps(report), encoding='utf-8')
+                except OSError:
+                    pass
+
+
 def recover():
-    """After a restart: a job that was running when the process ended cannot be resumed."""
+    """After a restart: a job or a scan report that was running when the process
+    ended cannot be resumed. Both are marked interrupted and any leftover temporary
+    source copy is removed."""
     with _LOCK:
         jobs = load()
         changed = False
@@ -390,6 +429,7 @@ def recover():
                 changed = True
         if changed:
             save(jobs)
+    recover_reports()
 
 
 _WAKE = threading.Event()

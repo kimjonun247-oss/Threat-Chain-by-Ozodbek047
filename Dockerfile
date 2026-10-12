@@ -1,13 +1,24 @@
-# ThreatChain -- self-contained image. Every scanner (Semgrep, Gitleaks, Trivy,
-# Nuclei, PMD) and the CodeQL bundle are baked in, so a new machine needs only
-# Docker: no setup_all.py, no Java install, no venv.
+# ThreatChain -- fully self-contained image. EVERYTHING the scan needs is baked
+# in, so a new machine needs only Docker -- no setup_all.py, no Java install, no
+# venv, no pip. Baked in:
+#   * the seven scanner tools: Semgrep, Gitleaks, Trivy (+ its vuln DB), Nuclei
+#     (+ templates), PMD (+ Java runtime), and the pinned Semgrep rule pack
+#   * the CodeQL bundle AND its query packs -- CodeQL analysis runs with
+#     `--no-download`, so deep analysis works fully offline inside the container
+#   * the CWE -> OWASP map (generated from MITRE at build time)
+#   * the optional Python extras (cryptography, certifi) so every feature works
+# The ONLY thing that still needs the internet is live vulnerability DATA at scan
+# time (OSV / NVD / EPSS / a Trivy DB refresh) -- that is the "always-online"
+# design, not an install step.
 #
 #   docker compose up --build        # then open http://127.0.0.1:8765
 #   docker build -t threatchain .    # plain build without compose
 #
-# Pinned to linux/amd64 on purpose: the CodeQL bundle is x86_64-only, so pinning
-# the whole image keeps every tool on one architecture (it runs under emulation
-# on Apple Silicon / arm64 hosts).
+# Pinned to linux/amd64 so the image is byte-for-byte identical on EVERY host --
+# Windows, Linux and macOS alike -- and because the CodeQL bundle is x86_64-only.
+# On an amd64 host (most Windows/Linux PCs and Intel Macs) it runs natively; on an
+# arm64 host Docker runs it under its built-in emulation. Either way it is the same
+# image and behaves the same everywhere -- nothing here is tuned for one OS.
 FROM --platform=linux/amd64 python:3.14-slim-bookworm
 
 # git             -- remote-repo scans, Gitleaks history, Semgrep rule-pack fetch
@@ -18,6 +29,10 @@ RUN apt-get -o Acquire::Retries=5 update \
  && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
       git default-jre-headless ca-certificates curl unzip tar xz-utils \
  && rm -rf /var/lib/apt/lists/*
+
+# The core scan needs no pip packages, but the optional TLS features (lab test
+# certificates, a certifi CA fallback) do -- carry them so the image is complete.
+RUN pip install --no-cache-dir cryptography certifi
 
 WORKDIR /app
 COPY . /app

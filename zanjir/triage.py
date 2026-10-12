@@ -28,6 +28,7 @@ medium/low. No DefectDojo code is used.
 """
 import datetime
 import json
+import os
 import re
 import threading
 import time
@@ -131,22 +132,60 @@ def folder(scope):
     return TRIAGE / scope
 
 
-def read(scope):
-    """The stored state of one project: decisions plus the first/last-seen ledger."""
-    path = folder(scope) / 'decisions.json'
+# Decisions and the first/last-seen ledger live in SEPARATE files. They used to
+# share decisions.json, and `write()` wrote the whole thing: a CLI scan's
+# observe() (which touches only `seen`) running at the same time as the server's
+# decide_many() (which touches only `decisions`) each read the combined file and
+# wrote it back, so whichever finished last erased the other's change -- and when
+# observe won, it erased a human's triage decision. Splitting the files makes the
+# two writers touch disjoint files, so neither can clobber the other. decisions
+# come only from the server UI, seen from either, so the dangerous case (a lost
+# decision) cannot happen once they are apart. Within one process LOCK still
+# serialises; across processes the atomic replace is now per-file.
+def _load(path):
     try:
         data = json.loads(path.read_text(encoding='utf-8'))
     except FileNotFoundError:
-        return {'scope': scope, 'decisions': {}, 'seen': {}}
+        return None
     except (OSError, ValueError):
         raise ValueError('Triage faylini o‘qib bo‘lmadi.') from None
-    if not isinstance(data, dict) or not isinstance(data.get('decisions'), dict) or not isinstance(data.get('seen'), dict):
+    if not isinstance(data, dict):
         raise ValueError('Triage fayli formati noto‘g‘ri.')
     return data
 
 
-def write(scope, data):
-    repo_store.write_json(folder(scope) / 'decisions.json', data)
+def read(scope):
+    """The stored state of one project: decisions plus the first/last-seen ledger.
+
+    Reads the split files, falling back to a legacy combined decisions.json for
+    `seen` until the next write of each kind moves it into seen.json.
+    """
+    base = folder(scope)
+    combined = _load(base / 'decisions.json') or {}
+    seen_file = _load(base / 'seen.json')
+    decisions = combined.get('decisions')
+    seen = seen_file.get('seen') if seen_file is not None else combined.get('seen')
+    if not isinstance(decisions, dict):
+        decisions = {}
+    if not isinstance(seen, dict):
+        seen = {}
+    return {'scope': scope, 'decisions': decisions, 'seen': seen}
+
+
+def _write_decisions(scope, decisions):
+    repo_store.write_json(folder(scope) / 'decisions.json', {'scope': scope, 'decisions': decisions})
+
+
+def _write_seen(scope, seen):
+    repo_store.write_json(folder(scope) / 'seen.json', {'scope': scope, 'seen': seen})
+
+
+def _ensure_seen_split(scope, data):
+    """Before decisions.json is rewritten without its legacy `seen`, make sure
+    that `seen` is already safe in seen.json -- otherwise the one-time migration
+    would drop it."""
+    if data.get('seen') and not (folder(scope) / 'seen.json').exists():
+        _write_seen(scope, data['seen'])
 
 
 def event(scope, record):
@@ -168,25 +207,63 @@ def events(scope):
     return sorted(rows, key=lambda row: str(row.get('updated_at') or ''))
 
 
-def decide(scope, fingerprint, status, owner, note, bound_to=None, stage='', target=''):
-    """Record one decision. Every field is required because an unexplained status
-    is what makes a triage list untrustworthy a month later."""
+def count_events(scope):
+    """How many events the trail holds, without opening any of them.
+
+    The audit trail is one append-only file per event and grows without bound;
+    overview() needs only its size, so it counts names rather than parsing every
+    file (which readLoad did, turning a count into O(events) JSON reads)."""
+    directory = folder(scope) / 'review-events'
+    try:
+        with os.scandir(directory) as entries:
+            return sum(1 for entry in entries if entry.name.endswith('.json') and entry.is_file())
+    except OSError:
+        return 0
+
+
+def _decision_record(status, owner, note, bound_to, stage, target):
+    """Validate a decision's shared fields and build the stored record. Every
+    field is required because an unexplained status is what makes a triage list
+    untrustworthy a month later."""
     if status not in STATUSES:
         raise ValueError('Triage holati noto‘g‘ri: ' + ', '.join(STATUSES))
-    if not re.fullmatch(r'[0-9a-f]{24}', str(fingerprint or '')):
-        raise ValueError('Topilma identifikatori noto‘g‘ri.')
     if not isinstance(owner, str) or not 1 <= len(owner.strip()) <= 120:
         raise ValueError('Qaror uchun mas’ul kerak (120 belgigacha).')
     if not isinstance(note, str) or not 1 <= len(note.strip()) <= 1000:
         raise ValueError('Qaror uchun asos kerak (1000 belgigacha).')
-    record = {'status': status, 'owner': owner.strip(), 'note': note.strip(),
-              'updated_at': now().isoformat(), 'bound_to': bound_to or None,
-              'stage': str(stage or '')[:40], 'target': str(target or '')[:120]}
+    return {'status': status, 'owner': owner.strip(), 'note': note.strip(),
+            'updated_at': now().isoformat(), 'bound_to': bound_to or None,
+            'stage': str(stage or '')[:40], 'target': str(target or '')[:120]}
+
+
+def decide(scope, fingerprint, status, owner, note, bound_to=None, stage='', target=''):
+    """Record one decision."""
+    return decide_many(scope, [fingerprint], status, owner, note, bound_to, stage, target)[fingerprint]
+
+
+def decide_many(scope, fingerprints, status, owner, note, bound_to=None, stage='', target=''):
+    """Record decisions for one or many findings in a SINGLE decisions-file write,
+    so a bulk of 200 does not rewrite (and re-read) the whole file 200 times."""
+    base = _decision_record(status, owner, note, bound_to, stage, target)
+    # Validate the whole batch before writing anything. An invalid fingerprint
+    # found mid-loop used to raise after earlier findings had already written
+    # their append-only event files, leaving the audit trail ahead of a
+    # decisions file that was never written -- orphan events for a decision the
+    # state never records. All-or-nothing instead.
+    unique = list(dict.fromkeys(fingerprints))
+    for fingerprint in unique:
+        if not re.fullmatch(r'[0-9a-f]{24}', str(fingerprint or '')):
+            raise ValueError('Topilma identifikatori noto‘g‘ri.')
+    records = {}
     with LOCK:
         data = read(scope)
-        event(scope, {'scope': scope, 'fingerprint': fingerprint, **record})
-        data['decisions'][fingerprint] = record
-        write(scope, data)
+        _ensure_seen_split(scope, data)   # keep legacy `seen` before dropping it from decisions.json
+        for fingerprint in unique:
+            record = dict(base)
+            event(scope, {'scope': scope, 'fingerprint': fingerprint, **record})
+            data['decisions'][fingerprint] = record
+            records[fingerprint] = record
+        _write_decisions(scope, data['decisions'])   # one write for the whole batch, not one per finding
     # The findings board caches its flattened view for a few seconds; a decision
     # taken from that screen has to show on it immediately.
     try:
@@ -194,7 +271,7 @@ def decide(scope, fingerprint, status, owner, note, bound_to=None, stage='', tar
         findings_index.invalidate()
     except ImportError:
         pass
-    return record
+    return records
 
 
 def observe(scope, findings, at=None):
@@ -222,7 +299,7 @@ def observe(scope, findings, at=None):
                 entry['last_seen'] = moment
                 entry['severity'] = severity
         if changed:
-            write(scope, data)
+            _write_seen(scope, data['seen'])
     return changed
 
 
@@ -375,10 +452,8 @@ def apply(payload):
     # Repository reviews have always been bound to one source snapshot, and that
     # is kept: a decision about a file does not carry over to a changed file.
     bound = report.get('input_sha256') if payload['stage'] == 'repository' else None
-    records = {}
-    for fingerprint in dict.fromkeys(wanted):
-        records[fingerprint] = decide(scope, fingerprint, payload['status'], payload['owner'],
-                                      payload['note'], bound, payload['stage'], target)
+    records = decide_many(scope, wanted, payload['status'], payload['owner'],
+                          payload['note'], bound, payload['stage'], target)
     return {'scope': scope, 'stage': payload['stage'], 'target': target,
             'report_id': report.get('id'), 'decisions': records}
 
@@ -395,7 +470,7 @@ def overview(scope, at=None):
                      'severity_scale': severity,
                      'sla': sla(severity, seen.get('first_seen'), at) if decision['status'] not in CLOSED else None})
     open_rows = [r for r in rows if r['status'] not in CLOSED]
-    return {'scope': scope, 'decisions': rows, 'seen': len(data['seen']), 'events': len(events(scope)),
+    return {'scope': scope, 'decisions': rows, 'seen': len(data['seen']), 'events': count_events(scope),
             'sla_days': dict(SLA_DAYS),
             'overdue': sum(1 for r in open_rows if (r['sla'] or {}).get('overdue')),
             'note': ('Qarorlar loyiha va topilma identifikatori bo‘yicha saqlanadi, hisobot bo‘yicha emas — '

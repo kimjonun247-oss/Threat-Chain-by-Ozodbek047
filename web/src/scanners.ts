@@ -73,19 +73,24 @@
     $('code-history').querySelectorAll('[data-scan-id]').forEach(button=>button.addEventListener('click',async()=>{try{render(await api('/api/scanners/reports/'+button.dataset.scanId));}catch(error){showError(error);}}));
     return rows;
   }
+  let currentId='';
   async function follow(id: string){
-    running=true;$('code-scan').disabled=true;$('code-target').disabled=true;
+    running=true;currentId=id;$('code-scan').disabled=true;$('code-target').disabled=true;$('code-cancel').hidden=false;
     try{
       const report=await pollReport('/api/scanners/reports/'+id,(s: ApiData)=>{$('code-progress').textContent=labels[s.state]||s.state;});
       render(report);
       $('code-progress').textContent=labels[report.state]||report.state;
       await loadHistory();
-    }finally{running=false;$('code-scan').disabled=false;$('code-target').disabled=false;}
+    }finally{running=false;currentId='';$('code-scan').disabled=false;$('code-target').disabled=false;$('code-cancel').hidden=true;}
   }
   async function initCode(){
     $('code-scan').addEventListener('click',async()=>{
       if(running)return;
       try{const job=await api('/api/scanners/scan',{target:$('code-target').value});await follow(job.id);}catch(error){showError(error);}
+    });
+    $('code-cancel').addEventListener('click',async()=>{
+      if(!currentId)return;
+      try{const r=await api('/api/scanners/cancel',{report_id:currentId});$('code-progress').textContent=r.message||'Bekor qilish so‘raldi.';}catch(error){showError(error);}
     });
     try{
       const targets=await api('/api/scanners/targets');

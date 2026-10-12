@@ -78,10 +78,13 @@
     }));
     return rows2;
   }
+  let currentId = "";
   async function follow(id) {
     running = true;
+    currentId = id;
     $("code-scan").disabled = true;
     $("code-target").disabled = true;
+    $("code-cancel").hidden = false;
     try {
       const report = await pollReport("/api/scanners/reports/" + id, (s) => {
         $("code-progress").textContent = labels[s.state] || s.state;
@@ -91,8 +94,10 @@
       await loadHistory();
     } finally {
       running = false;
+      currentId = "";
       $("code-scan").disabled = false;
       $("code-target").disabled = false;
+      $("code-cancel").hidden = true;
     }
   }
   async function initCode() {
@@ -101,6 +106,15 @@
       try {
         const job = await api("/api/scanners/scan", { target: $("code-target").value });
         await follow(job.id);
+      } catch (error) {
+        showError(error);
+      }
+    });
+    $("code-cancel").addEventListener("click", async () => {
+      if (!currentId) return;
+      try {
+        const r = await api("/api/scanners/cancel", { report_id: currentId });
+        $("code-progress").textContent = r.message || "Bekor qilish so‘raldi.";
       } catch (error) {
         showError(error);
       }

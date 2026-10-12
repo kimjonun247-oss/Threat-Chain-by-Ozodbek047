@@ -13,6 +13,21 @@ from zanjir import scanners as s
 from zanjir.httptest import listener
 
 
+def fake_popen(resolver):
+    """Stand in for subprocess.Popen in a code scan: write the resolver's stdout
+    to the file scanners.execute() opened, and report the exit code. Matches the
+    Popen-plus-poll loop (which also lets a scan be cancelled)."""
+    class FakeProc:
+        def __init__(self, command, cwd=None, env=None, stdout=None, stderr=None, stdin=None, **kw):
+            code, out = resolver(command)
+            if stdout is not None:
+                stdout.write(out.encode('utf-8')); stdout.flush()
+            self.returncode = code
+        def poll(self): return self.returncode
+        def kill(self): pass
+    return FakeProc
+
+
 class ScannerTests(unittest.TestCase):
     def test_project_semgrep_wins_over_global_installation(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -82,6 +97,19 @@ class ScannerTests(unittest.TestCase):
             self.assertEqual(report['skipped']['binary'],1)
             self.assertEqual((base/'copy/setup.py').read_text(),(source/'setup.py').read_text())
 
+    def test_snapshot_skips_an_unreadable_file_and_keeps_utf16(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source=(Path(temp)/'repo').resolve();source.mkdir()
+            (source/'a.py').write_text('x=1\n')
+            (source/'utf16.py').write_bytes('y=2\n'.encode('utf-16'))   # NUL bytes, but real source
+            bad=source/'bad.py';bad.write_text('z=3\n');os.chmod(bad,0o000)
+            report=s.snapshot(source,Path(temp)/'copy')
+            # One bad file is skipped, not fatal; UTF-16 is kept as UTF-8.
+            self.assertEqual(report['skipped']['unreadable'],1)
+            self.assertEqual(report['files'],2)
+            self.assertIn('utf16.py',[e['path'] for e in report['manifest']])
+            self.assertEqual((Path(temp)/'copy/utf16.py').read_text(encoding='utf-8'),'y=2\n')
+
     def test_secret_and_snippet_never_enter_normalized_report(self):
         with tempfile.TemporaryDirectory() as temp:
             source=Path(temp);(source/'demo.txt').write_text('placeholder')
@@ -106,8 +134,7 @@ class ScannerTests(unittest.TestCase):
             def version(tool,*args):
                 if tool=='semgrep':raise RuntimeError('windows_certificate_store')
                 return '8.30.1'
-            result=subprocess.CompletedProcess([],0,'[]','')
-            with patch.object(s,'RUNS',base/'runs'),patch.object(s,'target_root',return_value=source.resolve()),patch.object(s,'version',side_effect=version),patch('zanjir.scanners.subprocess.run',return_value=result):
+            with patch.object(s,'RUNS',base/'runs'),patch.object(s,'target_root',return_value=source.resolve()),patch.object(s,'version',side_effect=version),patch('zanjir.scanners.subprocess.Popen',fake_popen(lambda cmd:(0,'[]'))),patch('zanjir.deep_analysis.enabled',return_value=False):
                 report=s.start('test',background=False)
                 self.assertEqual(report['state'],'partial')
                 self.assertEqual(report['tools']['gitleaks']['state'],'completed')
@@ -118,13 +145,35 @@ class ScannerTests(unittest.TestCase):
     def test_finding_exit_code_and_empty_output_must_agree(self):
         with tempfile.TemporaryDirectory() as temp:
             base=Path(temp);source=base/'repo';source.mkdir();(source/'demo.txt').write_text('demo')
-            def run(command,**kwargs):
-                if 'dir' in command:return subprocess.CompletedProcess(command,1,'[]','')
-                return subprocess.CompletedProcess(command,0,json.dumps({'results':[],'errors':[{}]}),'')
-            with patch.object(s,'RUNS',base/'runs'),patch.object(s,'target_root',return_value=source.resolve()),patch.object(s,'version',return_value='1.2.3'),patch('zanjir.scanners.subprocess.run',side_effect=run):
+            def resolve(command):
+                if 'dir' in command:return (1,'[]')                                   # gitleaks: finding exit, no findings
+                return (0,json.dumps({'results':[],'errors':[{}]}))                    # semgrep: ok exit, an error -> partial
+            with patch.object(s,'RUNS',base/'runs'),patch.object(s,'target_root',return_value=source.resolve()),patch.object(s,'version',return_value='1.2.3'),patch('zanjir.scanners.subprocess.Popen',fake_popen(resolve)),patch('zanjir.deep_analysis.enabled',return_value=False):
                 report=s.start('test',background=False)
                 self.assertEqual(report['tools']['gitleaks']['state'],'failed')
                 self.assertEqual(report['tools']['semgrep']['state'],'partial')
+
+    def test_a_cancelled_code_scan_ends_cancelled_and_releases_the_lock(self):
+        import threading
+        self.addCleanup(lambda: s.LOCK.locked() and s.LOCK.release())
+        self.addCleanup(s.CANCEL.clear)
+        with tempfile.TemporaryDirectory() as temp:
+            base=Path(temp);source=base/'repo';source.mkdir();(source/'demo.txt').write_text('demo')
+            class HangProc:   # a scanner that never finishes on its own -> only cancel ends it
+                def __init__(self,*a,**k):self.returncode=None
+                def poll(self):return self.returncode
+                def kill(self):self.returncode=-9
+            with patch.object(s,'RUNS',base/'runs'),patch.object(s,'target_root',return_value=source.resolve()),patch.object(s,'version',return_value='1.2.3'),patch('zanjir.scanners.subprocess.Popen',HangProc),patch('zanjir.deep_analysis.enabled',return_value=False):
+                rid='20260101T000000-abcdef12'
+                (s.RUNS/rid).mkdir(parents=True)
+                s.write(s.RUNS/rid/'report.json',{'id':rid,'target':'test','created_at':'t','state':'queued','count':0,'findings':[],'tools':{}})
+                s.CANCEL[rid]=threading.Event();s.CANCEL[rid].set()   # cancel before the poll loop even starts
+                s.LOCK.acquire()                                      # start() would have held it
+                report=s.execute('test',rid)
+            self.assertEqual(report['state'],'cancelled')
+            self.assertNotIn(rid,s.CANCEL)                           # cleaned up
+            self.assertFalse(s.LOCK.locked())                        # released
+            self.assertEqual(list((s.RUNS/rid).glob('work-*')),[])   # temp source copy removed
 
     def test_http_scan_rejects_arbitrary_paths_and_extra_arguments(self):
         with listener(Handler) as server:

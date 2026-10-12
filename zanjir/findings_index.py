@@ -61,8 +61,20 @@ CONCLUDED = ('no_supported_packages',)
 # can carry seven thousand rows; the table pages through them and the cap keeps
 # a single dashboard load from parsing everything ever scanned.
 PER_REPORT = 5000
+# Two tiers keep repeated loads cheap without ever serving a stale board:
+#   CACHE_TTL -- inside this window a request returns the last build untouched,
+#     so a burst of calls (one dashboard load hits collect() twice) parses once.
+#   MAX_TTL   -- past CACHE_TTL a request first builds a *signature* from the
+#     summary listings alone (no report is parsed; run_index answers these from
+#     its SQLite index). If the signature is unchanged the last build is reused,
+#     so steady 20 s polling between scans never re-parses a single report. The
+#     full rebuild happens only when a report actually changed, or once per
+#     MAX_TTL so time-based fields (an SLA going overdue) cannot sit stale. A
+#     triage decision, a reset or a new scan calls invalidate() and rebuilds at
+#     once regardless of either timer.
 CACHE_TTL = 4.0
-_CACHE = {'at': 0.0, 'value': None}
+MAX_TTL = 60.0
+_CACHE = {'at': 0.0, 'value': None, 'sig': None}
 _LOCK = threading.Lock()
 
 
@@ -136,19 +148,23 @@ def row(stage, report, finding, project):
     }
 
 
-def collect():
-    """Newest usable report per (stage, target), flattened. Cached briefly."""
-    with _LOCK:
-        if _CACHE['value'] is not None and time.monotonic() - _CACHE['at'] < CACHE_TTL:
-            return _CACHE['value']
-    rows, coverage, truncated = [], [], []
+def _plan():
+    """What the board would be built from, read from summary listings only.
+
+    Returns `(plan, signature)`. `plan` is, per stage, the newest usable report
+    per registered target and the last attempt for every target -- everything
+    the build needs *except* the report bodies, which are not parsed here.
+    `signature` captures the identity and state of every report the build would
+    read, so an unchanged signature means an unchanged board (save time-based
+    fields, which MAX_TTL refreshes).
+    """
+    plan, signature = [], []
     for stage, (read, history, field) in sources().items():
         try:
             listed = history(10 ** 6)
         except (OSError, ValueError):
             listed = []
-        newest = {}
-        last_attempt = {}
+        newest, last_attempt = {}, {}
         for entry in listed:                      # newest first
             target = entry.get(field) or entry.get('target')
             state = entry.get('state', 'completed' if stage == 'repository' else None)
@@ -158,7 +174,27 @@ def collect():
                 last_attempt[target] = {**entry, 'state': state}
             if target not in newest and state in USABLE:
                 newest[target] = entry
-        for target in sorted(registered(stage)):
+        targets = sorted(registered(stage))
+        plan.append((stage, read, newest, last_attempt, targets))
+        for target in targets:
+            picked = newest.get(target)
+            last = last_attempt.get(target)
+            signature.append((stage, target, (picked or {}).get('id'),
+                              (last or {}).get('id'), (last or {}).get('state')))
+    try:
+        from . import pipeline
+        signature.append(('chain', tuple((e.get('id'), e.get('state'))
+                                          for e in pipeline.history(limit=30))))
+    except (OSError, ValueError, KeyError):
+        signature.append(('chain', ()))
+    return plan, tuple(signature)
+
+
+def _build(plan):
+    """Parse the report bodies the plan points at and flatten them into rows."""
+    rows, coverage, truncated = [], [], []
+    for stage, read, newest, last_attempt, targets in plan:
+        for target in targets:
             entry = newest.get(target)
             if entry is None:
                 last = last_attempt.get(target)
@@ -186,9 +222,22 @@ def collect():
                              'state': report.get('state', 'completed'), 'report_id': report.get('id'),
                              'created_at': report.get('created_at'), 'findings': len(report.get('findings') or [])})
         rows += chain_rows(stage)
-    value = {'rows': rows, 'coverage': coverage, 'truncated': truncated}
+    return {'rows': rows, 'coverage': coverage, 'truncated': truncated}
+
+
+def collect():
+    """Newest usable report per (stage, target), flattened. Cached; see MAX_TTL."""
+    now = time.monotonic()
     with _LOCK:
-        _CACHE.update(at=time.monotonic(), value=value)
+        cached, built_at, cached_sig = _CACHE['value'], _CACHE['at'], _CACHE['sig']
+    if cached is not None and now - built_at < CACHE_TTL:
+        return cached                             # burst window: parse at most once
+    plan, signature = _plan()                     # cheap: summary listings only
+    if cached is not None and signature == cached_sig and now - built_at < MAX_TTL:
+        return cached                             # nothing a report changed
+    value = _build(plan)
+    with _LOCK:
+        _CACHE.update(at=time.monotonic(), value=value, sig=signature)
     return value
 
 
@@ -379,4 +428,4 @@ def detail(fingerprint):
 
 def invalidate():
     with _LOCK:
-        _CACHE.update(at=0.0, value=None)
+        _CACHE.update(at=0.0, value=None, sig=None)

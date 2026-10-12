@@ -62,6 +62,23 @@ class ChainSecretsTests(unittest.TestCase):
         repository_report = {'services': [service('web', 'services/web')]}
         self.assertEqual(correlate(code_report, repository_report), [])
 
+    def test_root_build_context_chains_every_source_path(self):
+        # `build: .` normalises to build_context '' -- the whole source tree is
+        # this service's -- so a root-level finding must chain. Leaving it as '.'
+        # (or None) is the SCAN-1 false negative: `app.py` has no `./` to match.
+        code_report = {'findings': [gitleaks('config.py'), gitleaks('app/db.py')]}
+        repository_report = {'services': [service('web', '')]}
+        findings = correlate(code_report, repository_report)
+        self.assertEqual(len(findings), 2)
+        self.assertEqual({f['service_id'] for f in findings}, {'web'})
+        self.assertIn('loyiha ildizi', findings[0]['detail'])
+
+    def test_in_context_matches_root_but_a_sub_path_stays_scoped(self):
+        self.assertTrue(chains.in_context('anything/here.py', ''))     # root build: all paths
+        self.assertTrue(chains.in_context('services/web/x.py', 'services/web'))
+        self.assertFalse(chains.in_context('services/web-admin/x.py', 'services/web'))
+        self.assertFalse(chains.in_context('other/x.py', 'services/web'))
+
     def test_semgrep_findings_are_not_treated_as_secrets(self):
         code_report = {'findings': [{'tool': 'semgrep', 'rule_id': 'x', 'path': 'services/web/app.py', 'line': 1}]}
         repository_report = {'services': [service('web', 'services/web')]}

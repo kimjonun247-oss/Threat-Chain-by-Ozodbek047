@@ -25,6 +25,7 @@ module provides it without any new dependency:
 Login is required when at least one user exists, and the server refuses to
 listen beyond loopback without users and without TLS (see app.py).
 """
+import collections
 import datetime
 import hashlib
 import hmac
@@ -92,6 +93,26 @@ def hash_password(password, salt=None, iterations=ITERATIONS):
     salt = salt or secrets.token_bytes(16)
     digest = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, iterations)
     return f'pbkdf2_sha256${iterations}${salt.hex()}${digest.hex()}'
+
+
+_DECOY = {}
+
+
+def _decoy_hash():
+    """A stored-hash string to check an unknown user's password against.
+
+    The login path must cost one PBKDF2 of ITERATIONS work whether or not the
+    name exists, or the response time says which names do. Generating the decoy
+    per call would make the unknown-user path cost *two* PBKDF2 runs (make the
+    decoy, then check against it) while a known user costs one -- a 2x gap an
+    attacker can still measure. So the decoy is built once and cached (keyed by
+    ITERATIONS, which tests patch), leaving every probe at a single PBKDF2.
+    """
+    stored = _DECOY.get(ITERATIONS)
+    if stored is None:
+        stored = hash_password('decoy-password', b'\x00' * 16, ITERATIONS)
+        _DECOY[ITERATIONS] = stored
+    return stored
 
 
 def check_password(password, stored):
@@ -196,10 +217,10 @@ def login(name, password, address):
             raise PermissionError('Juda ko‘p urinish. Birozdan keyin qayta urinib ko‘ring.')
     users = load()
     row = users.get(name) if isinstance(name, str) else None
-    # The hash is computed even for an unknown user so timing does not tell
-    # which names exist.
+    # The hash is checked even for an unknown user so timing does not tell which
+    # names exist: both paths run one PBKDF2 of ITERATIONS work (see _decoy_hash).
     valid = check_password(password if isinstance(password, str) else '',
-                           (row or {}).get('password') or hash_password('x', b'0' * 16, 1000))
+                           (row or {}).get('password') or _decoy_hash())
     if not row or row.get('disabled') or not valid:
         with _LOCK:
             for key in keys:
@@ -247,8 +268,11 @@ def drop_sessions(name):
 # ---- authorisation ----------------------------------------------------------------
 # Registering a web target records someone's permission to send requests to a
 # third party's server: that is an authorisation decision, so admin only.
+# /api/reset/* wipes every scan result and the triage history with it: that is a
+# destruction of the record, heavier than the scans an operator runs, so it is an
+# admin decision like the other state-of-the-system changes here.
 ADMIN_PATHS = ('/api/settings/', '/api/schedules', '/api/notifications/', '/api/audit', '/api/rules/save',
-               '/api/rules/delete', '/api/registry/web')
+               '/api/rules/delete', '/api/registry/web', '/api/reset')
 
 
 def required_role(method, path):
@@ -301,9 +325,14 @@ def payload_ids(payload):
 
 
 def read_audit(limit=200):
+    # The audit log is append-only and grows without bound; readlines() loaded
+    # the whole file into memory on every /api/audit call, so a long-lived team
+    # server would read gigabytes to return 200 rows. A deque over the file keeps
+    # only the last `want` lines in memory, whatever the file's size.
+    want = max(1, min(limit, 2000))
     try:
         with open(AUDIT, encoding='utf-8') as handle:
-            lines = handle.readlines()[-max(1, min(limit, 2000)):]
+            lines = list(collections.deque(handle, maxlen=want))
     except FileNotFoundError:
         return []
     rows = []

@@ -86,6 +86,14 @@ class DecisionTests(Base):
             with self.assertRaises(ValueError):
                 triage.decide('demo', bad, 'confirmed', 'AX', 'asos')
 
+    def test_d2_an_invalid_fingerprint_in_a_batch_writes_no_events_at_all(self):
+        """A bad fingerprint found mid-batch must not leave the earlier findings'
+        append-only events behind with no decision in the state file."""
+        with self.assertRaises(ValueError):
+            triage.decide_many('demo', ['a' * 24, 'b' * 24, 'NOT-HEX'], 'confirmed', 'AX', 'asos')
+        self.assertEqual(triage.events('demo'), [], 'no event may be written when the batch is rejected')
+        self.assertEqual(triage.read('demo')['decisions'], {})
+
     def test_e_the_audit_trail_only_grows(self):
         for status in ('investigating', 'confirmed', 'fixed'):
             triage.decide('demo', 'd' * 24, status, 'AX', 'asos ' + status)
@@ -94,6 +102,42 @@ class DecisionTests(Base):
         self.assertEqual(len({e['event_id'] for e in events}), 3)
         # The current view holds only the latest; the history holds all of them.
         self.assertEqual(triage.read('demo')['decisions']['d' * 24]['status'], 'fixed')
+        # count_events() must agree with events() without opening the files.
+        self.assertEqual(triage.count_events('demo'), len(events))
+        self.assertEqual(triage.overview('demo')['events'], len(events))
+
+    def test_g_a_stale_seen_write_cannot_erase_a_human_decision(self):
+        """The cross-process race: a scan reads the ledger, a decision is made,
+        then the scan writes its now-stale ledger. The decision must survive --
+        it does because decisions and seen are separate files now."""
+        stale = triage.read('demo')                       # a scan reads first (no decision yet)
+        stale['seen']['a' * 24] = {'first_seen': '2026-01-01T00:00:00+00:00',
+                                   'last_seen': '2026-01-01T00:00:00+00:00', 'severity': 'HIGH'}
+        triage.decide('demo', 'a' * 24, 'false_positive', 'AX', 'asos')   # ...a decision lands...
+        triage._write_seen('demo', stale['seen'])         # ...and only now the scan writes its seen
+        data = triage.read('demo')
+        self.assertEqual(data['decisions']['a' * 24]['status'], 'false_positive')
+        self.assertIn('a' * 24, data['seen'])
+
+    def test_h_a_legacy_combined_file_still_reads_and_then_splits(self):
+        """Old stores kept decisions and seen in one decisions.json; it must keep
+        working and move `seen` into seen.json on the next decision, losing nothing."""
+        folder = triage.folder('demo')
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / 'decisions.json').write_text(json.dumps({'scope': 'demo',
+            'decisions': {'b' * 24: {'status': 'accepted_risk', 'owner': 'AX', 'note': 'eski',
+                                     'updated_at': '2026-01-01T00:00:00+00:00', 'bound_to': None,
+                                     'stage': 'code', 'target': 'demo-src'}},
+            'seen': {'b' * 24: {'first_seen': '2026-01-01T00:00:00+00:00',
+                                'last_seen': '2026-01-01T00:00:00+00:00', 'severity': 'HIGH'}}}), encoding='utf-8')
+        first = triage.read('demo')
+        self.assertEqual(first['decisions']['b' * 24]['status'], 'accepted_risk')
+        self.assertIn('b' * 24, first['seen'])            # seen still read from the legacy file
+        triage.decide('demo', 'c' * 24, 'confirmed', 'AX', 'asos')   # a write splits the files
+        self.assertTrue((folder / 'seen.json').exists())
+        after = triage.read('demo')
+        self.assertIn('b' * 24, after['seen'])            # legacy seen was preserved, not dropped
+        self.assertEqual(sorted(after['decisions']), sorted(['b' * 24, 'c' * 24]))
 
     def test_f_decisions_of_one_project_do_not_leak_into_another(self):
         triage.decide('demo', 'e' * 24, 'false_positive', 'AX', 'asos')
@@ -318,6 +362,14 @@ class ApiTests(unittest.TestCase):
                                  self.decision(fingerprints=['a' * 24, 'b' * 24]))
         self.assertEqual(status, 200, body)
         self.assertEqual(sorted(body['decisions']), ['a' * 24, 'b' * 24])
+
+    def test_b2_a_bulk_decision_writes_the_decisions_file_once(self):
+        # The whole batch is one file write, not one per finding (load-test #6).
+        with patch.object(triage, '_write_decisions', wraps=triage._write_decisions) as writer:
+            status, _ = self.call('POST', '/api/triage/bulk',
+                                  self.decision(fingerprints=['a' * 24, 'b' * 24]))
+        self.assertEqual(status, 200)
+        self.assertEqual(writer.call_count, 1)
 
     def test_c_a_fingerprint_that_is_not_in_the_report_is_refused(self):
         status, body = self.call('POST', '/api/triage', self.decision(fingerprint='f' * 24))

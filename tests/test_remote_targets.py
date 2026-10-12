@@ -151,6 +151,26 @@ class RemoteGitTests(unittest.TestCase):
         self.assertNotIn(SECRET, remote_source.redact(message))
         self.assertIn('***@github.com', remote_source.redact(message))
 
+    def test_h_host_of_extracts_the_host_from_every_accepted_form(self):
+        self.assertEqual(remote_source.host_of('https://github.com/o/r.git'), 'github.com')
+        self.assertEqual(remote_source.host_of('https://git.example.com:8443/o/r'), 'git.example.com')
+        self.assertEqual(remote_source.host_of('ssh://git@host.example:22/o/r'), 'host.example')
+        self.assertEqual(remote_source.host_of('git@github.com:o/r.git'), 'github.com')
+
+    def test_i_a_remote_resolving_to_a_machine_local_address_is_refused(self):
+        """SSRF guard: cloud metadata, loopback, link-local, multicast and the
+        unspecified address are never a real git host. Public and private
+        intranet addresses are allowed."""
+        def resolving_to(addr):
+            return lambda host, *a, **k: [(None, None, None, '', (addr, 0))]
+        for blocked in ('127.0.0.1', '169.254.169.254', '::1', '224.0.0.1', '0.0.0.0'):
+            with patch.object(remote_source.socket, 'getaddrinfo', resolving_to(blocked)):
+                with self.assertRaises(ValueError, msg=blocked):
+                    remote_source.guard_destination('https://evil.example.com/a/b')
+        for allowed in ('93.184.216.34', '10.0.0.5', '192.168.1.10'):
+            with patch.object(remote_source.socket, 'getaddrinfo', resolving_to(allowed)):
+                remote_source.guard_destination('https://git.example.com/a/b')   # must not raise
+
     def test_g_the_registration_stores_the_address_and_nothing_else(self):
         tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, tmp, True)
