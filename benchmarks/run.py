@@ -429,6 +429,14 @@ def main():
     parser.add_argument('--keep', action='store_true', help='vaqtinchalik papkalarni o‘chirmaslik')
     parser.add_argument('--summary', help='Markdown jadvalni shu faylga qo‘shish (CI: $GITHUB_STEP_SUMMARY)')
     args = parser.parse_args()
+    # Redirected to a file on Windows, stdout is cp1252: a '→' in a result line raised
+    # UnicodeEncodeError and turned a passing check into FAIL. Unencodable characters
+    # are replaced instead; the JSON output is written as UTF-8 regardless.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors='replace')
+        except (AttributeError, ValueError):
+            pass
     names = args.only or ({'offline': OFFLINE, 'online': ONLINE, 'all': OFFLINE + ONLINE}[args.group])
     print(f'Ma’lumotlar papkasi (vaqtinchalik): {DATA}', flush=True)
     started = time.monotonic()
