@@ -107,7 +107,7 @@ class ScannerTests(unittest.TestCase):
                 if tool=='semgrep':raise RuntimeError('windows_certificate_store')
                 return '8.30.1'
             result=subprocess.CompletedProcess([],0,'[]','')
-            with patch.object(s,'RUNS',base/'runs'),patch.object(s,'target_root',return_value=source.resolve()),patch.object(s,'version',side_effect=version),patch('zanjir.scanners.subprocess.run',return_value=result):
+            with patch.object(s,'RUNS',base/'runs'),patch.object(s,'target_root',return_value=source.resolve()),patch.object(s,'version',side_effect=version),patch.object(s,'run_tool',return_value=result):
                 report=s.start('test',background=False)
                 self.assertEqual(report['state'],'partial')
                 self.assertEqual(report['tools']['gitleaks']['state'],'completed')
@@ -118,10 +118,10 @@ class ScannerTests(unittest.TestCase):
     def test_finding_exit_code_and_empty_output_must_agree(self):
         with tempfile.TemporaryDirectory() as temp:
             base=Path(temp);source=base/'repo';source.mkdir();(source/'demo.txt').write_text('demo')
-            def run(command,**kwargs):
+            def run(command,*args,**kwargs):
                 if 'dir' in command:return subprocess.CompletedProcess(command,1,'[]','')
                 return subprocess.CompletedProcess(command,0,json.dumps({'results':[],'errors':[{}]}),'')
-            with patch.object(s,'RUNS',base/'runs'),patch.object(s,'target_root',return_value=source.resolve()),patch.object(s,'version',return_value='1.2.3'),patch('zanjir.scanners.subprocess.run',side_effect=run):
+            with patch.object(s,'RUNS',base/'runs'),patch.object(s,'target_root',return_value=source.resolve()),patch.object(s,'version',return_value='1.2.3'),patch.object(s,'run_tool',side_effect=run):
                 report=s.start('test',background=False)
                 self.assertEqual(report['tools']['gitleaks']['state'],'failed')
                 self.assertEqual(report['tools']['semgrep']['state'],'partial')

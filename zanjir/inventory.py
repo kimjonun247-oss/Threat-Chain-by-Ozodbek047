@@ -9,10 +9,17 @@ import urllib.parse
 
 from vendor import yaml
 
+from .engine import skip_directory
+
 EXCLUDED={'.git','.tools','.venv','venv','node_modules','vendor','__pycache__','scanner-runs','dependency-runs','image-runs','web-runs','assessment-runs','validation-runs','advisory-cache','repository-runs','runs','pilot','profiles'}
 MAX_MANIFEST=16*1024*1024
-MAX_TOTAL=64*1024*1024
-MAX_PACKAGES=12000
+MAX_TOTAL=256*1024*1024
+# Counted over *distinct* packages. The limit used to count every occurrence, so
+# a monorepo of forty services sharing the same four hundred packages (1 200
+# distinct, 16 000 occurrences) was refused outright with no CVE result at all.
+MAX_PACKAGES=50000
+MAX_OCCURRENCES=500000
+MAX_MANIFESTS=20000
 try:
     import tomllib
 except ModuleNotFoundError:           # Python 3.10 has no tomllib
@@ -539,13 +546,13 @@ def parser_for(name,is_python):
 
 
 def collect(root):
-    root=Path(root).resolve();manifests=[];rows=[];gaps=[];total=0;seen=0;excluded=0
+    root=Path(root).resolve();manifests=[];rows=[];gaps=[];total=0;seen=0;excluded=0;distinct=set()
     if not root.is_dir():raise ValueError('Loyiha papkasi topilmadi.')
     for current,dirs,files in os.walk(root,followlinks=False):
         allowed=[]
         for name in sorted(dirs):
             path=Path(current)/name
-            if name in EXCLUDED:excluded+=1
+            if skip_directory(current,name):excluded+=1
             elif linked(path):gaps.append({'path':path.relative_to(root).as_posix(),'reason':'linked_directory_skipped'})
             else:allowed.append(name)
         dirs[:]=allowed
@@ -569,7 +576,7 @@ def collect(root):
             if file.stat().st_size>MAX_MANIFEST:
                 gaps.append({'path':relative,'reason':'manifest_over_16mb'});continue
             raw=file.read_bytes();total+=len(raw)
-            if total>MAX_TOTAL or len(manifests)>=500:raise ValueError('Manifestlar 64 MB yoki 500 fayl chegarasidan oshdi.')
+            if total>MAX_TOTAL or len(manifests)>=MAX_MANIFESTS:raise ValueError(f'Manifestlar {MAX_TOTAL//1024**2} MB yoki {MAX_MANIFESTS} fayl chegarasidan oshdi.')
             item={'path':relative,'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw),'state':'unsupported'}
             manifests.append(item)
             if name in UNSUPPORTED:
@@ -584,9 +591,11 @@ def collect(root):
                 text=raw.decode('utf-8-sig')
                 found,missing=parser_for(name,is_python)(text,relative)
                 rows.extend(found);gaps.extend(missing);item.update(state='partial' if missing else 'parsed',packages=len(found))
+                distinct.update((p['ecosystem'],p['name'],p['version']) for p in found)
             except (ValueError,TypeError,KeyError,RecursionError):
                 item['state']='invalid';gaps.append({'path':relative,'reason':'invalid_manifest'})
-            if len(rows)>MAX_PACKAGES:raise ValueError('12000 paket nusxasi chegarasidan oshdi.')
+            if len(distinct)>MAX_PACKAGES or len(rows)>MAX_OCCURRENCES:
+                raise ValueError(f'{MAX_PACKAGES} ta turli paket yoki {MAX_OCCURRENCES} ta paket nusxasi chegarasidan oshdi.')
     rows.sort(key=lambda p:(p['manifest'],p['ecosystem'],p['name'],p['version'],p['locator']))
     return {'schema_version':1,'packages':rows,'manifests':manifests,'gaps':gaps,
             'sha256':digest(manifests),'unique_packages':len({(p['ecosystem'],p['name'],p['version']) for p in rows}),

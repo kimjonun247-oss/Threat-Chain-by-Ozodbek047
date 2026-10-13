@@ -17,7 +17,7 @@ from urllib.parse import urlsplit, parse_qs
 from zanjir.engine import ROOT
 from zanjir import repo_store
 from zanjir import scanners, dependencies, images, readiness, webscan, pipeline, custom_rules, portfolio, triage, baseline, iac, sbom
-from zanjir import findings_index, settings, code_targets, dashboard, browse, jobs, notify, auth, reset
+from zanjir import findings_index, settings, code_targets, dashboard, browse, jobs, notify, auth, reset, run_index
 from zanjir.repository import scan_repository, sarif
 
 RUN_LOCK = threading.Lock()
@@ -130,6 +130,48 @@ def asset(name):
 STATUS_KEYS = ('id', 'target', 'state', 'progress', 'count', 'active_here', 'message', 'created_at', 'finished_at')
 
 
+PAGE_MAX = 1000
+
+
+def page_of(report, query):
+    """`?offset=&limit=` on any report URL: that slice of its findings and the total.
+
+    Without either parameter the report is returned as it is. A client that
+    wants every finding of a large report asks for them a page at a time (or
+    downloads the file) instead of receiving tens of megabytes in one answer.
+    """
+    if 'offset' not in query and 'limit' not in query:
+        return report
+    try:
+        offset = max(0, int((query.get('offset') or ['0'])[0]))
+        limit = max(1, min(PAGE_MAX, int((query.get('limit') or [str(PAGE_MAX)])[0])))
+    except ValueError:
+        return report
+    findings = report['findings']
+    return {**report, 'findings': findings[offset:offset + limit], 'findings_total': len(findings),
+            'findings_offset': offset, 'findings_limit': limit}
+
+
+def quick_status(path):
+    """A report's status from its sidecar file, without parsing the report.
+
+    The sidecar is rewritten with every write of the report, so it is current in
+    every state. A report written before sidecars existed has none, and the
+    caller falls back to reading the report.
+    """
+    modules = {'/api/scanners/reports/': scanners, '/api/dependencies/reports/': dependencies,
+               '/api/images/reports/': images, '/api/iac/reports/': iac, '/api/web/reports/': webscan,
+               '/api/assessments/reports/': pipeline}
+    for prefix, module in modules.items():
+        if path.startswith(prefix) and '/' not in path[len(prefix):]:
+            view = run_index.status(module.RUNS, path[len(prefix):])
+            if view is None:
+                return None
+            view.pop('pid', None)
+            return {**view, 'active_here': view['id'] in module.CANCEL}
+    return None
+
+
 def status_view(report):
     """The part of a report a progress poll needs; stages without their reports."""
     view = {key: report[key] for key in STATUS_KEYS if key in report}
@@ -185,6 +227,32 @@ class Handler(BaseHTTPRequestHandler):
         return any(part.split(';')[0].strip() == 'gzip'
                    for part in (self.headers.get('Accept-Encoding') or '').split(','))
 
+    DRAIN_LIMIT = 65536
+
+    def drain_body(self):
+        """Read a small unread request body so the answer survives the close.
+
+        A refused POST was answered and the connection closed with its body still
+        unread. On Windows that close is a reset, and it can reach the client
+        before the answer does: the caller saw "connection aborted" instead of
+        the 403 explaining why. A small declared body is read first, after which
+        the connection is in a clean state and may stay open; anything larger or
+        undeclared is still answered and closed, never read.
+        """
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+        except (TypeError, ValueError):
+            return False
+        if length < 0 or length > self.DRAIN_LIMIT or self.headers.get('Transfer-Encoding'):
+            return False
+        try:
+            if length:
+                self.rfile.read(length)
+        except OSError:
+            return False
+        self._body_read = True
+        return True
+
     def send(self, status, data, mime="application/json; charset=utf-8", attachment=None,
              cache="no-store", etag=None, gzipped=None):
         self._responded = True
@@ -196,6 +264,8 @@ class Handler(BaseHTTPRequestHandler):
                        path=pending['path'], status=status, details=pending['details'])
         if getattr(self, '_status_only', False) and status == 200 and isinstance(data, dict) and 'state' in data:
             data = status_view(data)
+        elif status == 200 and attachment is None and isinstance(data, dict) and isinstance(data.get('findings'), list):
+            data = page_of(data, parse_qs(urlsplit(self.path).query))
         body = json.dumps(data, ensure_ascii=False).encode("utf-8") if isinstance(data, (dict, list)) else data
         encoded = None
         if self.accepts_gzip() and mime.startswith(COMPRESSIBLE):
@@ -216,7 +286,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Encoding", "gzip")
         if etag:
             self.send_header("ETag", f'"{etag}"')
-        if not getattr(self, '_body_read', True):
+        if not getattr(self, '_body_read', True) and not self.drain_body():
             self.send_header("Connection", "close")
             self.close_connection = True
         self.send_header("Cache-Control", cache)
@@ -326,6 +396,11 @@ class Handler(BaseHTTPRequestHandler):
         self._extra_headers = []
         if self.auth_routes(path) or not self.gate(path):
             return
+        # After the login and role checks: a status line is still report data.
+        if self._status_only:
+            quick = quick_status(path)
+            if quick is not None:
+                return self.send(200, quick)
         if path == '/api/audit':
             query = parse_qs(urlsplit(self.path).query)
             try:
@@ -510,8 +585,11 @@ class Handler(BaseHTTPRequestHandler):
             parts=path.split('/')
             if len(parts) not in (5,6) or (len(parts)==6 and parts[5]!='download'):
                 return self.send(404,{'error':'Hisobot topilmadi.'})
-            try:report=scanners.read_report(parts[4])
+            paging=bool(set(parse_qs(urlsplit(self.path).query))&{'offset','limit'})
+            try:report=scanners.read_report(parts[4]) if len(parts)==6 or paging else scanners.read_view(parts[4])
             except ValueError as error:return self.send(404,{'error':str(error)})
+            if report.get('state') in ('queued','running'):
+                report={**report,'active_here':report['id'] in scanners.CANCEL}
             return self.send(200,report,attachment=f'threatchain-code-{report["id"]}.json' if len(parts)==6 else None)
         if path == "/api/health":
             return self.send(200, {"ok": True, "mode": "online-evidence-based", "version": "0.7.0",
@@ -746,6 +824,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(400, {'error': 'Ro‘yxatdagi image va online: true kerak.'})
             except ValueError as error:
                 return self.send(400, {'error': str(error)})
+        if path=='/api/scanners/cancel':
+            if set(payload)!={'report_id'}:return self.send(400,{'error':'report_id kerak.'})
+            try:return self.send(200,scanners.cancel(payload['report_id']))
+            except ValueError as error:return self.send(400,{'error':str(error)})
         if path=='/api/scanners/scan':
             if set(payload)!={'target'} or not isinstance(payload['target'],str):
                 return self.send(400,{'error':'Ro‘yxatdan o‘tgan loyiha ID kerak.'})
@@ -955,6 +1037,13 @@ def main():
         return
     server = make_server(args, parser)
     # Queued and scheduled scans run inside the server process (zanjir/jobs.py).
+    from zanjir import recovery, findings_store
+    from zanjir.engine import DATA
+    # The findings board is kept between restarts; it is checked against the
+    # reports on the first search, never taken on trust.
+    findings_store.persist(DATA / 'findings-board' / 'board.sqlite3')
+    for row in recovery.recover():
+        print(f"Tugamay qolgan skan yopildi: {row['stage']}/{row['id']}", file=sys.stderr, flush=True)
     jobs.start_worker()
     scheme = 'https' if TLS[0] else 'http'
     shown = PUBLIC_HOSTS[0] if PUBLIC_HOSTS else f'127.0.0.1:{server.server_port}'

@@ -19,10 +19,15 @@ class ParserTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_yaml('services:\n  app: {}\n  app: {}\n')
 
-    def test_aliases_and_executable_tags_rejected(self):
-        for text in ['a: &a [1]\nb: *a','!!python/object/apply:os.system [echo]']:
-            with self.subTest(text=text),self.assertRaises(Exception):
-                parse_yaml(text)
+    def test_executable_tags_rejected(self):
+        with self.assertRaises(Exception):
+            parse_yaml('!!python/object/apply:os.system [echo]')
+
+    def test_anchors_are_read(self):
+        # Refused until large Compose files made that a scan nobody could run;
+        # the limits that bound them are in tests/test_large_projects.py.
+        value,_=parse_yaml('a: &a [1]\nb: *a')
+        self.assertEqual(value,{'a':[1],'b':[1]})
 
     def test_deep_yaml_rejected_before_construction(self):
         with self.assertRaises(ValueError):
@@ -35,9 +40,16 @@ class ParserTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertEqual(port_mapping(value)['scope'],scope)
 
-    def test_unsupported_port_range_not_guessed(self):
-        with self.assertRaises(ValueError):
-            port_mapping('8000-8005:8000-8005')
+    def test_port_range_is_read_as_a_range(self):
+        # Refused until it turned out a service publishing a whole range then
+        # produced no finding at all; a malformed range is still an error.
+        port=port_mapping('8000-8005:8000-8005')
+        self.assertEqual((port['published'],port['target'],port['target_end'],port['scope']),
+                         ('8000-8005',8000,8005,'default_interfaces'))
+        self.assertNotIn('target_end',port_mapping('8080:80'))
+        for bad in ('8005-8000:80','0-10:80','80:70000','abc:80'):
+            with self.subTest(bad=bad),self.assertRaises(ValueError):
+                port_mapping(bad)
 
     def test_interpolation_uses_explicit_values_not_process_env(self):
         errors=[]
@@ -294,7 +306,7 @@ class PinnedSourceTest(unittest.TestCase):
         self.assertEqual(report['unknowns'],[])
         for evidence in report['evidence']:
             if evidence['path']=='profile.json':continue
-            self.assertLessEqual(evidence['line'],len((root/evidence['path']).read_text().splitlines()))
+            self.assertLessEqual(evidence['line'],len((root/evidence['path']).read_text(encoding='utf-8', errors='replace').splitlines()))
 
 
 if __name__=='__main__':unittest.main(verbosity=2)

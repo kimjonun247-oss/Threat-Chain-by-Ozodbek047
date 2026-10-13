@@ -597,11 +597,11 @@ DIFFABLE = re.compile(r'^(requirements(?:[-_.][A-Za-z0-9_.-]+)?\.txt|pyproject\.
 def read_manifests(root, limit=200, max_bytes=512 * 1024):
     import os
     from pathlib import Path
-    from .inventory import EXCLUDED
+    from .engine import skip_directory
     base = Path(root).resolve()
     found = {}
     for current, dirs, files in os.walk(base, followlinks=False):
-        dirs[:] = sorted(d for d in dirs if d not in EXCLUDED and not os.path.islink(os.path.join(current, d)))
+        dirs[:] = sorted(d for d in dirs if not skip_directory(current, d) and not os.path.islink(os.path.join(current, d)))
         for name in sorted(files):
             if not DIFFABLE.match(name):
                 continue

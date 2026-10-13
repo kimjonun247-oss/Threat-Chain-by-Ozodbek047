@@ -18,6 +18,7 @@ OSV='https://api.osv.dev/v1/'
 KEV='https://raw.githubusercontent.com/cisagov/kev-data/main/known_exploited_vulnerabilities.json'
 ADVISORY_ID=re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.:-]{1,159}$')
 TTL=24*60*60
+ADVISORY_DETAIL_LIMIT=50000
 
 
 def now():return datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -97,13 +98,17 @@ def query_packages(packages,fetcher=fetch,progress=None):
         if pending:errors.extend({'package':list(key),'reason':'osv_pagination_limit'} for key,_,_ in pending)
         if progress:progress('OSV: '+str(min(start+50,len(keys)))+'/'+str(len(keys))+' paket tekshirildi')
     ids=sorted({vid for values in matches.values() for vid in values});details={}
-    if len(ids)>1500:
-        errors.append({'reason':'advisory_detail_limit','skipped':len(ids)-1500});ids=ids[:1500]
+    # Every matched advisory is fetched: a finding without its record has no
+    # severity, so cutting the list at 1 500 (alphabetically) left thousands of
+    # vulnerable packages of a large project out of the report. Records are
+    # cached for a day, so only the first scan pays for them.
+    if len(ids)>ADVISORY_DETAIL_LIMIT:
+        errors.append({'reason':'advisory_detail_limit','skipped':len(ids)-ADVISORY_DETAIL_LIMIT});ids=ids[:ADVISORY_DETAIL_LIMIT]
     def detail(vid):
         data,meta=fetcher(OSV+'vulns/'+vid,salt=modified.get(vid,''))
         if not isinstance(data,dict) or data.get('id')!=vid:raise FeedError('advisory_id_mismatch')
         return vid,data,meta
-    pool=ThreadPoolExecutor(max_workers=4)
+    pool=ThreadPoolExecutor(max_workers=8)
     try:
         futures={pool.submit(detail,vid):vid for vid in ids}
         for completed,future in enumerate(as_completed(futures),1):
@@ -124,6 +129,47 @@ def kev_catalog(fetcher=fetch):
         if not rows:raise FeedError('kev_empty')
         return rows,{'state':'available','catalog_version':str(doc.get('catalogVersion','')),'date_released':str(doc.get('dateReleased','')),**meta}
     except (FeedError,TypeError,KeyError):return {},{'state':'unavailable','url':KEV}
+
+
+CVSS3={'AV':{'N':0.85,'A':0.62,'L':0.55,'P':0.2},'AC':{'L':0.77,'H':0.44},'UI':{'N':0.85,'R':0.62},
+       'C':{'H':0.56,'L':0.22,'N':0.0},'I':{'H':0.56,'L':0.22,'N':0.0},'A':{'H':0.56,'L':0.22,'N':0.0}}
+CVSS3_PR={'U':{'N':0.85,'L':0.62,'H':0.27},'C':{'N':0.85,'L':0.68,'H':0.5}}
+
+
+def cvss3_base(vector):
+    """CVSS v3.x base score from its vector string, or None when it is not one.
+
+    The published formula (FIRST, CVSS v3.1 section 7.1), nothing estimated.
+    """
+    parts=dict(item.split(':',1) for item in str(vector or '').split('/') if ':' in item)
+    if not str(parts.get('CVSS','')).startswith('3'):return None
+    try:
+        scope=parts['S'];privileges=CVSS3_PR[scope][parts['PR']]
+        weight={key:CVSS3[key][parts[key]] for key in CVSS3}
+    except KeyError:return None
+    iss=1-(1-weight['C'])*(1-weight['I'])*(1-weight['A'])
+    impact=6.42*iss if scope=='U' else 7.52*(iss-0.029)-3.25*(iss-0.02)**15
+    if impact<=0:return 0.0
+    exploitability=8.22*weight['AV']*weight['AC']*privileges*weight['UI']
+    raw=min(impact+exploitability,10) if scope=='U' else min(1.08*(impact+exploitability),10)
+    scaled=round(raw*100000)
+    return scaled/100000.0 if scaled%10000==0 else (scaled//10000+1)/10.0
+
+
+def cvss_rating(record):
+    """A severity word from the record's own CVSS v3 vector, or None.
+
+    GitHub advisories carry `database_specific.severity`; Go, RustSec and PyPA
+    records often carry only the vector. Reading nothing there left real
+    criticals `UNKNOWN`, which no gate counts.
+    """
+    best=None
+    for entry in record.get('severity') or []:
+        if isinstance(entry,dict) and str(entry.get('type','')).upper()=='CVSS_V3':
+            score=cvss3_base(entry.get('score'))
+            if score is not None and (best is None or score>best):best=score
+    if best is None or best<=0:return None
+    return 'CRITICAL' if best>=9 else 'HIGH' if best>=7 else 'MEDIUM' if best>=4 else 'LOW'
 
 
 def clean_text(value,limit=1500):
@@ -156,6 +202,9 @@ def normalize(packages,matches,details,kev,kev_available):
             for record in records:
                 severity=str(record.get('database_specific',{}).get('severity','UNKNOWN')).upper()
                 if severity in {'CRITICAL','HIGH','MODERATE','MEDIUM','LOW'}:ratings.append('MEDIUM' if severity=='MODERATE' else severity)
+                else:
+                    computed=cvss_rating(record)
+                    if computed:ratings.append(computed)
                 for raw_cwe in record.get('database_specific',{}).get('cwe_ids') or []:
                     match=re.fullmatch(r'CWE-(\d+)',str(raw_cwe))
                     if match:cwe_ids.add(int(match.group(1)))

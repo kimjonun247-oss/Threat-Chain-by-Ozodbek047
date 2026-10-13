@@ -81,13 +81,15 @@ def severity_by_stage():
     disagree. Still three separate tallies: a stage's five numbers are drawn
     side by side, never added into one bar of "risk".
     """
-    rows = findings_index.collect()['rows']
+    from . import findings_store
     table = {stage: dict.fromkeys(SEVERITY_ORDER, 0) for stage in STAGES + ('chain',)}
-    for item in rows:
-        bucket = table.get(item['stage'])
+    # Counted by the database over the board's own table, not by loading every
+    # row: the overview of a large installation took 7.8 s to draw this bar.
+    for stage, severity, count in findings_store.tally(findings_index, 'stage', 'severity_scale'):
+        bucket = table.get(stage)
         if bucket is None:
             continue
-        bucket[item.get('severity_scale') or 'UNRATED'] += 1
+        bucket[severity or 'UNRATED'] += count
     return [{'stage': stage, 'counts': counts, 'total': sum(counts.values())}
             for stage, counts in table.items() if sum(counts.values())]
 

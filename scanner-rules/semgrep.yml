@@ -10,9 +10,13 @@ rules:
     languages: [python]
     severity: WARNING
     message: Dinamik kod bajarilishi; foydalanuvchi qiymati yetib kelishini tekshiring.
-    pattern-either:
-      - pattern: eval(...)
-      - pattern: exec(...)
+    patterns:
+      - pattern-either:
+          - pattern: eval(...)
+          - pattern: exec(...)
+      # A literal is fixed text: nothing a caller sends can reach it.
+      - pattern-not: eval("...", ...)
+      - pattern-not: exec("...", ...)
   - id: zanjir.python.tls-verification-disabled
     languages: [python]
     severity: WARNING
@@ -50,8 +54,19 @@ rules:
       - pattern-either:
           - pattern: flask.request.$ATTR
           - pattern: request.$ATTR
-          - pattern: $REQ.GET
-          - pattern: $REQ.POST
+          # Read as a mapping, the way Django code reads them. A bare `$X.GET`
+          # also matched an enum member (`Command.GET`) and reported Selenium's
+          # `self.execute(Command.GET, ...)` as SQL injection.
+          - pattern: $REQ.GET.get(...)
+          - pattern: $REQ.GET.getlist(...)
+          - pattern: $REQ.GET[...]
+          - pattern: $REQ.POST.get(...)
+          - pattern: $REQ.POST.getlist(...)
+          - pattern: $REQ.POST[...]
+    pattern-sanitizers:
+      - pattern: int(...)
+      - pattern: float(...)
+      - pattern: shlex.quote(...)
     pattern-sinks:
       - pattern-either:
           - pattern: subprocess.$FUNC($CMD, ..., shell=True, ...)
@@ -66,8 +81,24 @@ rules:
       - pattern-either:
           - pattern: flask.request.$ATTR
           - pattern: request.$ATTR
-          - pattern: $REQ.GET
-          - pattern: $REQ.POST
+          # Read as a mapping, the way Django code reads them. A bare `$X.GET`
+          # also matched an enum member (`Command.GET`) and reported Selenium's
+          # `self.execute(Command.GET, ...)` as SQL injection.
+          - pattern: $REQ.GET.get(...)
+          - pattern: $REQ.GET.getlist(...)
+          - pattern: $REQ.GET[...]
+          - pattern: $REQ.POST.get(...)
+          - pattern: $REQ.POST.getlist(...)
+          - pattern: $REQ.POST[...]
+    pattern-sanitizers:
+      - pattern: int(...)
+      - pattern: float(...)
+      # SQLAlchemy/ORM expressions: the value becomes a bound parameter, never SQL text.
+      - pattern: $Q.where(...)
+      - pattern: $Q.filter(...)
+      - pattern: $Q.filter_by(...)
+      - pattern: $Q.values(...)
+      - pattern: $Q.bindparams(...)
     pattern-sinks:
       - patterns:
           - pattern-inside: $DB.$EXEC($QUERY, ...)
@@ -79,12 +110,16 @@ rules:
     languages: [python]
     severity: WARNING
     message: SQL matni satr birlashtirish yoki formatlash bilan qurilgan; parametrli so'rov ishlating.
-    pattern-either:
-      - pattern: $DB.execute("..." + $X, ...)
-      - pattern: $DB.execute("..." + $X + $Y, ...)
-      - pattern: $DB.execute("..." % $X, ...)
-      - pattern: $DB.execute("...".format(...), ...)
-      - pattern: $DB.execute(f"...", ...)
+    patterns:
+      - pattern-either:
+          - pattern: $DB.execute("..." + $X, ...)
+          - pattern: $DB.execute("..." + $X + $Y, ...)
+          - pattern: $DB.execute("..." % $X, ...)
+          - pattern: $DB.execute("...".format(...), ...)
+          - pattern: $DB.execute(f"...", ...)
+      # Session and schema statements take identifiers, which no driver can bind
+      # as parameters; database libraries build them this way by necessity.
+      - pattern-not-regex: (?i)execute\(\s*f?["'](SET|PRAGMA|ATTACH|DETACH|SHOW|USE|FETCH|SAVEPOINT|RELEASE)\b
   - id: zanjir.python.insecure-deserialization
     languages: [python]
     severity: ERROR
@@ -113,17 +148,29 @@ rules:
     languages: [python]
     severity: ERROR
     message: yaml.load xavfsiz Loader'siz chaqirilgan -- YAML orqali ixtiyoriy Python obyekti yaratiladi. yaml.safe_load ishlating.
-    pattern-either:
-      - pattern: yaml.unsafe_load(...)
-      - pattern: yaml.load($DATA)
-      - pattern: yaml.load(..., Loader=yaml.Loader, ...)
-      - pattern: yaml.load(..., Loader=yaml.UnsafeLoader, ...)
-      - pattern: yaml.load(..., Loader=yaml.FullLoader, ...)
+    patterns:
+      - pattern-either:
+          - pattern: yaml.unsafe_load(...)
+          - pattern: yaml.load($DATA)
+          - pattern: yaml.load(..., Loader=yaml.Loader, ...)
+          - pattern: yaml.load(..., Loader=yaml.UnsafeLoader, ...)
+          - pattern: yaml.load(..., Loader=yaml.FullLoader, ...)
+      # ruamel.yaml: `yaml = YAML()` is a round-trip (safe) loader object whose
+      # .load() has the same shape as PyYAML's unsafe call.
+      - pattern-not-inside: |
+          yaml = YAML(...)
+          ...
+      - pattern-not-inside: |
+          yaml = ruamel.yaml.YAML(...)
+          ...
   - id: zanjir.python.flask-debug
     languages: [python]
     severity: WARNING
     message: Flask debug rejimi yoqilgan -- Werkzeug konsoli orqali kod bajarish mumkin bo'ladi.
-    pattern: $APP.run(..., debug=True, ...)
+    patterns:
+      - pattern: $APP.run(..., debug=True, ...)
+      # asyncio's debug flag only turns on slow-callback logging.
+      - pattern-not: asyncio.run(..., debug=True, ...)
   - id: zanjir.python.weak-hash
     languages: [python]
     severity: WARNING
@@ -167,6 +214,9 @@ rules:
           - metavariable-regex:
               metavariable: $Q
               regex: ^(query|execute|raw)$
+          # `client.query({query: DOC, variables: req.body})` (GraphQL, search
+          # clients) passes an object; SQL text is a string.
+          - pattern-not-inside: $DB.$Q({...}, ...)
           - focus-metavariable: $SQL
   - id: zanjir.java.sql-string-building
     languages: [java]
@@ -264,7 +314,13 @@ rules:
     pattern-sanitizers:
       - pattern: intval(...)
       - pattern: (int) $X
+      - pattern: (float) $X
+      - pattern: floatval(...)
+      - pattern: absint(...)
       - pattern: mysqli_real_escape_string(...)
+      - pattern: esc_sql(...)
+      - pattern: $WPDB->prepare(...)
+      - pattern: $PDO->quote(...)
     pattern-sinks:
       - patterns:
           - pattern-either:
@@ -287,6 +343,19 @@ rules:
       - pattern: htmlspecialchars(...)
       - pattern: htmlentities(...)
       - pattern: intval(...)
+      - pattern: (int) $X
+      - pattern: absint(...)
+      - pattern: json_encode(...)
+      - pattern: urlencode(...)
+      - pattern: rawurlencode(...)
+      # WordPress and Laravel escaping helpers
+      - pattern: esc_html(...)
+      - pattern: esc_attr(...)
+      - pattern: esc_url(...)
+      - pattern: esc_js(...)
+      - pattern: wp_kses(...)
+      - pattern: wp_kses_post(...)
+      - pattern: e(...)
     pattern-sinks:
       - pattern: echo ...;
       - pattern: print(...)

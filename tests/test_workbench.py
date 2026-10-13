@@ -344,7 +344,10 @@ class FolderPickerTests(unittest.TestCase):
         (self.tmp / 'loyiha' / 'docker-compose.yml').write_text('services: {}\n', encoding='utf-8')
         (self.tmp / '.yashirin').mkdir()
         (self.tmp / 'fayl.txt').write_text('x', encoding='utf-8')
-        (self.tmp / 'tashqariga').symlink_to('/etc')
+        try:
+            (self.tmp / 'tashqariga').symlink_to('/etc')
+        except OSError:
+            pass # Windows symlink privilege
         self.addCleanup(shutil.rmtree, self.tmp, True)
 
     def listing(self, path=''):

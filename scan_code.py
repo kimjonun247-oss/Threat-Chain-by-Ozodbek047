@@ -5,6 +5,7 @@ from zanjir import scanners
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description='Zanjir lokal Semgrep va Gitleaks tekshiruvi')
     parser.add_argument('--target',default='crapi-full')
+    parser.add_argument('--full',action='store_true',help='Oldingi skan keshidan foydalanmay, barcha fayllarni qayta tekshirish')
     parser.add_argument('--diagnose-latest',action='store_true',help='Faqat sun’iy faylda Semgrep diagnostikasi')
     args=parser.parse_args()
     if args.diagnose_latest:
@@ -17,7 +18,7 @@ if __name__=='__main__':
             for step in diagnostic['steps']]},indent=2))
         print('Diagnostika saqlandi. Natijani hisobot papkasida ko‘ring.',flush=True,file=sys.stderr)
         raise SystemExit(0)
-    try:report=scanners.start(args.target,background=False)
+    try:report=scanners.start(args.target,background=False,full=args.full)
     except (ValueError,OSError) as error:
         print('Tekshiruv boshlanmadi: '+str(error),file=sys.stderr);raise SystemExit(2)
     print(json.dumps({key:report.get(key) for key in ('id','state','count','tools','coverage')},indent=2,ensure_ascii=False))

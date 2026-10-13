@@ -50,6 +50,20 @@ PACK = {'python': 'codeql/python-queries', 'javascript': 'codeql/javascript-quer
 SEVERITY = [(9.0, 'ERROR'), (7.0, 'ERROR'), (4.0, 'WARNING'), (0.1, 'INFO')]
 
 
+def resources():
+    """(threads, ram MB) for CodeQL on this machine.
+
+    It was fixed at 2 threads and 2 GB, which a large JavaScript or Java project
+    exhausts. Half the cores and half the free memory are used instead, never
+    less than the old values and never more than 16 GB.
+    """
+    from .engine import available_memory_mb
+    threads = max(2, min(8, (os.cpu_count() or 2) // 2))
+    free = available_memory_mb()
+    ram = 2048 if free is None else max(2048, min(16384, free // 2))
+    return threads, ram
+
+
 def binary():
     return TOOLS / 'codeql' / ('codeql.exe' if sys.platform.startswith('win') else 'codeql')
 
@@ -163,12 +177,14 @@ def run(source, work, env, cancel=None):
     except (OSError, ValueError, subprocess.SubprocessError):
         return {**record, 'state': 'failed', 'message': 'CodeQL versiyasini aniqlab bo‘lmadi.'}, []
     found, failures = [], {}
+    threads, ram = resources()
+    record['resources'] = {'threads': threads, 'ram_mb': ram}
     for lang in analysable:
         database, output = Path(work) / f'codeql-db-{lang}', Path(work) / f'codeql-{lang}.sarif'
         create = [str(binary()), 'database', 'create', str(database), f'--language={lang}', f'--source-root={source}',
-                  '--build-mode=none', '--threads=2', '--ram=2048', '--overwrite', '--quiet']
+                  '--build-mode=none', f'--threads={threads}', f'--ram={ram}', '--overwrite', '--quiet']
         analyze = [str(binary()), 'database', 'analyze', str(database), f'{PACK[lang]}:codeql-suites/{SUITE.format(lang=lang)}',
-                   '--format=sarif-latest', f'--output={output}', '--threads=2', '--ram=2048', '--no-download',
+                   '--format=sarif-latest', f'--output={output}', f'--threads={threads}', f'--ram={ram}', '--no-download',
                    f'--sarif-category={lang}', '--quiet']
         try:
             for command in (create, analyze):

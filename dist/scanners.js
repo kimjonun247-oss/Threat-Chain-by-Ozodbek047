@@ -2,7 +2,7 @@
 "use strict";
 (() => {
   let running = false;
-  const labels = { queued: "Navbatda", running: "Tekshirilmoqda", completed: "Tekshiruv tugadi", partial: "Qisman bajarildi", failed: "Tekshiruv tugallanmadi" };
+  const labels = { queued: "Navbatda", running: "Tekshirilmoqda", completed: "Tekshiruv tugadi", partial: "Qisman bajarildi", failed: "Tekshiruv tugallanmadi", cancelled: "Bekor qilingan" };
   const e = escapeHTML;
   const owaspBadges = (tags) => (tags || []).map((o) => `<span class="badge neutral" title="${e(o.name)}">${e(o.code)}</span>`).join(" ");
   const severityBadge = (s) => s ? `<span class="badge ${s === "ERROR" ? "red" : s === "WARNING" ? "amber" : "neutral"}">${e(s)}</span>` : "";
@@ -78,29 +78,43 @@
     }));
     return rows2;
   }
+  let job = null;
   async function follow(id) {
     running = true;
+    job = id;
     $("code-scan").disabled = true;
     $("code-target").disabled = true;
+    $("code-cancel").hidden = false;
     try {
       const report = await pollReport("/api/scanners/reports/" + id, (s) => {
-        $("code-progress").textContent = labels[s.state] || s.state;
+        $("code-progress").textContent = (labels[s.state] || s.state) + (s.progress ? " · " + s.progress : "");
       });
       render(report);
       $("code-progress").textContent = labels[report.state] || report.state;
       await loadHistory();
     } finally {
       running = false;
+      job = null;
       $("code-scan").disabled = false;
       $("code-target").disabled = false;
+      $("code-cancel").hidden = true;
     }
   }
   async function initCode() {
+    $("code-cancel").addEventListener("click", async () => {
+      if (!job) return;
+      try {
+        await api("/api/scanners/cancel", { report_id: job });
+        $("code-progress").textContent = "Bekor qilish so‘raldi…";
+      } catch (error) {
+        showError(error);
+      }
+    });
     $("code-scan").addEventListener("click", async () => {
       if (running) return;
       try {
-        const job = await api("/api/scanners/scan", { target: $("code-target").value });
-        await follow(job.id);
+        const job2 = await api("/api/scanners/scan", { target: $("code-target").value });
+        await follow(job2.id);
       } catch (error) {
         showError(error);
       }

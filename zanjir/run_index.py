@@ -44,6 +44,124 @@ def read(runs, rid, missing):
         raise ValueError(missing) from None
 
 
+# ---- status sidecar ----------------------------------------------------------
+# A progress poll needs a state and a sentence. It used to parse the whole
+# report to get them -- 2.2 s for a 46 MB report, every few seconds, for every
+# open browser tab, and every 0.4 s from the pipeline itself. The few fields a
+# poll reads are written beside the report on every write; a missing or
+# unreadable sidecar simply sends the caller back to the report.
+STATUS_NAME = 'status.json'
+STATUS_KEYS = ('id', 'target', 'state', 'progress', 'count', 'message', 'created_at', 'finished_at', 'pid')
+ACTIVE_STATES = ('queued', 'running')
+
+
+def write_status(folder, report):
+    view = {key: report[key] for key in STATUS_KEYS if key in report}
+    if isinstance(report.get('stages'), list):
+        view['stages'] = [{key: stage.get(key) for key in ('kind', 'target', 'state', 'count')}
+                          for stage in report['stages'] if isinstance(stage, dict)]
+    try:
+        temporary = folder / (STATUS_NAME + '.tmp')
+        temporary.write_text(json.dumps(view, ensure_ascii=False), encoding='utf-8')
+        os.replace(temporary, folder / STATUS_NAME)
+    except OSError:
+        pass
+
+
+def status(runs, rid):
+    """The sidecar of one run, or None when there is none to trust."""
+    if not isinstance(rid, str) or not RUN_ID.fullmatch(rid):
+        return None
+    try:
+        view = json.loads((runs / rid / STATUS_NAME).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    return view if isinstance(view, dict) and view.get('id') == rid and 'state' in view else None
+
+
+# ---- page view ---------------------------------------------------------------
+# A report screen shows a table that pages 25 rows at a time, and to draw it the
+# browser was sent the whole report: 55 MB for 50 000 findings, parsed by the
+# server (2.6 s) and again by the page. A report over VIEW_LIMIT findings now
+# also gets `view.json`: the same report with its worst VIEW_LIMIT findings and
+# the true total. The screen reads that; the full report is still what a
+# download, an export, a comparison and the findings board read.
+VIEW_NAME = 'view.json'
+VIEW_LIMIT = 2000
+_VIEW_RANK = {'CRITICAL': 0, 'HIGH': 1, 'ERROR': 1, 'MEDIUM': 2, 'WARNING': 2, 'LOW': 3, 'INFO': 3, 'NOTE': 3}
+
+
+def write_view(folder, report):
+    target = folder / VIEW_NAME
+    findings = report.get('findings')
+    try:
+        if not isinstance(findings, list) or len(findings) <= VIEW_LIMIT:
+            if target.exists():
+                target.unlink()
+            return
+        worst = sorted(range(len(findings)), key=lambda n: (
+            _VIEW_RANK.get(str(findings[n].get('severity') or findings[n].get('level') or '').upper(), 4), n))
+        view = {**report, 'findings': [findings[n] for n in worst[:VIEW_LIMIT]],
+                'findings_total': len(findings), 'findings_shown': VIEW_LIMIT}
+        temporary = folder / (VIEW_NAME + '.tmp')
+        temporary.write_text(json.dumps(view, ensure_ascii=False), encoding='utf-8')
+        os.replace(temporary, target)
+    except (OSError, AttributeError, TypeError):
+        pass
+
+
+def view(runs, rid):
+    """The page view of a large report, or None (small report, or none written)."""
+    if not isinstance(rid, str) or not RUN_ID.fullmatch(rid):
+        return None
+    try:
+        data = json.loads((runs / rid / VIEW_NAME).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) and data.get('id') == rid else None
+
+
+# ---- comparison view ---------------------------------------------------------
+# "What changed since the last scan" needs each finding's identity and a few
+# words about it, not its evidence. Comparing two 50 000-finding reports parsed
+# 92 MB to use a fraction of it (3.7 s). A large report also gets `compare.json`:
+# every finding, reduced to the fields a comparison reads.
+COMPARE_NAME = 'compare.json'
+COMPARE_KEYS = ('fingerprint', 'rule_id', 'advisory_id', 'severity', 'level', 'package', 'path', 'service_id', 'title')
+
+
+def write_compare(folder, report):
+    target = folder / COMPARE_NAME
+    findings = report.get('findings')
+    try:
+        if not isinstance(findings, list) or len(findings) <= VIEW_LIMIT:
+            if target.exists():
+                target.unlink()
+            return
+        slim = []
+        for finding in findings:
+            row = {key: finding[key] for key in COMPARE_KEYS if finding.get(key) is not None}
+            if 'title' not in row and finding.get('message'):
+                row['message'] = str(finding['message'])[:300]
+            slim.append(row)
+        temporary = folder / (COMPARE_NAME + '.tmp')
+        temporary.write_text(json.dumps({**report, 'findings': slim}, ensure_ascii=False), encoding='utf-8')
+        os.replace(temporary, target)
+    except (OSError, AttributeError, TypeError, KeyError):
+        pass
+
+
+def compare_view(runs, rid):
+    """The comparison view of a large report, or None."""
+    if not isinstance(rid, str) or not RUN_ID.fullmatch(rid):
+        return None
+    try:
+        data = json.loads((runs / rid / COMPARE_NAME).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) and data.get('id') == rid else None
+
+
 def _load(path):
     try:
         data = json.loads(path.read_text(encoding='utf-8'))

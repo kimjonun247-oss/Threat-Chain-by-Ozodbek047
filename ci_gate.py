@@ -32,6 +32,9 @@ def main():
     p.add_argument('--image-target', default='', help='Ro‘yxatdagi Docker image ID')
     p.add_argument('--allow', type=int, default=0, help='Ruxsat etilgan gate-relevant topilmalar soni (standart: 0)')
     p.add_argument('--sarif-out', default='threatchain.sarif', help='SARIF fayl yo‘li')
+    p.add_argument('--sarif-max-results', type=int, default=0,
+                   help='SARIF fayliga ko‘pi bilan shuncha natija yozish (eng jiddiylari). 0 — hammasi (standart). '
+                        'GitHub code scanning bir run uchun 25000 natijani qabul qiladi.')
     p.add_argument('--baseline', default='',
                    help='Asos skan: hisobot ID yoki "last-green" (bir xil tanlovdagi oxirgi tugagan skan)')
     p.add_argument('--fail-on', default='any', choices=gate.FAIL_MODES,
@@ -39,6 +42,12 @@ def main():
                         'shu o‘zgarish kiritganlari (asos skan talab qilinadi)')
     p.add_argument('--respect-triage', action='store_true',
                    help='false_positive va accepted_risk deb yopilganlarni sanamaslik')
+    p.add_argument('--prod-only', action='store_true',
+                   help='Kod bosqichida faqat ishlab chiqarish kodidagi topilmalarni sanash: test, hujjat, namuna, '
+                        'generatsiya qilingan va vendor yo‘llaridagilar hisobotda qoladi, lekin gate’ni to‘xtatmaydi.')
+    p.add_argument('--fixable-only', action='store_true',
+                   help='Kutubxona va image bosqichlarida faqat tuzatilgan versiyasi mavjud zaifliklarni sanash; '
+                        'qolganlari hisobotda qoladi.')
     p.add_argument('--allow-partial', action='store_true',
                    help='Tugamagan (failed/partial/cancelled) bosqich bo‘lsa ham topilmalar bo‘yicha qaror qilish. '
                         'Standart: bunday skan o‘tkazilmaydi (chiqish kodi 2).')
@@ -52,7 +61,7 @@ def main():
     except (ValueError, OSError) as error:
         print(json.dumps({'error': str(error)}, ensure_ascii=False))
         raise SystemExit(2)
-    Path(args.sarif_out).write_text(json.dumps(pipeline.sarif(report), ensure_ascii=False, indent=2), encoding='utf-8')
+    Path(args.sarif_out).write_text(json.dumps(pipeline.sarif(report, args.sarif_max_results or None), ensure_ascii=False, indent=2), encoding='utf-8')
     # The in-memory report from a non-background run has not been through read(),
     # so the triage overlay is applied here -- otherwise --respect-triage would
     # silently have nothing to respect.
@@ -71,7 +80,8 @@ def main():
             raise SystemExit(2)
     try:
         result = gate.evaluate(report, allow=args.allow, baseline=before,
-                               fail_on=args.fail_on, respect_triage=args.respect_triage)
+                               fail_on=args.fail_on, respect_triage=args.respect_triage,
+                               prod_only=args.prod_only, fixable_only=args.fixable_only)
     except ValueError as error:
         print(json.dumps({'error': str(error)}, ensure_ascii=False))
         raise SystemExit(2)

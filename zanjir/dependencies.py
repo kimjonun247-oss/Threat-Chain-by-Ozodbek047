@@ -10,9 +10,13 @@ from . import inventory, advisories, scanners, repo_store, run_index, triage, fi
 from . import verification as verification_mod
 
 RUNS=DATA/'dependency-runs'
-LOCK=threading.Lock()
+# One scan per project, several projects side by side up to max_parallel_scans
+# (default 1) -- the same slots the code scanner uses. The work is manifest
+# parsing and public feed lookups, so two projects do not get in each other's way.
+LOCK=scanners.ScanSlots()
 REVIEW_LOCK=threading.Lock()
 CANCEL={}
+_TARGETS={}
 
 
 def now():return datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -77,21 +81,22 @@ def execute(rid):
         try:
             if report is not None:
                 report['finished_at']=now();save();triage.record_scan('dependencies',report)
-        finally:CANCEL.pop(rid,None);LOCK.release()
+        finally:CANCEL.pop(rid,None);LOCK.release(_TARGETS.pop(rid,'*'))
     return report
 
 
 def start(target,background=True):
     scanners.check_target(target)
-    if not LOCK.acquire(blocking=False):raise ValueError('Boshqa kutubxona tekshiruvi davom etmoqda.')
+    if not LOCK.acquire(target):
+        raise ValueError('Bu loyihaning kutubxonalari hozir tekshirilmoqda.' if LOCK.locked(target) else 'Boshqa kutubxona tekshiruvi davom etmoqda.')
     rid=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S')+'-'+uuid.uuid4().hex[:8]
-    CANCEL[rid]=threading.Event()
+    CANCEL[rid]=threading.Event();_TARGETS[rid]=target
     try:
         repo_store.write_json(RUNS/rid/'report.json',{'schema_version':1,'id':rid,'target':target,'created_at':now(),
                              'state':'queued','count':0,'findings':[],
                              'limits':'OSV/NVD/CISA KEV paket/versiya mosligi amaliy hujum tasdig‘i emas. Qamrov, conditional/dev paketlar va ishlayotgan tizimga moslik qo‘lda tekshiriladi.',
                              'data_policy':'OSV, NVD va EPSS ga faqat paket nomi, ecosystem, versiya yoki CVE ID yuboriladi. Kod, fayl yo‘li, token yuborilmaydi. Bu tekshiruv doim internetga ulangan holda ishlaydi; offline/faqat-inventar rejim mavjud emas.'})
-    except Exception:CANCEL.pop(rid,None);LOCK.release();raise
+    except Exception:CANCEL.pop(rid,None);LOCK.release(_TARGETS.pop(rid,target));raise
     if background:
         threading.Thread(target=execute,args=(rid,),daemon=True).start()
         return {'id':rid,'state':'queued'}

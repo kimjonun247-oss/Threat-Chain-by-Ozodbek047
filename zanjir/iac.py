@@ -133,6 +133,10 @@ def normalize(data, source):
                 'verification_note': ('Konfiguratsiya fayli statik tekshirildi; fayl bajarilmagan va bu sozlama '
                                       'amalda qanday ta’sir qilishi tasdiqlanmagan. Mutaxassis ko‘rib chiqishi shart.'),
             })
+    # One check failing for several resources of one file is several findings;
+    # they used to share one identity (rule, path, provider).
+    findings_mod.separate(rows, lambda r: 'iac',
+                          lambda r: {'rule_id': r['rule_id'], 'path': r['path'], 'provider': r['provider']})
     untagged = sorted({r['rule_id'] for r in rows if not r['cwe_ids']})
     return {'findings': rows, 'count': len(rows), 'coverage': scanned,
             'untagged_checks': untagged,

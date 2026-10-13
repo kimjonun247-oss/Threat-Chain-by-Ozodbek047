@@ -4,12 +4,40 @@
 
 Kod, kutubxonalar, container image, ruxsatli sayt/API va joylashtirish dalillarini bir joyda tekshirish. Pentester topilmani baholaydi, tuzatishni rejalashtiradi va qayta skan bilan solishtiradi. Bu bir kompyuter, bir foydalanuvchi uchun pilot; barcha CVE va barcha hujumlarni aniqlash kafolati emas.
 
-**Yakuniy holat (2026-09-25, 0.7.0 + tuzatishlar):** 728 test o'tadi, `verify_platform.py` 9/9
-qadamdan o'tadi (Linux; macOS'da 8/8), 7 ta skaner bosqichi, 11 ta zanjir qoidasi (RP-001…011) + 3 ta cross-skaner
-zanjiri (SX-001…003). Python bog'liqliklari: **0 ta**.
+**Holat (2026-10-13):** 1 074 test o'tadi, `verify_platform.py` 9/9 qadamdan o'tadi (Windows 11, haqiqiy
+vositalar bilan; Linux'da ham 9/9, macOS'da 8/8 — oldingi o'lchovlar), barcha oflayn va onlayn benchmarklar o'tadi.
+7 ta skaner bosqichi, 11 ta Compose/Nginx qoidasi (RP-001…011), Kubernetes manifestlari, 7 ta cross-skaner
+zanjiri (SX-001…007). Python bog'liqliklari: **0 ta**.
 
-Ochiq qolgani ikkita, ikkalasi ham kod nuqsoni emas: Windows natijasining o'zi (faqat Windows
-mashinasi bera oladi) va Colima diski bo'yicha operator qarori. Tafsilot: [MUAMMOLAR.md](MUAMMOLAR.md).
+Ochiq qolganlar (birinchi skan tezligi, Helm/Kustomize, CodeQL/PMD sinalmagani va boshqalar):
+[MUAMMOLAR.md](MUAMMOLAR.md), J bo'limi oxirida.
+
+## Katta loyihalar (2026-10)
+
+O'lchovlar va tafsilot: [MUAMMOLAR.md](MUAMMOLAR.md), G–J bo'limlari. Qisqacha nima o'zgardi:
+
+- **Inkremental skan.** O'zgarmagan fayl qayta o'qilmaydi va qayta skanerlanmaydi (`scan-cache/`). Qoida yoki
+  vosita versiyasi o'zgarsa, kesh o'zini bekor qiladi. To'liq skan: `scan_code.py --full` yoki
+  `THREATCHAIN_FULL_SCAN=1`.
+- **Bo'laklab skanerlash.** Katta loyiha 4 000 fayl / 48 MB lik bo'laklarda skanerlanadi; har bo'lak natijasi darhol
+  saqlanadi. Bekor qilingan yoki vaqt chegarasiga yetgan skan keyingi safar qolgan joyidan davom etadi.
+- **Bekor qilish.** Kod skani interfeysdan yoki `POST /api/scanners/cancel` orqali to'xtatiladi; ishlab turgan vosita ham.
+- **Topilmalar jadvali** SQLite'da (`findings-board/`): qidiruv va fasetlar SQL so'rovi, server xotirasi hisobot hajmiga bog'liq emas.
+- **Katta hisobotlar.** Sahifa eng jiddiy 2 000 topilmani oladi va jami sonni aytadi; har hisobot manzilida
+  `?offset=&limit=`; umumiy hisobot bosqich hisobotlarini nusxalamaydi.
+- **Kubernetes.** `compose` maydoniga manifest papkasi ko'rsatilsa, workload/Service/Ingress/NetworkPolicy o'qiladi
+  va zanjir qoidalari (SX-002/003/005) ishlaydi. Helm/Kustomize render qilinmaydi.
+- **Compose:** YAML anchor, `include:`, `extends:`, override fayli, port diapazoni, 2 000 gacha xizmat.
+- **CI gate uchun ixtiyoriy filtrlar** (standart xulq o'zgarmagan):
+
+  | Bayroq | Nima sanalmaydi |
+  |---|---|
+  | `--prod-only` | test/hujjat/namuna/generatsiya/vendor kodidagi topilmalar; faqat development deb e'lon qilingan kutubxonalar |
+  | `--fixable-only` | tuzatilgan versiyasi e'lon qilinmagan kutubxona va image zaifliklari |
+  | `--sarif-max-results N` | SARIF'ga eng jiddiy N ta natija (GitHub chegarasi uchun) |
+
+- **Parallel skan.** `max_parallel_scans` (standart 1) gacha turli loyihalarning kod va kutubxona skanlari birga
+  ishlaydi. Image, IaC va web bosqichlari bittadan qoladi.
 
 ## Boshlash (yangi kompyuterda)
 

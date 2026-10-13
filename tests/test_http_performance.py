@@ -91,15 +91,28 @@ class ApiDeliveryTests(Server):
         self.assertEqual(response.status, 200)
         self.assertTrue(json.loads(body)['ok'])
 
-    def test_rejected_post_with_unread_body_closes_the_connection(self):
-        # Otherwise the unread body would be parsed as the next request.
+    def rejected_post(self, size):
         connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=10)
         self.addCleanup(connection.close)
-        connection.request('POST', '/api/scanners/scan', body=b'x' * 10,
+        connection.request('POST', '/api/scanners/scan', body=b'x' * size,
                            headers={'Host': f'127.0.0.1:{self.port}', 'Content-Type': 'text/plain'})
         response = connection.getresponse()
         response.read()
         self.assertEqual(response.status, 415)
+        return response, connection
+
+    def test_rejected_post_never_leaves_its_body_to_be_read_as_a_request(self):
+        # A small body is read and thrown away, so the answer is not lost to a
+        # reset (Windows) and the connection is clean enough to be used again.
+        response, connection = self.rejected_post(10)
+        self.assertNotEqual(response.getheader('Connection'), 'close')
+        again, body, _ = self.get('/api/health', connection=connection)
+        self.assertEqual(again.status, 200)
+        self.assertTrue(json.loads(body)['ok'])
+
+    def test_rejected_post_with_a_large_body_closes_the_connection(self):
+        # Never read on a refused request: answered, then closed.
+        response, _ = self.rejected_post(70000)
         self.assertEqual(response.getheader('Connection'), 'close')
 
 

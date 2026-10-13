@@ -33,7 +33,7 @@ Two rules keep the baseline mode from passing a build it did not really check:
   - A missing or unusable baseline is an error, not a pass. Comparing against
     nothing would let a first run through with anything in it.
 """
-from . import baseline as baseline_mod
+from . import baseline as baseline_mod, pathclass
 from .pipeline import FINISHED_STAGE_STATES
 
 SEVERE = {'CRITICAL', 'HIGH'}
@@ -47,6 +47,10 @@ def hit(stage, finding, rule_id, subject, detail):
     from . import triage
     return {'stage': stage, 'rule_id': rule_id, 'subject': subject, 'detail': detail,
             'fingerprint': finding.get('fingerprint'),
+            **({'path_class': finding.get('path_class') or pathclass.classify(finding.get('path'))}
+               if stage == 'code' else {}),
+            **({'dev_only': dev_only(finding)} if stage == 'dependencies' else {}),
+            **({'fixable': fixable(finding)} if stage in ('dependencies', 'images') else {}),
             'severity': finding.get('severity') or finding.get('level') or '',
             'severity_scale': triage.severity_of(finding)}
 
@@ -55,6 +59,22 @@ def hit(stage, finding, rule_id, subject, detail):
 # theft or a full auth bypass: injection of every kind, deserialization, XXE,
 # SSRF, path traversal/inclusion, XSS.
 HIGH_IMPACT_CWES = {22, 23, 73, 77, 78, 79, 89, 90, 91, 94, 95, 96, 98, 502, 611, 643, 917, 918, 1336}
+
+
+def dev_only(finding):
+    """True when every place a package is declared marks it development-only.
+
+    A test runner or a linter with a CVE is not in what gets deployed. One
+    runtime (or unknown) occurrence is enough for the package to count as
+    shipped -- the doubt goes to the side of stopping the build.
+    """
+    scopes = [row.get('scope') for row in finding.get('occurrences') or [] if isinstance(row, dict)]
+    return bool(scopes) and all(scope == 'development' for scope in scopes)
+
+
+def fixable(finding):
+    """Whether the advisory source names a version that fixes it."""
+    return bool(finding.get('fixed_versions') or finding.get('fixed_version'))
 
 
 def cwe_numbers(finding):
@@ -151,6 +171,11 @@ def classify_stage(stage):
         failed = sorted(name for name, tool in (child.get('tools') or {}).items() if tool.get('state') == 'failed')
         if failed:
             return 'incomplete', 'skaner ishlamadi: ' + ', '.join(failed)
+        unscanned = sum(int(tool.get('files_unscanned') or 0) for tool in (child.get('tools') or {}).values())
+        if unscanned:
+            # A file a scanner could not parse is a gap; a file it never reached is
+            # a check that did not happen.
+            return 'incomplete', f'{unscanned} ta fayl tekshirilmadi (skan vaqt chegarasida tugamadi)'
         return 'gap', 'ayrim fayllarni skaner o‘qiy olmadi (qamrov bo‘shlig‘i)'
     if kind == 'dependencies':
         kev = ((child.get('feeds') or {}).get('kev') or {}).get('state')
@@ -188,7 +213,8 @@ def coverage_gaps(report):
             for s in report.get('stages', []) if s.get('target') and classify_stage(s)[0] == 'gap']
 
 
-def evaluate(report, allow=0, baseline=None, fail_on='any', respect_triage=False):
+def evaluate(report, allow=0, baseline=None, fail_on='any', respect_triage=False, prod_only=False,
+             fixable_only=False):
     """Judge one assessment.
 
     Called with no new arguments it behaves exactly as it always has: count every
@@ -203,6 +229,26 @@ def evaluate(report, allow=0, baseline=None, fail_on='any', respect_triage=False
     hits = gate_relevant(report)
     result = {'fail_on': fail_on, 'allow': allow, 'total': len(hits),
               'respect_triage': bool(respect_triage), 'baseline': None, 'notes': []}
+    if prod_only:
+        # Opt-in: on a large repository the test tree and the examples hold most
+        # of the secret-shaped strings and risky calls, none of which ship. They
+        # stay in the report; the gate just does not stop a build on them.
+        kept = [h for h in hits if h.get('path_class', pathclass.PROD) == pathclass.PROD and not h.get('dev_only')]
+        result['outside_shipped_code'] = len(hits) - len(kept)
+        result['notes'].append('Test, hujjat, namuna, generatsiya qilingan va vendor kodidagi topilmalar hamda faqat '
+                               'development sifatida e’lon qilingan kutubxonalar sanalmadi (--prod-only). Ular '
+                               'hisobotda turibdi va tuzatilgan emas.')
+        hits = kept
+    if fixable_only:
+        # Opt-in: a base image carries CVEs its distribution will not fix, and a
+        # build cannot be made green by an upgrade that does not exist. They stay
+        # in the report (and in the SX chains); only what has a fix stops the build.
+        kept = [h for h in hits if h.get('fixable', True)]
+        result['without_fix'] = len(hits) - len(kept)
+        result['notes'].append('Tuzatilgan versiyasi e’lon qilinmagan kutubxona/image zaifliklari sanalmadi '
+                               '(--fixable-only). Ular xavfsiz degani emas — vaqtinchalik chora yoki boshqa '
+                               'asos image kerak bo‘lishi mumkin.')
+        hits = kept
     if respect_triage:
         closed = baseline_mod.suppressed(report)
         kept = [h for h in hits if h['fingerprint'] not in closed]

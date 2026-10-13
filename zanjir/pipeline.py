@@ -29,7 +29,53 @@ LIMITS = ('Lokal bir foydalanuvchili pilot. Har bir skaner o‘z qamrovi va o‘
 
 def read(rid):
     report = run_index.read(RUNS, rid, 'Umumiy tekshiruv hisoboti topilmadi.')
-    return attach_triage(report)
+    return attach_triage(hydrate(report))
+
+
+# An assessment used to carry a full copy of every stage report inside its own
+# file: 54 MB for one code stage of 50 000 findings, rewritten on every stage
+# transition. The stage reports already exist as files of their own, so the
+# assessment now stores which report each stage produced and reads it back when
+# it is opened. In memory nothing changes -- every consumer still finds
+# `stage['report']` -- and an assessment written before this still carries its
+# embedded copies and opens exactly as it did.
+REFERENCE = 'by_reference'
+
+
+def slim(report):
+    """The assessment as written to disk: stage reports named, not copied."""
+    stages = []
+    for stage in report.get('stages') or []:
+        if isinstance(stage.get('report'), dict) and stage.get('report_id'):
+            stage = {key: value for key, value in stage.items() if key != 'report'}
+            stage['report_stored'] = REFERENCE
+        stages.append(stage)
+    return {**report, 'stages': stages}
+
+
+def stage_file(kind, report_id):
+    """Read one stage's own report, as stored (the triage overlay is applied later)."""
+    if kind == 'repository':
+        return repo_store.read_json(repo_store.REPO_RUNS / (report_id + '.json'))
+    return run_index.read(MODULES[kind].RUNS, report_id, 'Bosqich hisoboti topilmadi.')
+
+
+def hydrate(report):
+    if not isinstance(report, dict) or not isinstance(report.get('stages'), list):
+        return report
+    stages = []
+    for stage in report['stages']:
+        if isinstance(stage, dict) and stage.get('report_stored') == REFERENCE and 'report' not in stage:
+            try:
+                if not run_index.RUN_ID.fullmatch(str(stage.get('report_id') or '')):
+                    raise ValueError('report_id')
+                stage = {**stage, 'report': stage_file(stage.get('kind'), stage['report_id'])}
+            except (OSError, ValueError, KeyError):
+                # The stage ran, but its report is no longer on disk. Said, not
+                # hidden: the stage row keeps its state and count.
+                stage = {**stage, 'report': None, 'report_missing': True}
+        stages.append(stage)
+    return {**report, 'stages': stages}
 
 
 def attach_triage(report):
@@ -114,24 +160,28 @@ def run_stage(stage, event, commit):
     cancelled_child = False
     read_failures = 0
     while True:
-        try:
-            child = module.read_report(job['id']) if kind == 'code' else module.read(job['id'])
-            read_failures = 0
-        except ValueError:
-            read_failures += 1
-            if read_failures >= 3:
-                raise
-            threading.Event().wait(0.4)
-            continue
-        if child['state'] not in {'queued', 'running'}:
-            break
-        if event.is_set() and kind != 'code' and not cancelled_child:
+        # While the stage runs only its small status file is read; the report
+        # itself -- tens of megabytes on a large project -- is parsed once, at
+        # the end.
+        quick = run_index.status(module.RUNS, job['id'])
+        if quick is None or quick.get('state') not in run_index.ACTIVE_STATES:
+            try:
+                child = module.read_report(job['id']) if kind == 'code' else module.read(job['id'])
+                read_failures = 0
+            except ValueError:
+                read_failures += 1
+                if read_failures >= 3:
+                    raise
+                threading.Event().wait(0.4)
+                continue
+            if child['state'] not in {'queued', 'running'}:
+                break
+        if event.is_set() and not cancelled_child:
             try:
                 module.cancel(job['id'])
             except ValueError:
                 pass  # Child may have completed between read and cancel.
             cancelled_child = True
-        # Code scanners have a bounded timeout; cancellation waits for this stage.
         threading.Event().wait(0.4)
     commit(stage, state=child['state'], count=child.get('count', 0), report=child,
            report_sha256=_digest(child), verification=verification_mod.summarize(child.get('findings', [])))
@@ -141,7 +191,23 @@ def stage_report(report, kind):
     """A completed stage's report, or None. A stage that did not finish is not
     evidence, so a chain rule never rests on one."""
     stage = next((s for s in report['stages'] if s['kind'] == kind), None)
-    return stage.get('report') if stage and stage['state'] == 'completed' else None
+    if stage and (stage['state'] == 'completed' or gap_stage(stage)):
+        return stage.get('report')
+    return None
+
+
+def gap_stage(stage):
+    """A stage that ran to the end and only could not read some of its input.
+
+    Its findings are real -- an unparsed file can hide a finding, never invent
+    one -- so a chain may rest on them. On a large repository the code stage is
+    always in this state, and treating it as "did not finish" switched every
+    code chain (SX-001, SX-004, SX-007) off exactly where they matter most.
+    """
+    if stage.get('state') != 'partial' or not isinstance(stage.get('report'), dict):
+        return False
+    from . import ci_gate        # imported here: ci_gate imports this module
+    return ci_gate.classify_stage(stage)[0] == 'gap'
 
 
 def correlate_stages(report):
@@ -158,10 +224,17 @@ def correlate_stages(report):
     if repository:
         images_by_target = project_images(report, repository)
     linked = image_links(repository, images_by_target)
-    return chains.correlate_all({'code': stage_report(report, 'code'), 'repository': repository,
-                                 'dependencies': stage_report(report, 'dependencies')},
-                                links=linked.get('links'), image_reports=images_by_target,
-                                ambiguous=linked.get('ambiguous'))
+    result = chains.correlate_all({'code': stage_report(report, 'code'), 'repository': repository,
+                                   'dependencies': stage_report(report, 'dependencies')},
+                                  links=linked.get('links'), image_reports=images_by_target,
+                                  ambiguous=linked.get('ambiguous'))
+    for stage in report['stages']:
+        if stage['kind'] in ('code', 'dependencies') and repository and gap_stage(stage):
+            result['gaps'].append({'kind': 'stage_coverage_gap', 'stage': stage['kind'],
+                                   'detail': f"{stage['kind']} bosqichi ayrim fayllarni o‘qiy olmadi. Topilgan "
+                                             'zanjirlar haqiqiy, lekin o‘qilmagan fayllardagi topilmalarga '
+                                             'tayanadigan zanjirlar qurilmagan bo‘lishi mumkin.'})
+    return result
 
 
 def project_images(report, repository):
@@ -234,7 +307,7 @@ def execute(rid, event):
                 stage.update(fields)
             running = [s['kind'] for s in report['stages'] if s['state'] == 'running']
             report['progress'] = ', '.join(running) if running else report.get('progress')
-            repo_store.write_json(path, report)
+            repo_store.write_json(path, slim(report))
 
     def run(stage):
         if event.is_set():
@@ -287,7 +360,7 @@ def execute(rid, event):
         report['finished_at'] = webscan.now()
         report['progress'] = 'Jarayon yakunlandi; har bir bosqich holatini ko‘ring.'
         try:
-            repo_store.write_json(path, report)
+            repo_store.write_json(path, slim(report))
         finally:
             CANCEL.pop(rid, None)
             LOCK.release()
@@ -353,8 +426,27 @@ def stage_rows(kind, findings):
     return (), []
 
 
-def sarif(report):
-    return sarif_export.build(report)
+def sarif(report, max_results=None):
+    return sarif_export.build(report, max_results)
+
+
+def chain_evidence(finding):
+    """The one line that says what a chain finding rests on, whichever rule made it."""
+    ev = finding.get('evidence') or {}
+    if ev.get('gitleaks_path'):
+        return f"{ev.get('gitleaks_rule_id', '?')} · {ev['gitleaks_path']}:{ev.get('gitleaks_line', '?')}"
+    if ev.get('code_path'):
+        return f"{ev.get('code_rule', '?')} · {ev['code_path']}"
+    if ev.get('entry_path'):
+        return f"{ev.get('entry_rule', '?')} · {ev['entry_path']}"
+    if ev.get('advisory_id'):
+        where = ev.get('image_target') or ev.get('manifest') or ''
+        package = ev.get('package') or ''
+        version = ev.get('installed_version') or ''
+        return ' · '.join(str(part) for part in (ev['advisory_id'], f'{package} {version}'.strip(), where) if part)
+    if ev.get('os'):
+        return f"{ev.get('image_target', '')} · {ev['os']} (EOL)"
+    return str(finding.get('title') or '')[:200]
 
 
 def markdown(report):
@@ -381,12 +473,13 @@ def markdown(report):
             lines.append(f'... va yana {len(rows) - STAGE_LIMIT} ta topilma. To‘liq ro‘yxat uchun shu bosqichning alohida hisobotini (Dalil ID: {s.get("report_id", "—")}) oching.')
     chain_findings = report.get('chain_findings') or []
     if chain_findings:
-        lines += ['', '## Cross-skaner zanjiri — sir + tarmoq ochiqligi (SX-001)',
-                  '| Xizmat | Manba katalogi | Gitleaks qoidasi | Fayl:Qator |', '|---|---|---|---|']
+        # One table for every chain rule. It used to read SX-001's evidence keys
+        # from each row, so an assessment holding any other chain (SX-002..007)
+        # raised KeyError and the export could not be downloaded at all.
+        lines += ['', '## Cross-skaner zanjirlari', '| Qoida | Xizmat | Daraja | Dalil |', '|---|---|---|---|']
         for f in chain_findings:
-            ev = f['evidence']
             lines.append('| ' + ' | '.join(cell(v) for v in (
-                f['service_id'], ev['build_context'], ev['gitleaks_rule_id'], ev['gitleaks_path'] + ':' + str(ev['gitleaks_line']))) + ' |')
+                f.get('rule_id', '—'), f.get('service_id', '—'), f.get('level', '—'), chain_evidence(f))) + ' |')
     lines += ['', 'To‘liq redaktlangan dalillar JSON eksportidagi stages/report bo‘limlarida.',
               'Bu sonlarni qo‘shib xavfsizlik foizi yoki tasdiqlangan hujumlar soni chiqarilmaydi.']
     return '\n'.join(lines) + '\n'

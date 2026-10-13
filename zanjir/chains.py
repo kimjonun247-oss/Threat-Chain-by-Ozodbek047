@@ -28,7 +28,9 @@ Three rules hold for all of them:
 secret_value is never read or re-exposed: Gitleaks findings only ever carry
 'hidden' for that field.
 """
-from . import findings as findings_mod, taxonomy
+import json
+
+from . import findings as findings_mod, pathclass, taxonomy
 
 RULES = {
     'SX-001': ('Ochiq xizmat manbasida qattiq kodlangan sir topildi',
@@ -82,6 +84,35 @@ def _exploitable(cwe_ids):
     return [c for c in (cwe_ids or []) if _cwe_number(c) in EXPLOITABLE_CWE]
 
 
+def inside(path, context):
+    """Whether a repository path belongs to a service's build context.
+
+    `build: .` -- the commonest Compose layout -- makes the whole repository the
+    context. It was compared as the literal prefix "./", which no path has, so
+    no chain could ever fire for such a service.
+    """
+    path, context = str(path or ''), str(context or '')
+    if context in ('.', ''):
+        return bool(path)
+    return path == context or path.startswith(context + '/')
+
+
+def outside_shipped_code(code_report, repository_report):
+    """Code findings inside an exposed service's context that no chain was built on.
+
+    A fake key in a test fixture is not what an attacker reaches through the
+    service's port, so SX-001/004/007 rest on shipped code only. What that left
+    out is counted here and reported as a gap rather than dropped in silence.
+    """
+    contexts = [s['build_context'] for s in (repository_report or {}).get('services', [])
+                if s.get('build_context') and any(p.get('scope') != 'loopback' for p in s.get('ports') or [])]
+    if not contexts:
+        return 0
+    return sum(1 for f in (code_report or {}).get('findings', [])
+               if not pathclass.shipped(f) and any(inside(f.get('path'), c) for c in contexts)
+               and (f.get('tool') == 'gitleaks' or _exploitable(f.get('cwe_ids'))))
+
+
 def exposed_services(repository_report):
     """Services with at least one non-loopback host port -- the RP-001 condition."""
     return [s for s in (repository_report or {}).get('services', [])
@@ -94,7 +125,8 @@ def port_summary(service):
 
 
 def correlate(code_report, repository_report):
-    gitleaks_findings = [f for f in (code_report or {}).get('findings', []) if f.get('tool') == 'gitleaks']
+    gitleaks_findings = [f for f in (code_report or {}).get('findings', [])
+                         if f.get('tool') == 'gitleaks' and pathclass.shipped(f)]
     if not gitleaks_findings:
         return []
     reachable = [s for s in (repository_report or {}).get('services', [])
@@ -106,10 +138,9 @@ def correlate(code_report, repository_report):
     results = []
     for service in reachable:
         context = service['build_context']
-        prefix = context + '/'
         for gf in gitleaks_findings:
             path = gf.get('path', '')
-            if path != context and not path.startswith(prefix):
+            if not inside(path, context):
                 continue
             results.append({
                 'rule_id': 'SX-001', 'title': RULES['SX-001'][0], 'service_id': service['id'],
@@ -143,7 +174,7 @@ def code_weakness_chains(code_report, repository_report):
     weaknesses = [f for f in (code_report or {}).get('findings', [])
                   if f.get('tool') in ('semgrep', 'codeql', 'pmd')
                   and str(f.get('severity') or '').upper() != 'INFO'
-                  and _exploitable(f.get('cwe_ids'))]
+                  and _exploitable(f.get('cwe_ids')) and pathclass.shipped(f)]
     if not weaknesses:
         return []
     reachable = [s for s in (repository_report or {}).get('services', [])
@@ -151,10 +182,9 @@ def code_weakness_chains(code_report, repository_report):
     results = []
     for service in reachable:
         context = service['build_context']
-        prefix = context + '/'
         for wf in weaknesses:
             path = wf.get('path', '')
-            if path != context and not path.startswith(prefix):
+            if not inside(path, context):
                 continue
             hit = _exploitable(wf.get('cwe_ids'))
             cwe_ids = sorted(set(hit + ['CWE-668']))
@@ -229,10 +259,8 @@ def dependency_chains(dependency_report, repository_report):
     results = []
     for service in reachable:
         context = service['build_context']
-        prefix = context + '/'
         for f in high:
-            locs = [o for o in f.get('occurrences') or []
-                    if (o.get('manifest') or '') == context or str(o.get('manifest') or '').startswith(prefix)]
+            locs = [o for o in f.get('occurrences') or [] if inside(o.get('manifest'), context)]
             if not locs:
                 continue
             pkg = f.get('package') or {}
@@ -281,16 +309,16 @@ def escape_escalation_chains(code_report, repository_report):
     if not exposed:
         return []
     entries = [f for f in (code_report or {}).get('findings', [])
-               if (f.get('tool') == 'gitleaks')
-               or (f.get('tool') in ('semgrep', 'codeql', 'pmd')
-                   and str(f.get('severity') or '').upper() != 'INFO' and _exploitable(f.get('cwe_ids')))]
+               if pathclass.shipped(f) and
+               ((f.get('tool') == 'gitleaks')
+                or (f.get('tool') in ('semgrep', 'codeql', 'pmd')
+                    and str(f.get('severity') or '').upper() != 'INFO' and _exploitable(f.get('cwe_ids'))))]
     results = []
     for sid, service in sorted(exposed.items()):
         context = service['build_context']
-        prefix = context + '/'
         for f in entries:
             path = f.get('path', '')
-            if path != context and not path.startswith(prefix):
+            if not inside(path, context):
                 continue
             is_secret = f.get('tool') == 'gitleaks'
             kind = 'qattiq kodlangan sir' if is_secret else f"ekspluatatsion zaiflik ({', '.join(_exploitable(f.get('cwe_ids')))})"
@@ -444,6 +472,12 @@ def correlate_all(stage_reports, links=None, image_reports=None, ambiguous=None)
         results += correlate(code, repository)                  # SX-001
         results += code_weakness_chains(code, repository)       # SX-004
         results += escape_escalation_chains(code, repository)   # SX-007
+        left_out = outside_shipped_code(code, repository)
+        if left_out:
+            gaps.append({'kind': 'outside_shipped_code', 'count': left_out,
+                         'detail': f'Ochiq xizmat manbasidagi {left_out} ta topilma test, hujjat, namuna, '
+                                   'generatsiya qilingan yoki vendor kodida joylashgan; ular ustiga zanjir '
+                                   'qurilmadi. Topilmalarning o‘zi kod hisobotida turibdi (path_class).'})
     elif repository and not code:
         gaps.append({'kind': 'stage_missing', 'detail': 'Kod bosqichi tanlanmagan; SX-001 (sir + ochiq port) '
                                                         'tekshirilmadi.'})
@@ -461,4 +495,34 @@ def correlate_all(stage_reports, links=None, image_reports=None, ambiguous=None)
     if not repository:
         gaps.append({'kind': 'stage_missing', 'detail': 'Repository (Compose) bosqichi tanlanmagan; hech bir '
                                                         'cross-skaner zanjiri tekshirilmadi.'})
-    return {'findings': results, 'gaps': gaps}
+    results, limited = limit_per_service(results)
+    return {'findings': results, 'gaps': gaps + limited}
+
+
+# A service whose build context is the whole repository chains with every code
+# finding in it: forty such services and three thousand findings are 60 000
+# chain findings (81 MB measured), each of which stops the gate. One service and
+# one rule say the same thing after the first few dozen, so the list is cut per
+# (rule, service) -- worst first, in a fixed order so the same ones are kept on
+# every scan -- and the cut is reported as a gap with the full count.
+CHAIN_LIMIT = 50
+
+
+def limit_per_service(findings):
+    groups = {}
+    for finding in findings:
+        groups.setdefault((finding.get('rule_id'), finding.get('service_id')), []).append(finding)
+    kept, gaps = [], []
+    for (rule, service), members in groups.items():
+        if len(members) > CHAIN_LIMIT:
+            members = sorted(members, key=lambda f: (0 if f.get('level') == 'error' else 1,
+                                                     json.dumps(f.get('evidence'), sort_keys=True, default=str),
+                                                     str(f.get('fingerprint'))))
+            gaps.append({'kind': 'chain_limit', 'rule_id': rule, 'service': service,
+                         'shown': CHAIN_LIMIT, 'total': len(members),
+                         'detail': f'{service} xizmati uchun {rule} bo‘yicha {len(members)} ta zanjir topildi; '
+                                   f'eng jiddiy {CHAIN_LIMIT} tasi ko‘rsatildi. Qolganlari shu xizmatning shu '
+                                   'turdagi muammosi — tagidagi topilmalar o‘z bosqichi hisobotida to‘liq turibdi.'})
+            members = members[:CHAIN_LIMIT]
+        kept += members
+    return kept, gaps
