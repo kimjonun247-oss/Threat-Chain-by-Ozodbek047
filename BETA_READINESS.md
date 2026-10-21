@@ -46,20 +46,24 @@ ishchi ishlaydi. Server (ko'proq RAM) ishchilar sonini oshiradi — §4.
 
 `python benchmarks/board_load.py` (sintetik, izolyatsiyalangan `THREATCHAIN_DATA_DIR`):
 
+`python benchmarks/board_load.py` (facet ustunlariga indeks bilan — severity/stage/status/project):
+
 | O'lchov | Natija |
 |---|---|
-| Sovuq qurish (noldan) | **7,7 s** |
-| SQLite hajmi | 152 MB |
-| Sahifa-1 so'rovi (median / max) | 490 ms / 492 ms |
-| Chuqur sahifa (offset ≈ jami) | 868 ms / 882 ms |
-| Matn qidiruv ("pickle", 11 899 mos) | 492 ms |
-| Severity filtri (40 097 mos) | 393 ms |
-| OWASP filtri (A03, 29 973 mos) | 383 ms |
-| Fingerprint bo'yicha tafsilot | **6 ms** |
+| Sovuq qurish (noldan) | **8,8 s** |
+| SQLite hajmi | 158 MB |
+| Sahifa-1 so'rovi (median / max) | 445 ms / 454 ms |
+| Chuqur sahifa (offset ≈ jami) | 832 ms / 841 ms |
+| Severity filtri (40 097 mos) | 343 ms |
+| Project filtri (30 000 mos) | **201 ms** |
+| Kombinatsiya (matn+severity+project, 1 019 mos) | **219 ms** |
+| OWASP filtri (A03, 29 973 mos) | 387 ms |
+| Fingerprint bo'yicha tafsilot | **7 ms** |
 
-Natija to'g'ri (120 000 mos). So'rov vaqti severity/filtr ustunlarining to'liq saralanishiga
-bog'liq; 120k da qabul qilinadigan daraja, lekin milliondan oshsa indeks qo'shish kerak bo'ladi
-(§6, ochiq).
+Natija to'g'ri (120 000 mos). Facet indekslari **filtrlangan** so'rovni sezilarli tezlashtirdi
+(kombinatsiya 494→219 ms, project 334→201 ms — indekssiz o'lchovga nisbatan). Filtrsiz sahifa-1
+hamon to'liq saralashga bog'liq (`ORDER BY` ichidagi runtime "overdue" CASE indeksni to'sadi);
+120k da qabul qilinadigan, milliondan oshsa saralashni qayta ko'rish kerak (§6, ochiq).
 
 ### 2.3. Birinchi skan vaqt bo'linishi (2.1)
 
@@ -133,7 +137,8 @@ SX-001/004/006/007 Kubernetes'da ishlamaydi), Nuclei faqat 6 ko'rib chiqilgan GE
 foydalanuvchi yo'q (lokal 127.0.0.1).
 
 **Ochiq (server/kelajak):**
-- Board so'rovi ~490 ms/120k — milliondan oshsa saralash ustunlariga indeks kerak.
+- Board: facet ustunlariga indeks qo'shildi (filtrlangan so'rov tez). Filtrsiz sahifa-1
+  (~445 ms/120k) hamon `ORDER BY` saralashiga bog'liq — milliondan oshsa saralashni qayta ko'rish kerak.
 - CodeQL, PMD/Apex (Java), haqiqiy OOM, 26k faylda kill→resume — serverda.
 - Image/IaC/web bosqichlari bittadan (Trivy kesh qulfi, web so'rov qoidasi).
 - Birinchi skanning qoida-yuklash/skan/fayl-ro'yxati bo'linishi (2.1) alohida profil sifatida
