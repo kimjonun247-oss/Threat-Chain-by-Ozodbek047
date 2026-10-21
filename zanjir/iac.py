@@ -21,6 +21,7 @@ what runs here. Three things shape the module:
      itself rather than filed under a category nobody verified.
 """
 import datetime
+import hashlib
 import json
 import re
 import subprocess
@@ -186,7 +187,10 @@ def execute(rid, target, event):
         report['verification_summary'] = verification_mod.summarize(report['findings'])
         report['severity_counts'] = {level: sum(1 for f in report['findings'] if f['severity'] == level)
                                      for level in ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN')}
-        report['tool'] = {'name': 'trivy config', 'version': trivy_version()}
+        # The same binary images.py uses; its hash is recorded so a report says
+        # exactly which scanner produced it (like the images and web stages).
+        report['tool'] = {'name': 'trivy config', 'version': trivy_version(),
+                          'binary_sha256': hashlib.sha256(images.BINARY.read_bytes()).hexdigest() if images.BINARY.is_file() else ''}
         report['state'] = 'completed'
         report['progress'] = 'Konfiguratsiya tekshiruvi tugadi'
     except InterruptedError:

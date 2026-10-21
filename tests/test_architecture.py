@@ -173,6 +173,17 @@ class IncrementalScanTests(Workspace):
         self.assertTrue((self.tmp / 'scan-cache' / 'demo.sqlite3').is_file())
         self.assertEqual(sorted(p.name for p in self.source.iterdir()), ['a.py', 'pkg'])
 
+    def test_i_deleting_a_file_closes_its_findings_and_rescans_nothing(self):
+        first = self.scan()
+        self.assertTrue([f for f in first['findings'] if f['path'] == 'a.py'], 'a.py should have an eval finding')
+        (self.source / 'a.py').unlink()
+        second = self.scan()
+        # a.py is gone from the report; the untouched files keep theirs, and
+        # because nothing changed in them, no scanner runs.
+        self.assertEqual([f for f in second['findings'] if f['path'] == 'a.py'], [])
+        self.assertEqual(self.tool.runs, [], 'the surviving files are unchanged; nothing should be rescanned')
+        self.assertEqual(self.what(second), [row for row in self.what(first) if row[0] != 'a.py'])
+
 
 class ScanCacheTests(Workspace):
     def test_a_lookup_needs_the_same_size_and_mtime(self):

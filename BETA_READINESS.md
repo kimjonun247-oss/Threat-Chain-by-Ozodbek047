@@ -94,11 +94,13 @@ qayta skan 30 s (§2.1).
 | 2.2 | Xotira himoyasi | ✅ (lokal) | `out_of_memory` (137/-9 Linux OOM, 0xC0000017 Windows), `fewer_jobs`; `THREATCHAIN_SEMGREP_MAX_MEMORY`. Test: `test_beta_scan.py::WorkerAndMemoryTests`, `OutOfMemoryScanTests`. Haqiqiy OOM — TEKSHIRILMAGAN (serverda) |
 | 2.3 | Uzilish + davom (aynan bir xil) | ⚠️ / TEKSHIRILMAGAN (serverda) | Bo'lak/kesh davom mantig'i (J1–J3) va kesh-darajadagi testlar bor; 26 500 faylda kill→resume fingerprint-aynan-bir-xil — serverda (`benchmarks/` kill/resume eksperimenti) |
 | 2.4 | 100 000+ topilmada baza | ✅ (lokal) | §2.2 raqamlari; `benchmarks/board_load.py`. Test: `test_load_findings.py::BoardStoreTests`, `BoardRestartTests`, `ChainVolumeTests`. Sekin so'rovga indeks — §6 (ochiq) |
+| 2.5 | Inkremental to'g'riligi | ✅ (lokal) | O'zgarmagan → o'qilmaydi va bir xil; 1 fayl o'zgardi → faqat u skanlanadi (`tool.runs`); o'chirilgan fayl topilmalari yopiladi; inkremental == full. Test: `test_architecture.py::IncrementalScanTests` (a/b/c/i) |
 | 3.1 | Ground-truth | TEKSHIRILMAGAN (serverda) | `benchmarks/ground_truth.py` + `.json` (klon+skan); mos-kelish mantig'i testlangan: `test_ground_truth.py` |
 | 3.3 | Zanjir izohi + ishonch | ✅ (lokal) | `chains.assess()`: har zanjirga `why[]` + `confidence`. Test: `test_chain_confidence.py` (ijobiy + salbiy) |
 | 3.4 | Prioritet tartibi | ✅ (lokal) | `findings_store.priority()`: severity birinchi; ichida reachable→prod→fixable. §5. Test: `test_priority.py` |
 | 4.1 | "Skaner ishlamadi" ≠ "xavf yo'q" | ✅ (lokal) | `ci_gate.classify_stage`: hech bir faylni o'qiy olmagan skaner `incomplete`; vosita yo'q/timeout/buzilgan JSON → hisobot `completed` emas, gate exit 2. Test: `test_failure_is_not_clean.py` |
 | 4.2 | Chegaraviy holatlar | ✅ (lokal) | Bo'sh loyiha, uzun/kirill yo'l, symlink, katta fayl, buzilgan lockfile, git'siz papka, CRLF/LF. Test: `test_edge_cases.py` |
+| 4.3 | Versiyalar hisobotda | ✅ (lokal: code/repository; images/iac/web CI) | code: `tools[*].version`+`rules_sha256`; repository: `engine_version`; images/web/iac: Trivy/Nuclei `version`+`binary_sha256`; dependencies: `scan.feeds` provenance. Test: `test_report_provenance.py` (code+repository, tashqi vositasiz) |
 | 5.1 | Veb-interfeys xavfsizligi | ✅ (lokal) | Auth, 127.0.0.1, CSRF (Origin/Sec-Fetch/DNS rebind), XSS (CSP + nosniff), path traversal. Test: `test_web_security.py` |
 | 5.2 | Sirlar maskasi | ✅ (lokal) | Sir qiymati hisobot/SARIF/Markdown/panel/ma'lumotlar papkasida yo'q. `benchmarks/run.py::bench_secrets` (ko'p joy × ko'p qiymat) |
 
