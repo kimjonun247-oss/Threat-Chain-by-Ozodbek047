@@ -61,11 +61,29 @@ Natija to'g'ri (120 000 mos). So'rov vaqti severity/filtr ustunlarining to'liq s
 bog'liq; 120k da qabul qilinadigan daraja, lekin milliondan oshsa indeks qo'shish kerak bo'ladi
 (§6, ochiq).
 
+### 2.3. Birinchi skan vaqt bo'linishi (2.1)
+
+Har kod skani `report['timing']` da vaqtni fazaga bo'ladi. Namuna (12 fayllik SAST
+korpus, to'liq rasmiy 1 343 qoidali paket, `--full`):
+
+| Faza | Vaqt | Nima |
+|---|---|---|
+| `files_s` | 0,19 s | manbani o'lchash va o'qish (fayl ro'yxati) |
+| `rules_s` | 0,09 s | loyiha tillariga qoida filtri |
+| `scan_s` | 15,38 s | vositalarni ishga tushirish (Semgrep/Gitleaks) |
+| `other_s` | 17,78 s | vosita versiyasi, boshlang'ich qoida-paket tayyorlash, kesh, yakun |
+| `total_s` | **33,44 s** | |
+
+Xulosa: kichik loyihada **qat'iy startup narxi** (versiya tekshiruvi + 1 343 qoidani
+tayyorlash) skanning o'zidan ko'p — bu narx bir marta to'lanadi va katta loyihada `scan_s`
+ustun bo'ladi (amortizatsiya). Shu sabab birinchi skan 4 000 fayl uchun ~10 daqiqa, lekin
+qayta skan 30 s (§2.1).
+
 ## 3. PLAN bandlariga dalil
 
 | # | Band | Holat | Dalil |
 |---|---|---|---|
-| 2.1 | Birinchi skan profili | ⚠️ | §2.1 vaqtlari o'lchangan; bo'linish (qoida/skan/fayl ro'yxati) alohida profil sifatida hali yozilmagan |
+| 2.1 | Birinchi skan profili | ✅ (lokal) | `scanners.execute` har skanda `report['timing']` yozadi: `files_s` (o'qish), `rules_s` (qoida filtri), `scan_s` (vosita), `other_s`, `total_s`. §2.3. Test: `test_scan_profile.py` |
 | 2.1b | Ishchilar soni xotiraga qarab | ✅ (lokal) | `scanners.semgrep_jobs()`: `scale<=1`→2, kattaga yadro/2 (2–8), bo'sh_RAM//750MB bilan cheklanadi; `THREATCHAIN_SEMGREP_JOBS` (1–32). Test: `test_beta_scan.py::WorkerAndMemoryTests`, `test_load_findings.py::WorkerCountTests` |
 | 2.1c | Keraksiz fayllarni chetlash | ✅ (lokal) | `scanners.looks_minified`/`semgrep_skip_reason`: vendor/build/minified Semgrep'dan chiqadi (Gitleaks baribir o'qiydi), sabab hisobotda. Test: `test_beta_scan.py::SkipTests` |
 | 2.1d | Til bo'yicha qoidalar | ✅ (lokal) | `scanners.project_families`/`filtered_rules`: loyihada yo'q til qoidalari berilmaydi, topilmalar soni o'zgarmaydi. Test: `test_beta_scan.py::LanguageFilterTests` |

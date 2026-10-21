@@ -1467,6 +1467,9 @@ def execute(target,rid,full=False):
     report.update(state='running',tools={},findings=[])
     write(folder/'report.json',report)
     cache=None
+    # Where a first scan's wall time goes, so a slow one on a large project can be
+    # explained: reading files, loading rules, running scanners, everything else.
+    timing={};_t_total=time.perf_counter()
     try:
       with source_for(target) as (source,provenance):
         report['source']=provenance
@@ -1496,8 +1499,10 @@ def execute(target,rid,full=False):
                 cache=scan_cache.open_cache(cache_folder(),target)
                 if cache is not None:cache.load(contexts)
             progress('Manba o‘lchanmoqda va o‘qilmoqda')
+            _t=time.perf_counter()
             coverage=snapshot(source,work/'source',progress=progress,cancel=cancel,cache=cache,
                               tools=list(contexts),copy_all=deep or cache is None)
+            timing['files_s']=round(time.perf_counter()-_t,2)
             entries=coverage.pop('manifest');scanned=set(coverage.pop('copied'));scanned_bytes=coverage.pop('copied_bytes')
             tool_skip=coverage.pop('tool_skip',{})
             if cache is not None:cache.save_files()
@@ -1516,7 +1521,11 @@ def execute(target,rid,full=False):
             apex=any(entry['path'].endswith(APEX_SUFFIXES) for entry in entries)
             rules_used={}
             families=project_families(entry['path'] for entry in entries if entry['path'] not in tool_skip.get('semgrep',()))
-            for tool,command in tool_commands(work,registry=bool(manifest),local=local,apex=apex,scale=scale,families=families,used=rules_used).items():
+            _t=time.perf_counter()
+            command_set=tool_commands(work,registry=bool(manifest),local=local,apex=apex,scale=scale,families=families,used=rules_used)
+            timing['rules_s']=round(time.perf_counter()-_t,2)
+            _t_scan=time.perf_counter()
+            for tool,command in command_set.items():
                 stage='version'
                 process=None
                 tool_version=versions.get(tool)
@@ -1639,6 +1648,7 @@ def execute(target,rid,full=False):
                 # linked, never merged, so no evidence is lost. See baseline.py.
                 report['duplicates']=baseline.link_duplicates(report['findings'])
                 write(folder/'report.json',report)
+            timing['scan_s']=round(time.perf_counter()-_t_scan,2)
             if cache is not None:cache.finish()
             # Optional deep analysis (CodeQL, inter-file taint): opt-in in settings,
             # it runs on the same snapshot and counts like any other tool. It follows
@@ -1651,6 +1661,12 @@ def execute(target,rid,full=False):
                 report['findings']+=deep_findings
                 report['count']=len(report['findings']);report['verification_summary']=verification_mod.summarize(report['findings'])
                 report['duplicates']=baseline.link_duplicates(report['findings'])
+            timing['total_s']=round(time.perf_counter()-_t_total,2)
+            # Everything not in a named phase: tool versions, cache load, optional
+            # deep analysis, history secrets, finalising the report.
+            timing['other_s']=round(max(0.0,timing['total_s']-timing.get('files_s',0.0)
+                                        -timing.get('rules_s',0.0)-timing.get('scan_s',0.0)),2)
+            report['timing']=timing
             states=[item['state'] for item in report['tools'].values()]
             report['state']='completed' if all(s=='completed' for s in states) else 'failed' if all(s=='failed' for s in states) else 'partial'
             # Kept out of report['tools'] on purpose: a project without .git is
