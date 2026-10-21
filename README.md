@@ -18,8 +18,8 @@ Node/npm **kerak emas**) va Python bog'liqliklari **0 ta** (core faqat standart 
 `vendor/yaml` bilan ishlaydi, `pip install` shart emas).
 
 ```bash
-git clone https://github.com/kimjonun247-oss/Kim-Jon-Un.git
-cd Kim-Jon-Un
+git clone https://github.com/kimjonun247-oss/Threat-Chain-by-Ozodbek047.git
+cd Threat-Chain-by-Ozodbek047
 python3 setup_all.py          # skanerlar: semgrep (venv) + gitleaks + trivy + nuclei + PMD
                               # va rasmiy qoida paketi — hammasi pinlangan versiya + SHA-256 bilan
 python3 app.py --port 8765    # serverni ishga tushiradi
@@ -63,8 +63,8 @@ Yangi kompyuterda `setup_all.py` ham, Java ham, venv ham o'rnatishni istamasangi
 faqat **Docker** bo'lishi kerak:
 
 ```bash
-git clone https://github.com/kimjonun247-oss/Kim-Jon-Un.git
-cd Kim-Jon-Un
+git clone https://github.com/kimjonun247-oss/Threat-Chain-by-Ozodbek047.git
+cd Threat-Chain-by-Ozodbek047
 docker compose up --build        # birinchi marta: image quriladi (CodeQL tufayli ~3 GB, bir martalik)
 ```
 
