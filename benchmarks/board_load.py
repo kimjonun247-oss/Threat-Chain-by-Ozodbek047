@@ -31,7 +31,10 @@ assert str(engine.DATA) != str(engine.ROOT), 'data dir not isolated'
 SEVERITIES = ['ERROR', 'WARNING', 'INFO']
 RULES = [f'python.lang.security.rule-{n}' for n in range(120)]
 WORDS = ['sql', 'eval', 'pickle', 'yaml', 'subprocess', 'token', 'xss', 'redirect', 'crypto', 'jwt']
-OWASP = [['A03:2021 - Injection'], ['A02:2021 - Cryptographic Failures'], ['A07:2021'], []]
+# Same shape a real finding carries (taxonomy.classify): a list of {code, name},
+# so the board flattens `o['code']` exactly as it does in production.
+OWASP = [[{'code': 'A03', 'name': 'Injection'}], [{'code': 'A02', 'name': 'Cryptographic Failures'}],
+         [{'code': 'A07', 'name': 'Identification and Authentication Failures'}], []]
 
 
 def report(target, rid, count, seed):
