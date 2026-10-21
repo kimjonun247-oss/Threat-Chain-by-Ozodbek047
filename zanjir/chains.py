@@ -29,6 +29,7 @@ secret_value is never read or re-exposed: Gitleaks findings only ever carry
 'hidden' for that field.
 """
 import json
+import re
 
 from . import findings as findings_mod, pathclass, taxonomy
 
@@ -204,6 +205,7 @@ def code_weakness_chains(code_report, repository_report):
                                       'yetib borilishi qo‘lda tasdiqlanishi shart.'),
                 'evidence': {'code_tool': wf.get('tool'), 'code_rule': wf.get('rule_id'),
                              'code_path': f"{path}:{wf.get('line', '?')}", 'code_cwe': hit,
+                             'code_severity': wf.get('severity'),
                              'compose_service': service['id'], 'host_ports': port_summary(service),
                              'build_context': context},
             })
@@ -496,7 +498,85 @@ def correlate_all(stage_reports, links=None, image_reports=None, ambiguous=None)
         gaps.append({'kind': 'stage_missing', 'detail': 'Repository (Compose) bosqichi tanlanmagan; hech bir '
                                                         'cross-skaner zanjiri tekshirilmadi.'})
     results, limited = limit_per_service(results)
+    for finding in results:
+        finding.update(assess(finding))
     return {'findings': results, 'gaps': gaps + limited}
+
+
+CONFIDENCE = ('low', 'medium', 'high')
+# Gitleaks rules that match one provider's key format. A hit on one of these is
+# far more often a real credential than `generic-api-key` (entropy + a name).
+SPECIFIC_SECRET_RULES = re.compile(r'^(aws|github|gitlab|slack|stripe|gcp|google|sendgrid|twilio|npm|pypi|'
+                                   r'private-key|jwt|azure|digitalocean|heroku|shopify|square|openai|anthropic)', re.I)
+
+
+def assess(chain):
+    """Why this chain was built, link by link, and how far to trust it.
+
+    `why` lists the facts the chain rests on, each named with the scanner that
+    reported it -- so a reader can check every link instead of trusting the
+    rule's sentence. `confidence` is low / medium / high with its reasons. It
+    never changes the chain's level or whether it stops the gate; it orders the
+    manual review (docs: BETA_READINESS.md, "Zanjir ishonchi").
+
+    medium  the default: two independent static facts, both read from files.
+    high    the weak half is unusually solid: the CVE is in CISA KEV (exploited in
+            the wild), or the secret matches a specific provider's key format.
+    low     a link is an inference: the build context is the whole repository
+            (any file "belongs" to the service), the image was tied to the service
+            by name only, the secret rule is the generic entropy one, or the code
+            rule itself only warns.
+    """
+    rule = chain.get('rule_id')
+    ev = chain.get('evidence') or {}
+    service = chain.get('service_id') or ev.get('compose_service')
+    why = []
+    if ev.get('host_ports') or service:
+        why.append(f"Compose/Kubernetes: {service} xizmati host portidan ochiq ({ev.get('host_ports') or '?'})")
+    context = ev.get('build_context')
+    if rule == 'SX-001':
+        why.append(f"Gitleaks {ev.get('gitleaks_rule_id')}: {ev.get('gitleaks_path')}:{ev.get('gitleaks_line')}")
+    elif rule == 'SX-004':
+        why.append(f"{ev.get('code_tool')} {ev.get('code_rule')} ({', '.join(ev.get('code_cwe') or [])}): {ev.get('code_path')}")
+    elif rule == 'SX-007':
+        why.append('Compose: konteynerdan chiqish imtiyozi (RP-007 docker.sock yoki RP-008 privileged/capability)')
+        why.append(f"{ev.get('entry_tool')} {ev.get('entry_rule')}: {ev.get('entry_path')}")
+    elif rule in ('SX-002', 'SX-003'):
+        kev = ' — CISA KEV' if ev.get('known_exploited') else ''
+        why.append(f"Trivy: {ev.get('image_reference') or ev.get('image_target')} ichida {ev.get('package')} "
+                   f"{ev.get('installed_version')} — {ev.get('advisory_id')} ({ev.get('severity')}{kev})")
+        why.append(f"image ↔ xizmat bog‘lanishi: {ev.get('link')}")
+        if rule == 'SX-003':
+            why.append(f"Compose: debug/dev rejimi (RP-006); tuzatilgan versiya bor ({chain.get('fixed_version') or 'bor'})")
+    elif rule == 'SX-005':
+        why.append(f"Trivy: asos image OS qo‘llab-quvvatlanmaydi ({ev.get('os') or ev.get('image_target') or '?'})")
+    elif rule == 'SX-006':
+        why.append(f"OSV: {ev.get('package')} ({ev.get('manifest') or '?'}) — "
+                   f"{ev.get('advisory_id') or '?'}{' — CISA KEV' if ev.get('known_exploited') else ''}")
+    if context is not None:
+        why.append(f"fayl xizmatning build kontekstida: {context}")
+
+    level, reasons = 1, []
+    if ev.get('known_exploited') is True:
+        level, reasons = 2, reasons + ['CVE CISA KEV ro‘yxatida — real hujumlarda ishlatilgan']
+    secret_rule = ev.get('gitleaks_rule_id') or (ev.get('entry_rule') if ev.get('entry_kind') == 'secret' else None)
+    if secret_rule:
+        if SPECIFIC_SECRET_RULES.match(str(secret_rule)):
+            level, reasons = 2, reasons + [f'sir aniq provayder formatida ({secret_rule})']
+        elif 'generic' in str(secret_rule):
+            level, reasons = 0, reasons + ['umumiy (generic) sir qoidasi — soxta signal ehtimoli yuqori']
+    downgrades = []
+    if context is not None and str(context).strip() in ('', '.', './'):
+        downgrades.append('build konteksti butun repozitoriy — fayl haqiqatan shu xizmatga tegishli ekani aniq emas')
+    if ev.get('link') == 'image_name':
+        downgrades.append('image xizmatga faqat nomi bo‘yicha bog‘langan (e’lon qilinmagan)')
+    if rule == 'SX-004' and str(ev.get('code_severity') or '').upper() == 'WARNING':
+        downgrades.append('kod qoidasining o‘zi WARNING darajasida')
+    if downgrades:
+        level, reasons = 0, reasons + downgrades
+    if not reasons:
+        reasons = ['ikki mustaqil statik dalil; hech biri amalda tasdiqlanmagan']
+    return {'why': why, 'confidence': {'level': CONFIDENCE[level], 'reasons': reasons}}
 
 
 # A service whose build context is the whole repository chains with every code

@@ -43,10 +43,27 @@ from . import triage
 # rows); kept apart, those queries touch only these narrow columns.
 COLUMNS = ('stage', 'target', 'fingerprint', 'project', 'report_id', 'rule_id', 'severity_scale', 'owasp',
            'status', 'open', 'known_exploited', 'verified', 'duplicate_of', 'escalates', 'first_seen',
-           'sla_due', 'rank', 'haystack', 'snapshot')
+           'sla_due', 'rank', 'priority', 'haystack', 'snapshot')
 RANK = {'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3}
+
+
+def priority(item):
+    """Order within one severity: 0 first, 7 last. Three yes/no questions, most important first:
+
+      4  not known to be reachable from outside (a chain or a web finding is)
+      2  not in shipped code (test, docs, example, generated, vendored)
+      1  no fixed version to move to (a dependency or image CVE without a fix;
+         a code finding counts as fixable -- the fix is a code change)
+
+    Severity still decides first: a CRITICAL in a test file is above a HIGH in
+    shipped code, but below every CRITICAL in shipped code. Documented in
+    BETA_READINESS.md ("Ustuvorlik tartibi").
+    """
+    fixable = bool(item.get('fixed_version')) or item.get('stage') not in ('dependencies', 'images')
+    return ((0 if item.get('reachable') else 4) + (0 if (item.get('path_class') or 'prod') == 'prod' else 2)
+            + (0 if fixable else 1))
 SYNC_TTL = 4.0
-FORMAT = 3                              # bump when the tables or the stored rows change shape
+FORMAT = 4                              # bump when the tables or the stored rows change shape
 _STATE = {'folder': None, 'file': None, 'at': 0.0, 'force': True}
 _LOCK = threading.RLock()
 # One encoder for every stored document: json.dumps() with non-default options
@@ -103,7 +120,7 @@ def connect():
     db.execute('CREATE TABLE IF NOT EXISTS rows (id INTEGER PRIMARY KEY, stage TEXT, target TEXT, fingerprint TEXT,'
                ' project TEXT, report_id TEXT, rule_id TEXT, severity_scale TEXT, owasp TEXT, status TEXT,'
                ' open INTEGER, known_exploited INTEGER, verified INTEGER, duplicate_of TEXT, escalates TEXT,'
-               ' first_seen TEXT, sla_due REAL, rank INTEGER, haystack TEXT, snapshot TEXT)')
+               ' first_seen TEXT, sla_due REAL, rank INTEGER, priority INTEGER, haystack TEXT, snapshot TEXT)')
     db.execute('CREATE TABLE IF NOT EXISTS payload (id INTEGER PRIMARY KEY, data TEXT, finding TEXT)')
     db.execute('CREATE TABLE IF NOT EXISTS sources (stage TEXT, target TEXT, version TEXT, scope TEXT,'
                ' decisions TEXT, coverage TEXT, truncated TEXT, PRIMARY KEY (stage, target))')
@@ -136,7 +153,7 @@ def record(item, finding, snapshot):
             item.get('rule_id') or '', item.get('severity_scale'), '|' + '|'.join(item.get('owasp') or []) + '|',
             item.get('status'), 1 if item.get('open', True) else 0, None if kev is None else int(bool(kev)),
             int(bool(item.get('verified'))), item.get('duplicate_of'), item.get('escalates'),
-            item.get('first_seen'), epoch(sla.get('due')), RANK.get(item.get('severity_scale'), 4), haystack,
+            item.get('first_seen'), epoch(sla.get('due')), RANK.get(item.get('severity_scale'), 4), priority(item), haystack,
             snapshot, ENCODE(item), ENCODE(finding))
 
 
@@ -418,7 +435,7 @@ def search(index, query='', filters=None, offset=0, limit=50):
         # Worst first: severity, then overdue, then known-exploited, then how long
         # it has been open. No weighting, no composite number -- just an order.
         order = (' ORDER BY rank, CASE WHEN open=1 AND sla_due IS NOT NULL AND sla_due<? THEN 0 ELSE 1 END,'
-                 " CASE WHEN known_exploited=1 THEN 0 ELSE 1 END, COALESCE(first_seen, '9999'), stage, rule_id, id"
+                 " CASE WHEN known_exploited=1 THEN 0 ELSE 1 END, priority, COALESCE(first_seen, '9999'), stage, rule_id, id"
                  ' LIMIT ? OFFSET ?')
         # The page is chosen on the narrow table; only its rows are then read in full.
         page = [identifier for (identifier,) in

@@ -172,6 +172,13 @@ def classify_stage(stage):
         if failed:
             return 'incomplete', 'skaner ishlamadi: ' + ', '.join(failed)
         unscanned = sum(int(tool.get('files_unscanned') or 0) for tool in (child.get('tools') or {}).values())
+        # A tool that could read none of the files it was given checked nothing,
+        # however "partial" it calls itself: that is not a coverage gap.
+        blind = sorted(name for name, tool in (child.get('tools') or {}).items()
+                       if 0 < int(tool.get('files_scanned') or 0) + int(tool.get('files_reused') or 0)
+                       <= int(tool.get('files_with_errors') or 0))
+        if blind:
+            return 'incomplete', 'skaner hech bir faylni o‘qiy olmadi: ' + ', '.join(blind)
         if unscanned:
             # A file a scanner could not parse is a gap; a file it never reached is
             # a check that did not happen.

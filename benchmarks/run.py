@@ -22,6 +22,7 @@ import contextlib
 import json
 import os
 import random
+import re
 import shutil
 import socket
 import string
@@ -149,6 +150,18 @@ def fake_secrets(folder):
     return history_token
 
 
+def secret_values(folder, history_token):
+    """Every secret value the corpus holds: the random part of each, at least 12 characters."""
+    found = {history_token}
+    for path in folder.iterdir():
+        if path.is_file() and not path.name.startswith('neg_'):
+            text = path.read_text(encoding='utf-8', errors='replace')
+            if path.name == 'id_rsa':
+                found |= {line for line in text.splitlines() if len(line) >= 40 and 'PRIVATE KEY' not in line}
+            found |= set(re.findall(r'[A-Za-z0-9/+_.-]{16,}', text)) - {'db.internal'}
+    return {value for value in found if len(value) >= 12}
+
+
 def bench_secrets():
     need(scanners.gitleaks_exe().is_file() and shutil.which('git'), 'Gitleaks yoki git yo‘q')
     root = WORK / 'secrets'
@@ -169,13 +182,33 @@ def bench_secrets():
     leaks = {f['path'] for f in report['findings'] if f['tool'] == 'gitleaks'}
     spec = EXPECTED['secrets']
     must = set(spec['must_find']) - ({'id_rsa'} if not (root / 'id_rsa').exists() else set())
-    raw = json.dumps(report)
-    leaked_value = any(marker in raw for marker in ('ghp_', 'sk_' + 'live_', 'BEGIN RSA', history_token))
+    # Not only the report: every place a value could travel to -- the SARIF and
+    # Markdown exports, the finding detail panel, and every file the scan left in
+    # the data directory (the run folder, the incremental cache, the board).
+    values = secret_values(root, history_token)
+    from zanjir import findings_index, pipeline
+    assessment = {'id': 'bench', 'state': report['state'], 'created_at': report.get('created_at'),
+                  'stages': [{'kind': 'code', 'target': 'bench-secrets', 'state': report['state'], 'report': report}],
+                  'findings': [], 'chains': []}
+    places = {'report': json.dumps(report), 'sarif': json.dumps(pipeline.sarif(assessment))}
+    try:
+        places['markdown'] = pipeline.markdown(assessment)
+    except (KeyError, TypeError, ValueError) as error:
+        places['markdown'] = f'(markdown yaratilmadi: {type(error).__name__})'
+    places['detail'] = json.dumps([findings_index.detail(f['fingerprint']) for f in report['findings']], default=str)
+    for path in DATA.rglob('*'):
+        if path.is_file():
+            places['data/' + path.relative_to(DATA).as_posix()] = path.read_bytes().decode('utf-8', 'replace')
+    exposed = sorted({place for place, text in places.items()
+                      for value in values | {'BEGIN RSA'} if value in text})
+    leaked_value = bool(exposed)
     missed, noise = sorted(must - leaks), sorted(set(spec['must_not_find']) & leaks)
     record('secrets', not missed and not noise and not leaked_value,
            f'topildi {len(must & leaks)}/{len(must)} (git tarixi bilan), noto‘g‘ri signal {len(noise)}, '
-           f'qiymat hisobotda: {"HA" if leaked_value else "yo‘q"}',
-           {'missed': missed, 'false_positives': noise, 'value_in_report': leaked_value})
+           f'qiymat hisobot/SARIF/Markdown/panel/ma’lumotlar papkasida ({len(places)} joy, {len(values)} qiymat): '
+           f'{"HA " + str(exposed[:5]) if leaked_value else "yo‘q"}',
+           {'missed': missed, 'false_positives': noise, 'value_in_report': leaked_value, 'exposed_in': exposed,
+            'places_checked': len(places), 'values_checked': len(values)})
 
 
 def bench_apex():

@@ -183,8 +183,10 @@ class CancelAndVersionTests(Workspace):
 class WorkerCountTests(unittest.TestCase):
     """H5: six workers on a machine with 1 GB free stopped it answering."""
 
-    def test_a_small_projects_are_unchanged(self):
-        self.assertEqual(scanners.semgrep_jobs(1), 2)
+    def test_a_small_projects_get_two_workers_when_memory_allows(self):
+        # Since 2026-10-13 a small project is memory-capped too (tests/test_beta_scan.py).
+        with patch.object(scanners, 'available_memory_mb', return_value=64000):
+            self.assertEqual(scanners.semgrep_jobs(1), 2)
 
     def test_b_free_memory_caps_the_workers(self):
         with patch.object(scanners, 'available_memory_mb', return_value=800), patch.object(scanners.os, 'cpu_count', return_value=12):

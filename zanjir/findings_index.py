@@ -22,7 +22,7 @@ Four rules keep the flattening honest:
 """
 import re
 
-from . import triage
+from . import pathclass, triage
 
 # CWE numbers whose whole point is a secret sitting in the source: a hard-coded
 # credential, password, key or token. A snippet of such a line would re-expose
@@ -101,6 +101,11 @@ def title_of(stage, finding):
             or finding.get('detail') or finding.get('advisory_id') or finding.get('rule_id') or '')
 
 
+# Stages whose findings are reachable from outside by construction: a web finding
+# was answered over HTTP, a chain links its weakness to an exposed port.
+REACHABLE_STAGES = ('chain', 'web')
+
+
 def row(stage, report, finding, project):
     view = finding.get('triage') or {}
     epss = finding.get('epss') or {}
@@ -119,6 +124,8 @@ def row(stage, report, finding, project):
         'epss': epss.get('epss'), 'epss_percentile': epss.get('percentile'),
         'advisory_id': finding.get('advisory_id') or '',
         'fixed_version': finding.get('fixed_version') or '',
+        'path_class': finding.get('path_class') or (pathclass.classify(finding.get('path')) if finding.get('path') else pathclass.PROD),
+        'reachable': stage in REACHABLE_STAGES,
         'verified': bool(finding.get('verified')),
         'tool': finding.get('tool') or '',
         'duplicate_of': finding.get('duplicate_of'),

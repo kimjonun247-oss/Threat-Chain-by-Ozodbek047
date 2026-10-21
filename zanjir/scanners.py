@@ -360,6 +360,36 @@ MAX_FILES=100000
 # the copy. One such file used to fail the whole scan with FileNotFoundError.
 WINDOWS_PATH_LIMIT=259
 UTF16_BOMS=(b'\xff\xfe',b'\xfe\xff')
+SCAN_ALL_VARIABLE='THREATCHAIN_SCAN_ALL_CODE'
+MINIFIED_SUFFIXES=('.js','.mjs','.cjs','.css')
+
+
+def looks_minified(key,raw):
+    """A JavaScript/CSS file written for machines: very long lines, almost no line breaks.
+
+    Only by content and only for these suffixes -- a long-lined Python data file is
+    still somebody's source. Average line over 300 characters, or one line of 10 000
+    or more, in a file of at least 2 KB.
+    """
+    if len(raw)<2048 or not key.lower().endswith(MINIFIED_SUFFIXES):return False
+    lines=raw.count(b'\n')+1
+    if len(raw)/lines>300:return True
+    return max(map(len,raw.split(b'\n')))>=10000
+
+
+def semgrep_skip_reason(key,kind):
+    """Why Semgrep leaves this file out ('vendored', 'generated', 'minified'), or None.
+
+    Someone else's code (site-packages, third_party, bower_components...) and build
+    output are not what a code review of this project can fix; on the 26 503-file
+    tree measured 2026-10-13, 1 598 of 1 895 Semgrep findings were in site-packages.
+    Their dependencies are judged by the CVE stage, and Gitleaks still reads them
+    for secrets. THREATCHAIN_SCAN_ALL_CODE=1 scans everything.
+    """
+    if os.environ.get(SCAN_ALL_VARIABLE,'').strip().lower() in {'1','true','yes','on'}:return None
+    if kind=='minified':return 'minified'
+    found=pathclass.classify(key)
+    return found if found in ('vendored','generated') else None
 PROGRESS_EVERY=500
 
 
@@ -448,6 +478,7 @@ def snapshot(source,destination,progress=None,cancel=None,cache=None,tools=(),co
     skipped={'excluded':0,'links':0,'binary':0,'large':0}
     extra={'path_too_long':0,'unreadable':0}
     too_long=[];transcoded=0;copied=[];copied_bytes=0;unread=0
+    semgrep_skipped={'vendored':0,'generated':0,'minified':0};semgrep_skip=set();semgrep_skip_examples=[]
     needs={tool:[] for tool in tools}
     total=0;seen=0
     walker,counted=_walk(source)
@@ -483,6 +514,7 @@ def snapshot(source,destination,progress=None,cancel=None,cache=None,tools=(),co
                         try:raw=raw.decode('utf-16').encode('utf-8');kind='utf16'
                         except UnicodeDecodeError:kind='binary'
                     if kind!='binary' and b'\0' in raw:kind='binary'
+                    if kind=='text' and looks_minified(key,raw):kind='minified'
                     sha=hashlib.sha256(raw).hexdigest() if kind!='binary' else '';size=len(raw)
                 else:
                     sha,kind,size=known;unread+=1
@@ -492,6 +524,11 @@ def snapshot(source,destination,progress=None,cancel=None,cache=None,tools=(),co
                 # Per tool: one whose last run failed has nothing stored and needs
                 # every file, and that must not make the others scan again.
                 applies=[t for t in tools if t!='pmd' or key.endswith(APEX_SUFFIXES)]
+                reason=semgrep_skip_reason(key,kind) if 'semgrep' in applies else None
+                if reason:
+                    applies.remove('semgrep');semgrep_skipped[reason]+=1
+                    semgrep_skip.add(key)
+                    if len(semgrep_skip_examples)<MAX_LISTED_FILES:semgrep_skip_examples.append(key)
                 wanted=applies if copy_all or cache is None else [t for t in applies if not cache.has(key,sha,[t])]
                 need=copy_all or cache is None or bool(wanted)
                 target=destination/relative
@@ -523,6 +560,11 @@ def snapshot(source,destination,progress=None,cancel=None,cache=None,tools=(),co
             'copied':copied,'copied_bytes':copied_bytes,'unread':unread,'needs':needs,
             'scope':'Joriy matn fayllari (vendor/node_modules, binar va 1 MB dan katta fayllar kiritilmagan). Git tarixidagi sirlar Gitleaks bilan alohida tekshiriladi (.git bo‘lsa).'}
     if transcoded:result['transcoded_utf16']=transcoded
+    result['tool_skip']={'semgrep':semgrep_skip}
+    if semgrep_skip:
+        result['semgrep_skipped']={**{k:v for k,v in semgrep_skipped.items() if v},'examples':semgrep_skip_examples,
+            'note':('Semgrep bu fayllarni tekshirmadi: boshqa birovning kodi (vendor), build natijasi yoki minify qilingan fayl. '
+                    'Gitleaks ularni ham sirlar uchun tekshiradi. Hammasini Semgrep bilan tekshirish: '+SCAN_ALL_VARIABLE+'=1.')}
     if too_long:
         result['path_too_long']={'files':too_long,'count':extra['path_too_long'],
                                  'action':('Bu fayllarning skan nusxasidagi yo‘li Windows’ning 260 belgilik chegarasidan oshadi va ular '
@@ -546,35 +588,181 @@ def scan_scale(size):
     return max(1,min(MAX_SCALE,-(-int(size)//BASE_BYTES)))
 
 
-WORKER_MEMORY_MB=700
+WORKER_MEMORY_MB=750
+LOCAL_WORKER_MEMORY_MB=200
+JOBS_VARIABLE='THREATCHAIN_SEMGREP_JOBS'
+MAX_MEMORY_VARIABLE='THREATCHAIN_SEMGREP_MAX_MEMORY'
 
 
-def semgrep_jobs(scale):
+def env_int(name,low,high):
+    """A whole number from the environment within [low, high], or None when unset or not a number."""
+    try:value=int(str(os.environ.get(name,'')).strip())
+    except ValueError:return None
+    return max(low,min(high,value))
+
+
+def semgrep_jobs(scale,registry=True):
     """Semgrep workers for a snapshot of this scale.
 
-    Two for a project inside the original budget, as always. A larger one gets
-    up to half the cores, but never more than free memory can hold: measured, a
-    worker peaks around 130 MB with the local rules and several times that with
-    the full registry pack.
+    Two for a project inside the original budget, up to half the cores for a
+    larger one -- but never more than free memory can hold, small projects
+    included. Measured 2026-10-13 with Semgrep's own `max_memory_bytes`: two
+    workers with the full registry pack peaked at 1.5 GB on 167 stdlib files
+    (~750 MB each); with the seven local rules a worker stays near 130 MB. Two
+    full-pack workers on a machine with 1 GB free is how a scan runs the machine
+    out of memory. THREATCHAIN_SEMGREP_JOBS overrides the count (1-32).
     """
-    if scale<=1:return 2
-    wanted=max(2,min(8,(os.cpu_count() or 2)//2))
+    forced=env_int(JOBS_VARIABLE,1,32)
+    if forced:return forced
+    wanted=2 if scale<=1 else max(2,min(8,(os.cpu_count() or 2)//2))
     free=available_memory_mb()
-    if free is not None:wanted=max(1,min(wanted,free//WORKER_MEMORY_MB))
+    if free is not None:wanted=max(1,min(wanted,free//(WORKER_MEMORY_MB if registry else LOCAL_WORKER_MEMORY_MB)))
     return wanted
 
 
-def tool_commands(work,registry=False,local=None,apex=False,scale=1):
+def semgrep_memory_limit():
+    """Semgrep's own per-file memory limit in MB (`--max-memory`), or None for its default (none).
+
+    Set THREATCHAIN_SEMGREP_MAX_MEMORY on a small machine: a file that needs more
+    is then reported as that file's error instead of the whole run being killed
+    by the system. Not set by default, because a limit derived from the memory
+    free at that moment would make the same file pass on one scan and fail on
+    the next.
+    """
+    value=env_int(MAX_MEMORY_VARIABLE,0,1024*1024)
+    return value or None
+
+
+# Semgrep language name -> a family of file extensions. JavaScript and TypeScript
+# share one family on purpose (rules list either or both). A language missing from
+# this table is never filtered out.
+LANGUAGE_FAMILY={'python':'python','py':'python','python2':'python','python3':'python',
+                 'javascript':'js','js':'js','typescript':'js','ts':'js','vue':'js',
+                 'java':'java','kotlin':'kotlin','kt':'kotlin','scala':'scala','go':'go','golang':'go',
+                 'ruby':'ruby','rb':'ruby','php':'php','csharp':'csharp','c#':'csharp','cs':'csharp',
+                 'c':'c','cpp':'c','c++':'c','rust':'rust','swift':'swift',
+                 'hcl':'hcl','terraform':'hcl','tf':'hcl','yaml':'yaml','json':'json',
+                 'solidity':'solidity','sol':'solidity','ocaml':'ocaml','elixir':'elixir','ex':'elixir',
+                 'lua':'lua','html':'html','xml':'xml','apex':'apex','clojure':'clojure','dart':'dart',
+                 'julia':'julia','r':'r','scheme':'scheme','jsonnet':'jsonnet',
+                 'dockerfile':'dockerfile','docker':'dockerfile'}
+FAMILY_SUFFIXES={'python':('.py','.pyi','.pyw'),
+                 'js':('.js','.jsx','.mjs','.cjs','.ts','.tsx','.mts','.cts','.vue'),
+                 'java':('.java',),'kotlin':('.kt','.kts'),'scala':('.scala','.sc'),'go':('.go',),
+                 'ruby':('.rb','.rake','.gemspec','.ru','gemfile','rakefile'),
+                 'php':('.php','.phtml','.php3','.php4','.php5','.php7','.phps','.inc'),
+                 'csharp':('.cs',),'c':('.c','.h','.cc','.cpp','.cxx','.c++','.hh','.hpp','.hxx','.h++','.ino'),
+                 'rust':('.rs',),'swift':('.swift',),'hcl':('.tf','.hcl','.tfvars'),'yaml':('.yml','.yaml'),
+                 'json':('.json',),'solidity':('.sol',),'ocaml':('.ml','.mli'),'elixir':('.ex','.exs'),
+                 'lua':('.lua',),'html':('.html','.htm'),'xml':('.xml',),'apex':('.cls','.trigger'),
+                 'clojure':('.clj','.cljs','.cljc','.edn'),'dart':('.dart',),'julia':('.jl',),'r':('.r',),
+                 'scheme':('.scm','.ss'),'jsonnet':('.jsonnet','.libsonnet'),
+                 'dockerfile':('dockerfile','.dockerfile','containerfile')}
+
+
+def project_families(paths):
+    """The language families present in these snapshot-relative paths."""
+    found=set()
+    for key in paths:
+        name=str(key).rsplit('/',1)[-1].lower()
+        for family,suffixes in FAMILY_SUFFIXES.items():
+            if family not in found and name.endswith(suffixes):found.add(family)
+    return found
+
+
+_RULE_BLOCKS={}
+
+
+def rule_blocks(path):
+    """The merged pack as ([(rule text, languages)], newline), or None when its layout is not the expected one.
+
+    The pack is written by setup_semgrep_rules.py with yaml.safe_dump: `rules:`,
+    then one block per rule starting with `- ` in the first column, exactly one
+    `id:` and one `languages:` key two spaces in, the languages a block list.
+    Reading 2 MB of YAML with a parser costs more than it saves, so the text is
+    cut at those lines -- and anything that does not look exactly like that
+    disables filtering instead of guessing.
+    """
+    try:raw=Path(path).read_bytes()
+    except OSError:return None
+    digest=hashlib.sha256(raw).hexdigest()
+    if digest in _RULE_BLOCKS:return _RULE_BLOCKS[digest]
+    text=raw.decode('utf-8','replace');result=None
+    # Written with write_text, so CRLF on Windows and LF elsewhere.
+    nl='\r\n' if text.startswith('rules:\r\n') else '\n'
+    if text.startswith('rules:'+nl) and text.endswith(nl):
+        blocks=[];current=None
+        # Split on the newline only: str.splitlines() also breaks on \x0c,
+        # and the like, which can sit inside a rule's message.
+        for line in (piece+nl for piece in text[len('rules:'+nl):-len(nl)].split(nl)):
+            if line.startswith('- '):
+                if current is not None:blocks.append(current)
+                current=[line]
+            elif current is None:break
+            else:current.append(line)
+        else:
+            if current is not None:blocks.append(current)
+            parsed=[]
+            for block in blocks:
+                # The first key of a rule is written after the `- ` (usually `id`, not always).
+                keys=['  '+block[0][2:],*block[1:]]
+                if sum(line.startswith('  id: ') for line in keys)!=1:break
+                marks=[i for i,line in enumerate(keys) if line=='  languages:'+nl]
+                if len(marks)!=1:break
+                languages=[]
+                for line in keys[marks[0]+1:]:
+                    if not line.startswith('  - '):break
+                    languages.append(line[4:].strip().strip('\'"').lower())
+                if not languages:break
+                parsed.append((''.join(block),languages))
+            else:
+                result=(parsed,nl) if parsed else None
+    _RULE_BLOCKS.clear();_RULE_BLOCKS[digest]=result
+    return result
+
+
+def filtered_rules(pack,families,folder):
+    """The pack without rules for languages this project has no file in.
+
+    Semgrep applies a rule only to files of its languages, so dropping a rule
+    whose every language is absent from the project cannot change any file's
+    result -- it only removes start-up and per-file prefilter work. Measured on
+    167 stdlib files: start-up 36 s with all 1 343 rules, 15 s with the 370 that
+    apply to Python; scan 167 s -> 140 s with 2 workers. Generic/regex rules,
+    languages missing from LANGUAGE_FAMILY and an unexpected pack layout all
+    keep the full pack. Returns the path to hand to Semgrep and the rule counts.
+    """
+    found=rule_blocks(pack)
+    if found is None:return pack,None
+    blocks,nl=found
+    keep=[text for text,languages in blocks
+          if any(LANGUAGE_FAMILY.get(language) is None or LANGUAGE_FAMILY[language] in families for language in languages)]
+    if len(keep)==len(blocks):return pack,{'rules':len(blocks),'used':len(blocks)}
+    out=Path(folder)/'semgrep-rules-for-project.yml'
+    out.write_bytes(('rules:'+nl+''.join(keep) if keep else 'rules: []'+nl).encode('utf-8'))
+    return out,{'rules':len(blocks),'used':len(keep),'languages':sorted(families)}
+
+
+def tool_commands(work,registry=False,local=None,apex=False,scale=1,families=None,used=None):
     # Semgrep accepts repeated --config: this project's own rules always run, the
     # official pack and the operator's own rules are layered on top only when
     # they exist. The pack is handed over as one merged file when the installer
-    # produced it -- same rules, same findings, a fraction of the start-up cost.
+    # produced it -- same rules, same findings, a fraction of the start-up cost --
+    # and, when the project's languages are known, without the rules for
+    # languages it has no file in (filtered_rules).
     semgrep_config=['--config',str(RULES/'semgrep.yml')]
-    if registry:semgrep_config+=['--config',str(merged_rules() if merged_rules().is_file() else semgrep_registry())]
+    if registry:
+        pack=merged_rules() if merged_rules().is_file() else semgrep_registry()
+        if families is not None and pack.is_file():
+            pack,counts=filtered_rules(pack,families,work)
+            if used is not None and counts:used.update(counts)
+        semgrep_config+=['--config',str(pack)]
     if local:semgrep_config+=['--config',str(local)]
+    limit=semgrep_memory_limit()
     return {
         'semgrep':[str(semgrep_exe()),'scan',*semgrep_config,
-                   '--metrics','off','--disable-version-check','--disable-nosem','--no-rewrite-rule-ids','--no-git-ignore','--json','--quiet','--jobs',str(semgrep_jobs(scale)),'--timeout','10','--max-target-bytes',str(MAX_FILE),'source'],
+                   '--metrics','off','--disable-version-check','--disable-nosem','--no-rewrite-rule-ids','--no-git-ignore','--json','--quiet','--jobs',str(semgrep_jobs(scale,registry)),'--timeout','10','--max-target-bytes',str(MAX_FILE),
+                   *(['--max-memory',str(limit)] if limit else []),'source'],
         'gitleaks':[str(gitleaks_exe()),'dir','source','--config',str(RULES/'gitleaks.toml'),
                     '--report-format','json','--report-path','-','--redact=100','--no-banner','--no-color','--ignore-gitleaks-allow',
                     '--gitleaks-ignore-path',str(RULES/'empty.ignore'),'--max-target-megabytes','1','--timeout',str(180*scale)],
@@ -1069,6 +1257,30 @@ def kill_tree(process):
     except (OSError,subprocess.SubprocessError):pass
 
 
+class MemoryExhausted(RuntimeError):
+    """A scanner process ran out of memory: the part is split and retried, not the scan failed."""
+
+
+# 137 / -9: killed by the Linux OOM killer (SIGKILL). 0xC0000017 STATUS_NO_MEMORY and
+# 0xC00000FD stack overflow on Windows. OCaml (semgrep-core) prints Out_of_memory.
+OOM_EXIT_CODES={137,-9,0xC0000017,0xC00000FD,-1073741801,-1073741571}
+OOM_TEXT=re.compile(r'out[ _]of[ _]memory|MemoryError|cannot allocate memory|std::bad_alloc|Stack_overflow',re.I)
+
+
+def out_of_memory(process):
+    """True when a finished scanner process says, by exit code or message, that memory ran out."""
+    if process.returncode in OOM_EXIT_CODES:return True
+    if process.returncode==0:return False
+    return bool(OOM_TEXT.search((process.stderr or '')[-20000:]))
+
+
+def fewer_jobs(command):
+    """The same command with one Semgrep worker: after running out of memory, half the part on N workers can do it again."""
+    if '--jobs' not in command:return command
+    i=command.index('--jobs')
+    return [*command[:i+1],'1',*command[i+2:]]
+
+
 def run_tool(command,cwd,env,timeout,cancel=None,**low):
     """Run one scanner to the end, to its time limit, or until cancelled.
 
@@ -1218,7 +1430,7 @@ def error_relative(item):
     return raw.split('/source/',1)[1] if '/source/' in raw else None
 
 
-def merge_results(tool,fresh,fresh_errors,entries,scanned,cache):
+def merge_results(tool,fresh,fresh_errors,entries,scanned,cache,skip=frozenset()):
     """One tool's findings for the whole project: this run's for the files it
     scanned, the stored ones for the files it did not.
 
@@ -1237,7 +1449,7 @@ def merge_results(tool,fresh,fresh_errors,entries,scanned,cache):
     if cache is not None:
         for entry in entries:
             path=entry['path']
-            if path in scanned or (tool=='pmd' and not path.endswith(APEX_SUFFIXES)):continue
+            if path in scanned or path in skip or (tool=='pmd' and not path.endswith(APEX_SUFFIXES)):continue
             stored=cache.get(tool,path,entry['sha256'])
             if stored is None:continue
             findings+=stored[0];errors+=stored[1];reused+=1
@@ -1287,6 +1499,7 @@ def execute(target,rid,full=False):
             coverage=snapshot(source,work/'source',progress=progress,cancel=cancel,cache=cache,
                               tools=list(contexts),copy_all=deep or cache is None)
             entries=coverage.pop('manifest');scanned=set(coverage.pop('copied'));scanned_bytes=coverage.pop('copied_bytes')
+            tool_skip=coverage.pop('tool_skip',{})
             if cache is not None:cache.save_files()
             unread=coverage.pop('unread');needs=coverage.pop('needs')
             write(folder/'snapshot-manifest.json',entries)
@@ -1301,7 +1514,9 @@ def execute(target,rid,full=False):
             scale=scan_scale(scanned_bytes)
             if scale>1:coverage['time_budget_scale']=scale
             apex=any(entry['path'].endswith(APEX_SUFFIXES) for entry in entries)
-            for tool,command in tool_commands(work,registry=bool(manifest),local=local,apex=apex,scale=scale).items():
+            rules_used={}
+            families=project_families(entry['path'] for entry in entries if entry['path'] not in tool_skip.get('semgrep',()))
+            for tool,command in tool_commands(work,registry=bool(manifest),local=local,apex=apex,scale=scale,families=families,used=rules_used).items():
                 stage='version'
                 process=None
                 tool_version=versions.get(tool)
@@ -1312,7 +1527,7 @@ def execute(target,rid,full=False):
                     if tool in version_errors:raise version_errors[tool]
                     if tool_version is None:tool_version=version(tool,command,env,work)
                     stage='scan'
-                    fresh=[];fresh_errors=[];done=set();failed_parts=0;in_a_row=0;first_error=None
+                    fresh=[];fresh_errors=[];done=set();failed_parts=0;in_a_row=0;first_error=None;memory_retries=0
                     # The official pack raises the rule count from 7 to ~1300, so the
                     # scan legitimately takes minutes rather than seconds.
                     base=900 if (tool=='semgrep' and manifest) else 240
@@ -1333,6 +1548,7 @@ def execute(target,rid,full=False):
                             process=run_tool(run_command,where,env,pace.limit(part,size),cancel,**low)
                             # Semgrep scan (without --error): findings exit 0. Gitleaks: findings exit 1.
                             allowed=(0,) if tool in ('semgrep','pmd') else (0,1)
+                            if out_of_memory(process):raise MemoryExhausted(f'{tool}: xotira yetmadi (kod {process.returncode}).')
                             if process.returncode not in allowed:raise ValueError('Skaner xato bilan tugadi (kod '+str(process.returncode)+').')
                             stage='parse_json'
                             data=json.loads(process.stdout)
@@ -1340,10 +1556,14 @@ def execute(target,rid,full=False):
                             found=normalize(tool,data,where/'source',messages)
                             if tool=='gitleaks' and ((process.returncode==1)!=bool(found)):raise ValueError('Gitleaks exit kodi va natija mos emas.')
                             found_errors=list(data.get('errors') or []) if tool=='semgrep' else list(data.get('processingErrors') or []) if tool=='pmd' else []
-                        except subprocess.TimeoutExpired as error:
+                        except (subprocess.TimeoutExpired,MemoryExhausted) as error:
                             if first_error is None:first_error=error
-                            # Too slow as a whole: split it and try each half, so a few
-                            # heavy files cost their own part, not their neighbours'. Not
+                            # Out of memory: the rest of this tool's run uses one worker,
+                            # since N workers on half the files can exhaust it again.
+                            if isinstance(error,MemoryExhausted):
+                                run_command=fewer_jobs(run_command);memory_retries+=1
+                            # Too slow or too big as a whole: split it and try each half, so
+                            # a few heavy files cost their own part, not their neighbours'. Not
                             # counted as a failure until a part can no longer be split.
                             if len(part)>1 and depth<MAX_SPLITS:
                                 half=len(part)//2
@@ -1371,7 +1591,7 @@ def execute(target,rid,full=False):
                         rows=merge_results(tool,found,found_errors,entries,set(part),None)[3]
                         if cache is not None and rows is not None and tool in contexts:cache.store(contexts[tool],tool,rows)
                     unscanned=len(mine)-len(done)
-                    findings,all_errors,reused,_=merge_results(tool,fresh,fresh_errors,entries,mine,cache)
+                    findings,all_errors,reused,_=merge_results(tool,fresh,fresh_errors,entries,mine,cache,tool_skip.get(tool,frozenset()))
                     # Nothing finished this run AND the cache has nothing for the other
                     # files: the tool itself is not working, reported as a failure with
                     # its diagnostic. But when an earlier scan's results are cached for
@@ -1385,6 +1605,12 @@ def execute(target,rid,full=False):
                         'rule_set':rule_set_label(tool,manifest,custom_rules.summary()['rules'] if local else 0),
                         'rules_sha256':hashlib.sha256((TOOLS/'pmd/provenance.json' if tool=='pmd' else RULES/('semgrep.yml' if tool=='semgrep' else 'gitleaks.toml')).read_bytes()).hexdigest(),
                         'files_scanned':len(done),'files_reused':reused}
+                    # Distinct files the tool could not read: when that is every file it
+                    # was given, nothing was checked and the gate must not read it as clean.
+                    unreadable={error_relative(item) for item in all_errors}-{None}
+                    if unreadable:report['tools'][tool]['files_with_errors']=len(unreadable)
+                    if memory_retries:report['tools'][tool]['memory_retries']=memory_retries
+                    if tool=='semgrep' and rules_used:report['tools'][tool]['rules_used']=dict(rules_used)
                     if unscanned:
                         # Not a coverage gap: these files were never looked at. The gate
                         # and the baseline treat the scan as unfinished (ci_gate.classify_stage);

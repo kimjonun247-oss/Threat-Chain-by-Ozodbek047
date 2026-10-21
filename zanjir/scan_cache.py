@@ -29,7 +29,8 @@ import json
 import re
 import sqlite3
 
-VERSION = 2
+# 3: a file's kind can be 'minified' (Semgrep leaves it out); older rows said 'text'.
+VERSION = 3
 NAME = re.compile(r'^[A-Za-z0-9_.-]{1,120}$')
 
 
