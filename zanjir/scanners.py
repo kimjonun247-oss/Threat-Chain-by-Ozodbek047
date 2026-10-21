@@ -1557,8 +1557,11 @@ def execute(target,rid,full=False):
                             process=run_tool(run_command,where,env,pace.limit(part,size),cancel,**low)
                             # Semgrep scan (without --error): findings exit 0. Gitleaks: findings exit 1.
                             allowed=(0,) if tool in ('semgrep','pmd') else (0,1)
-                            if out_of_memory(process):raise MemoryExhausted(f'{tool}: xotira yetmadi (kod {process.returncode}).')
-                            if process.returncode not in allowed:raise ValueError('Skaner xato bilan tugadi (kod '+str(process.returncode)+').')
+                            # Only a non-allowed exit is examined: gitleaks exit 1 means
+                            # findings, not a failure, and must not be read as out-of-memory.
+                            if process.returncode not in allowed:
+                                if out_of_memory(process):raise MemoryExhausted(f'{tool}: xotira yetmadi (kod {process.returncode}).')
+                                raise ValueError('Skaner xato bilan tugadi (kod '+str(process.returncode)+').')
                             stage='parse_json'
                             data=json.loads(process.stdout)
                             stage='normalize'

@@ -128,6 +128,12 @@ def connect():
     db.execute('CREATE INDEX IF NOT EXISTS rows_fingerprint ON rows (fingerprint)')
     db.execute('CREATE INDEX IF NOT EXISTS rows_duplicate ON rows (duplicate_of) WHERE duplicate_of IS NOT NULL')
     db.execute('CREATE INDEX IF NOT EXISTS rows_escalates ON rows (escalates) WHERE escalates IS NOT NULL')
+    # Facet counts group by these columns on every search; an index turns each
+    # group-by from a full table scan into an index scan (board_load.py measures it).
+    db.execute('CREATE INDEX IF NOT EXISTS rows_severity ON rows (severity_scale)')
+    db.execute('CREATE INDEX IF NOT EXISTS rows_stage ON rows (stage)')
+    db.execute('CREATE INDEX IF NOT EXISTS rows_status ON rows (status)')
+    db.execute('CREATE INDEX IF NOT EXISTS rows_project ON rows (project)')
     db.execute(f'PRAGMA user_version = {FORMAT}')
     return db
 

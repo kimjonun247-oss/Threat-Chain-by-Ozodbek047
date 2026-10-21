@@ -556,16 +556,19 @@ def assess(chain):
     if context is not None:
         why.append(f"fayl xizmatning build kontekstida: {context}")
 
-    level, reasons = 1, []
+    # Upgrades and downgrades are gathered separately, then the final level picks
+    # exactly one set of reasons -- a weak link caps the chain, so any downgrade
+    # wins over an upgrade, and `reasons` never lists a justification that argued
+    # for a level other than the one reported.
+    upgrades = []
     if ev.get('known_exploited') is True:
-        level, reasons = 2, reasons + ['CVE CISA KEV ro‘yxatida — real hujumlarda ishlatilgan']
+        upgrades.append('CVE CISA KEV ro‘yxatida — real hujumlarda ishlatilgan')
     secret_rule = ev.get('gitleaks_rule_id') or (ev.get('entry_rule') if ev.get('entry_kind') == 'secret' else None)
-    if secret_rule:
-        if SPECIFIC_SECRET_RULES.match(str(secret_rule)):
-            level, reasons = 2, reasons + [f'sir aniq provayder formatida ({secret_rule})']
-        elif 'generic' in str(secret_rule):
-            level, reasons = 0, reasons + ['umumiy (generic) sir qoidasi — soxta signal ehtimoli yuqori']
     downgrades = []
+    if secret_rule and SPECIFIC_SECRET_RULES.match(str(secret_rule)):
+        upgrades.append(f'sir aniq provayder formatida ({secret_rule})')
+    elif secret_rule and 'generic' in str(secret_rule):
+        downgrades.append('umumiy (generic) sir qoidasi — soxta signal ehtimoli yuqori')
     if context is not None and str(context).strip() in ('', '.', './'):
         downgrades.append('build konteksti butun repozitoriy — fayl haqiqatan shu xizmatga tegishli ekani aniq emas')
     if ev.get('link') == 'image_name':
@@ -573,9 +576,11 @@ def assess(chain):
     if rule == 'SX-004' and str(ev.get('code_severity') or '').upper() == 'WARNING':
         downgrades.append('kod qoidasining o‘zi WARNING darajasida')
     if downgrades:
-        level, reasons = 0, reasons + downgrades
-    if not reasons:
-        reasons = ['ikki mustaqil statik dalil; hech biri amalda tasdiqlanmagan']
+        level, reasons = 0, downgrades
+    elif upgrades:
+        level, reasons = 2, upgrades
+    else:
+        level, reasons = 1, ['ikki mustaqil statik dalil; hech biri amalda tasdiqlanmagan']
     return {'why': why, 'confidence': {'level': CONFIDENCE[level], 'reasons': reasons}}
 
 
