@@ -18,9 +18,27 @@ FOLDERS = ('scanner-runs', 'dependency-runs', 'image-runs', 'web-runs', 'assessm
 BASELINE = None
 
 
+def _folders():
+    """The seed list plus any `*-runs` evidence directory that exists now.
+
+    The list was not self-maintaining: a new evidence directory stayed invisible
+    to the guard until someone remembered to add it (profiles/triage was missed
+    once and silently polluted). Auto-discovering `*-runs` closes that gap.
+    Audit 2026-10-26 E3.
+    """
+    names = set(FOLDERS)
+    try:
+        for child in ROOT.iterdir():
+            if child.is_dir() and child.name.endswith('-runs'):
+                names.add(child.name)
+    except OSError:
+        pass
+    return sorted(names)
+
+
 def snapshot():
     found = set()
-    for name in FOLDERS:
+    for name in _folders():
         folder = ROOT / name
         if not folder.is_dir():
             continue

@@ -148,6 +148,10 @@ def cvss3_base(vector):
         weight={key:CVSS3[key][parts[key]] for key in CVSS3}
     except KeyError:return None
     iss=1-(1-weight['C'])*(1-weight['I'])*(1-weight['A'])
+    # CVSS v3.1 section 7.1 (Base): Scope=Changed impact is 7.52*(ISS-0.029)-3.25*(ISS-0.02)^15,
+    # unchanged from v3.0. The 0.9731 factor and exponent 13 belong ONLY to the
+    # Environmental ModifiedImpact (section 7.3); applying them here turns the
+    # published 9.9 for AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H into 10.0.
     impact=6.42*iss if scope=='U' else 7.52*(iss-0.029)-3.25*(iss-0.02)**15
     if impact<=0:return 0.0
     exploitability=8.22*weight['AV']*weight['AC']*privileges*weight['UI']

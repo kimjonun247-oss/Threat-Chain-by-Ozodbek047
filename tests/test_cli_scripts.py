@@ -30,7 +30,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ('app', 'bundle_crapi', 'check_all', 'check_dependencies', 'check_image', 'check_web',
            'ci_gate', 'pilot', 'pilot_evidence', 'pilot_tls', 'scan_code', 'setup_nuclei',
            'setup_semgrep_rules', 'setup_tools', 'validate_pilot', 'validate_pipeline',
-           'validate_web', 'verify_pilot_api', 'setup_all', 'verify_platform', 'setup_scanners', 'setup_pmd')
+           'validate_web', 'verify_pilot_api', 'setup_all', 'verify_platform', 'setup_scanners', 'setup_pmd',
+           'migrate_triage')
 
 # Scripts that build a pipeline selection and hand it to pipeline.start().
 PIPELINE_CLIENTS = ('check_all', 'ci_gate')

@@ -56,6 +56,24 @@ class WebSecurityTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_malformed_json_body_gets_a_prompt_400_not_a_hang(self):
+        # A small body of a valid declared length that is not JSON: the handler
+        # reads it, json.loads fails, and send(400) must NOT drain_body() a second
+        # read of the already-consumed body. With that bug the server blocked on
+        # the second read until its own timeout, before writing the response, so a
+        # short-timeout client never saw the 400. Audit 2026-10-26 B2.
+        data = b'this-is-not-json'           # small: under DRAIN_LIMIT, so drain would read
+        connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=15)
+        try:
+            connection.putrequest('POST', '/api/jobs', skip_host=True, skip_accept_encoding=True)
+            connection.putheader('Host', f'127.0.0.1:{self.port}')
+            connection.putheader('Content-Type', 'application/json')
+            connection.putheader('Content-Length', str(len(data)))
+            connection.endheaders(data)
+            self.assertEqual(connection.getresponse().status, 400)   # times out here if B2 regresses
+        finally:
+            connection.close()
+
     # -- path traversal --------------------------------------------------------------
     def test_a_static_files_cannot_reach_outside_dist(self):
         secret = (ROOT / 'app.py').read_bytes()[:200]

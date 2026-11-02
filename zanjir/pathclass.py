@@ -30,7 +30,11 @@ VENDORED_DIRS = frozenset({'vendor', 'vendors', 'third_party', 'third-party', 't
                            'bower_components', 'site-packages', 'pods'})
 # `build`, `out` and `target` are left out on purpose: they are also ordinary
 # package names, and calling real source "generated" would hide it from a chain.
-GENERATED_DIRS = frozenset({'dist', 'generated', '__generated__', '.next', '.nuxt', 'coverage', 'htmlcov'})
+# `coverage` is left out on purpose alongside `build`/`out`/`target`: it is an
+# ordinary domain word (an insurance/health app may ship `coverage/billing.py`),
+# so classing it generated would hide a real prod finding. `htmlcov` stays — it
+# is unambiguously a coverage-report directory. Audit 2026-10-26 D5.
+GENERATED_DIRS = frozenset({'dist', 'generated', '__generated__', '.next', '.nuxt', 'htmlcov'})
 TEST_DIRS = frozenset({'test', 'tests', '__tests__', 'spec', 'specs', 'testing', 'testdata', 'test-data',
                        'test_data', 'fixtures', '__fixtures__', 'mocks', '__mocks__', 'e2e', 'cypress',
                        'integration-tests', 'unittests', 'unit-tests'})

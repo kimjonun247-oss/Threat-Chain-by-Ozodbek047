@@ -29,12 +29,20 @@ def _modules():
 
 
 def _stale(report, now):
-    if report.get('pid'):
-        return not process_alive(report['pid'])
+    # Primary signal: the process that owned the scan is provably gone.
+    if report.get('pid') and not process_alive(report['pid']):
+        return True
+    # Age fallback, applied even when a pid still looks alive: a scan runs as a
+    # thread inside the server process, so it cannot outlive that process. At the
+    # next server start, a report still marked `running` past STALE_AFTER whose
+    # recorded pid now resolves to a live process is almost certainly PID reuse
+    # by an unrelated process (common after a reboot, especially on Windows) --
+    # without this bound such a report (and its work-* source copy) would stay
+    # forever. Audit 2026-10-26 A3.
     try:
         created = datetime.datetime.fromisoformat(str(report.get('created_at')))
-    except ValueError:
-        return False
+    except (ValueError, TypeError):
+        return False                     # no usable timestamp and a live/absent pid: leave it
     if created.tzinfo is None:
         created = created.replace(tzinfo=datetime.timezone.utc)
     return now - created > STALE_AFTER

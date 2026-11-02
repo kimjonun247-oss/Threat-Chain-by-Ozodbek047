@@ -482,8 +482,11 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, TypeError) as error:
                 return self.send(400, {'error': str(error) or 'Filtr qiymati noto‘g‘ri.'})
         if path.startswith('/api/findings/'):
+            # ?project= disambiguates a fingerprint shared across projects (a
+            # dependency CVE on a common package). Optional; absent = old behaviour.
+            project = parse_qs(urlsplit(self.path).query).get('project', [None])[0]
             try:
-                return self.send(200, findings_index.detail(path[len('/api/findings/'):]))
+                return self.send(200, findings_index.detail(path[len('/api/findings/'):], project))
             except ValueError as error:
                 return self.send(404, {'error': str(error)})
         if path.startswith('/api/baseline/'):
@@ -654,8 +657,13 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
             if length < 1 or length > ceiling:
                 return self.send(413, {"error": "So‘rov hajmi noto‘g‘ri."})
-            payload = json.loads(self.rfile.read(length))
+            raw = self.rfile.read(length)
+            # The body is now off the socket; mark it read BEFORE parsing so a
+            # parse failure's send(400) does not drain_body() a second read --
+            # which would block until timeout or swallow a pipelined request.
+            # Audit 2026-10-26 B2.
             self._body_read = True
+            payload = json.loads(raw)
             if not isinstance(payload, dict):
                 raise ValueError("JSON obyekt kerak")
         except (ValueError, json.JSONDecodeError):
@@ -940,8 +948,17 @@ def make_server(args, parser):
     trusted = os.environ.get('THREATCHAIN_TRUST_BIND') == '1'
     loopback = args.bind in LOOPBACK or trusted
     if trusted and args.bind not in LOOPBACK:
-        print(f'THREATCHAIN_TRUST_BIND=1: {args.bind} ishonchli deb qabul qilindi '
-              '(port faqat host loopback’iga ochilishi kerak).', file=sys.stderr)
+        warning = (f'THREATCHAIN_TRUST_BIND=1: {args.bind} ishonchli deb qabul qilindi '
+                   '(port faqat host loopback’iga ochilishi kerak).')
+        if not (args.tls_cert and auth.enabled()):
+            # The Host-header allow-list only protects a browser; a raw client
+            # sets any Host it likes. Without TLS+auth the only real protection
+            # is that the port is mapped to host loopback -- say so plainly so the
+            # Host check is never mistaken for access control. Audit 2026-10-26 B1.
+            warning += (' DIQQAT: TLS/autentifikatsiya yo‘q — portga yeta oladigan HAR KIM to‘liq kirish '
+                        'oladi (Host sarlavhasi tekshiruvi brauzer bo‘lmagan mijozdan himoya qilmaydi). '
+                        'Portni faqat host loopback’iga mapping qiling; routable manzilga ochmang.')
+        print(warning, file=sys.stderr)
     if bool(args.tls_cert) != bool(args.tls_key):
         parser.error('--tls-cert va --tls-key birga beriladi.')
     if not loopback:

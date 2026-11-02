@@ -403,7 +403,18 @@ def _restricts(policy, labels):
     wanted = selector.get('matchLabels')
     if selector.get('matchExpressions'):
         return False                      # not evaluated here, so not counted as protection
-    return not wanted or selects(wanted, labels)   # an empty selector covers every pod of the namespace
+    if not (not wanted or selects(wanted, labels)):   # an empty selector covers every pod of the namespace
+        return False                      # this policy does not govern the pod we care about
+    # The policy governs the pod. It only *restricts* who may connect if it
+    # actually limits ingress sources: a missing/empty `ingress` is default-deny
+    # (restrictive), but a rule with no `from` (e.g. `ingress: [{}]`) allows every
+    # source and must NOT be counted as protection. Audit 2026-10-26 D4.
+    ingress = spec.get('ingress')
+    if not ingress:                       # None or [] -> default-deny ingress
+        return True
+    if not isinstance(ingress, list):
+        return False
+    return all(isinstance(rule, dict) and rule.get('from') for rule in ingress)
 
 
 REMEDIES = {

@@ -55,6 +55,21 @@ MAX_CRAWL_PAGES = 16
 MAX_CRAWL_DEPTH = 2
 TIMEOUT = 8
 DEADLINE = 180
+
+
+def scope_text():
+    """The authorized-scope line written into every web-scan report.
+
+    Derived from the enforced limits so the promise can never understate what
+    the collector is coded to do. The report is the record shown to the scanned
+    party to document authorized scope, so a hard-coded number the scanner may
+    exceed is a provenance defect. Audit 2026-10-26 B3.
+    """
+    rate = int(round(1 / DEFAULT_RATE_DELAY)) if DEFAULT_RATE_DELAY else 0
+    return ('Exact registered origin and base path; GET, {rps} req/s, up to {total} requests '
+            '({maxr} collection + {conf} confirmation), {kib} KiB/response, {secs} s.').format(
+        rps=rate, total=MAX_REQUESTS + CONFIRM_BUDGET, maxr=MAX_REQUESTS,
+        conf=CONFIRM_BUDGET, kib=MAX_BODY // 1024, secs=DEADLINE)
 CORS_PROBE_ORIGIN = 'https://zanjir-cors-probe.invalid'
 STOP_MESSAGES = {
     'rate_limited': 'Nishon so‘rovlarni cheklashni so‘radi (429). Nishonni himoya qilish uchun skan to‘xtatildi; '
@@ -1237,7 +1252,7 @@ def start(target, background=True):
         repo_store.write_json(RUNS / rid / 'report.json', {'id': rid, 'target': target, 'url': profile['url'],
                              'authorization': {'owner': profile['owner'], 'recorded_at': profile['authorized_at']},
                              'created_at': now(), 'state': 'queued', 'count': 0, 'findings': [], 'limits': LIMITS,
-                             'scope': 'Exact registered origin and base path; GET, 2 req/s, 32 requests, 64 KiB/response, 180 s.',
+                             'scope': scope_text(),
                              'permission': allowed})
         CANCEL[rid] = event
         if background:

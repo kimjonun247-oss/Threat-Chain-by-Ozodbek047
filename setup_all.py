@@ -80,18 +80,29 @@ def main():
         print(f"  {state}{took} · {row['output'][0][:110]}", flush=True)
 
     print()
+    by_key = {s['key']: s for s in STEPS}
     failed = [key for key, row in results.items() if not row['ok']]
+    # Only a REQUIRED step failing is a nonzero exit. An optional component
+    # (Trivy, Nuclei templates, PMD, the live MITRE CWE map) is fetched from a
+    # third party, and a transient outage there must not fail the Docker build or
+    # the CI jobs that call this -- the script's own philosophy is that a
+    # half-installed state is a working state. Audit 2026-10-26 E2.
+    required_failed = [key for key in failed if not by_key[key]['optional']]
+    optional_failed = [key for key in failed if by_key[key]['optional']]
     if failed:
         print('Quyidagilar o‘rnatilmadi: ' + ', '.join(failed))
         for step in steps:
             if step['key'] in failed:
-                print(f"  {step['key']}: {step['needed_for']} ishlamaydi. "
+                tag = '' if not step['optional'] else ' (ixtiyoriy)'
+                print(f"  {step['key']}{tag}: {step['needed_for']} ishlamaydi. "
                       f"Alohida ishga tushirib xatoni ko‘ring: python3 {step['script']}")
         print('Qolgan bosqichlar baribir ishlaydi — yarim o‘rnatilgan holat ham ishlaydigan holat.')
+        if optional_failed and not required_failed:
+            print('Faqat ixtiyoriy komponentlar o‘rnatilmadi — asosiy o‘rnatish muvaffaqiyatli (exit 0).')
     else:
         print('Hammasi tayyor. Interfeysni `python3 app.py` bilan oching.')
     print('Eslatma: relizlar SHA-256 bilan tekshiriladi; reliz imzolari tekshirilmaydi.')
-    raise SystemExit(1 if failed else 0)
+    raise SystemExit(1 if required_failed else 0)
 
 
 if __name__ == '__main__':

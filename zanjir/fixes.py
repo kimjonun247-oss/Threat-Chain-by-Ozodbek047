@@ -38,13 +38,20 @@ def version_key(value):
     """A sort key good enough across semver, PEP 440, Maven and distro versions."""
     text = str(value or '').strip()
     text = re.sub(r'^[vV](?=\d)', '', text).split('+')[0]
+    parts = re.findall(r'\d+|[A-Za-z]+', text)
     key = []
-    for part in re.findall(r'\d+|[A-Za-z]+', text):
+    for idx, part in enumerate(parts):
         if part.isdigit():
             key.append((1, int(part), ''))
-        else:
-            word = part.lower()
-            key.append((0 if word in PRE_RELEASE else 2, 0, word))
+            continue
+        word = part.lower()
+        # A lone letter glued to the end of a release (openssl `1.0.1a`, which is
+        # NEWER than `1.0.1`) is a release suffix, not a pre-release -- unlike a
+        # named token (`beta`, `rc`) or a PEP 440 alpha with a following number
+        # (`1.0.0a1`, still a pre-release). Audit 2026-10-26 D6.
+        release_letter = (len(word) == 1 and idx == len(parts) - 1
+                          and idx > 0 and parts[idx - 1].isdigit())
+        key.append((0, 0, word) if word in PRE_RELEASE and not release_letter else (2, 0, word))
     # A release sorts after its own pre-releases and before its patch levels.
     key.append((1, -1, ''))
     return key

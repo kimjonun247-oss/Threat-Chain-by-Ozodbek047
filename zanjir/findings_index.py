@@ -227,10 +227,14 @@ def search(query='', filters=None, offset=0, limit=50):
     }
 
 
-def detail(fingerprint):
-    """One finding with its full original record, for the side panel."""
+def detail(fingerprint, project=None):
+    """One finding with its full original record, for the side panel.
+
+    `project` disambiguates a fingerprint shared across projects (a dependency
+    CVE on a common package); without it the lowest-id row wins, as before.
+    """
     from . import findings_store
-    found = findings_store.detail(_self(), fingerprint)
+    found = findings_store.detail(_self(), fingerprint, project)
     if found is None:
         raise ValueError('Bunday topilma joriy hisobotlarda yo‘q.')
     item, original, related = found

@@ -996,14 +996,16 @@ _LINES={'source':None,'files':{}}
 LINE_CACHE_FILES=256
 
 
-def source_line(source,path,line):
-    """One line of a snapshot file, read through a small per-snapshot cache.
+def source_line(source,path,line,cache):
+    """One line of a snapshot file, read through a small per-normalize cache.
 
     A scan with fifty thousand findings reopened its files fifty thousand times
     (41 s measured); the lines of the files being normalised are now kept for
-    that one normalize() call, at most 256 files at a time.
+    that one normalize() call, at most 256 files at a time. `cache` is owned by
+    the calling normalize() -- never a module global -- so two concurrent scans
+    (max_parallel_scans > 1) can never read each other's file text into a
+    fingerprint context. Audit 2026-10-26 A2.
     """
-    cache=_LINES
     if cache['source']!=str(source):cache.update(source=str(source),files={})
     lines=cache['files'].get(path)
     if lines is None:
@@ -1101,16 +1103,15 @@ def line_contexts(tool,data,source,check=None):
 
 
 def normalize(tool,data,source,messages=None):
-    # The line cache lives for one normalisation: the same path can hold other
-    # text on the next scan.
-    _LINES.update(source=None,files={})
+    # The line cache lives for one normalisation and is local to this call: the
+    # same path can hold other text in a different (possibly concurrent) scan.
+    lines_cache={'source':None,'files':{}}
     check=checked_paths(source)
     contexts=line_contexts(tool,data,source,check)
     if tool=='pmd':rows=pmd_rows(data)
     else:rows=data.get('results') if tool=='semgrep' and isinstance(data,dict) else data
     if not isinstance(rows,list):raise ValueError('Skaner JSON natijasi noto‘g‘ri.')
-    result=[]
-    for row in rows:
+    def build(row):
         severity=None;meta_fields={}
         if tool=='semgrep':
             rule=str(row['check_id']);path=check(row['path']);line=int(row['start']['line'])
@@ -1141,13 +1142,22 @@ def normalize(tool,data,source,messages=None):
             values={'rule_id':rule,'path':path,'column':int(row.get('StartColumn') or 0),'entropy':row.get('Entropy')}
         else:
             known=contexts.get((path,line))
-            values={'rule_id':rule,'path':path,'context':known if known is not None else source_line(source,path,line)}
+            values={'rule_id':rule,'path':path,'context':known if known is not None else source_line(source,path,line,lines_cache)}
         identity=findings_mod.fingerprint(tool,values)
-        result.append({'_identity':values,'tool':tool,'rule_id':rule,'path':path,'path_class':pathclass.classify(path),'line':line,'fingerprint':identity,'message':message,'severity':severity,
-                       'state':'unverified_static','secret_value':'hidden' if tool=='gitleaks' else None,
-                       'cwe_ids':tags['cwe_ids'],'owasp_top10_2025':tags['owasp_top10_2025'],
-                       'verified':False,'verification_note':'Statik kod naqshi mosligi; ma’lumot oqimi, ishga tushirish sharti va amaliy ta’siri tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart.',
-                       **({'rule_meta':meta_fields} if meta_fields else {})})
+        return {'_identity':values,'tool':tool,'rule_id':rule,'path':path,'path_class':pathclass.classify(path),'line':line,'fingerprint':identity,'message':message,'severity':severity,
+                'state':'unverified_static','secret_value':'hidden' if tool=='gitleaks' else None,
+                'cwe_ids':tags['cwe_ids'],'owasp_top10_2025':tags['owasp_top10_2025'],
+                'verified':False,'verification_note':'Statik kod naqshi mosligi; ma’lumot oqimi, ishga tushirish sharti va amaliy ta’siri tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart.',
+                **({'rule_meta':meta_fields} if meta_fields else {})}
+    result=[]
+    for row in rows:
+        try:
+            # One malformed result row is skipped, not fatal: a single bad id,
+            # line<1 or missing field must not discard the whole batch's findings
+            # (and with them the cache behind the part). Audit 2026-10-26 A1.
+            result.append(build(row))
+        except (KeyError,ValueError,TypeError,IndexError):
+            continue
     # Equal fields are not one finding: the same call on two lines of one file
     # gets its own identity from the second occurrence on (zanjir/findings.py).
     findings_mod.separate(result,lambda item:item['tool'],lambda item:item['_identity'])
@@ -1355,14 +1365,20 @@ class PacedLimit:
     more than MAX_PART_SECONDS.
     """
 
-    def __init__(self,base):
-        self.base=base;self.files=0;self.seconds=0.0
+    def __init__(self,base,scale=1):
+        # `scale` is the WHOLE-snapshot size scale (scan_scale(scanned_bytes)).
+        # The floor used scan_scale(size) on one PART, but batches() caps a part
+        # at BATCH_BYTES (< the 50 MB scan_scale threshold), so that was always 1
+        # and the floor never grew with project size -- a big project's gitleaks
+        # was killed at the base budget though its own --timeout was scaled up.
+        # Audit 2026-10-26 A4.
+        self.base=base;self.scale=max(1,scale);self.files=0;self.seconds=0.0
 
     def observe(self,part,seconds):
         self.files+=len(part);self.seconds+=max(0.0,seconds)
 
     def limit(self,part,size):
-        floor=self.base*scan_scale(size)
+        floor=self.base*self.scale
         if not self.files:return floor
         predicted=self.seconds/self.files*len(part)
         return int(min(MAX_PART_SECONDS,max(floor,3*predicted)))
@@ -1453,7 +1469,10 @@ def merge_results(tool,fresh,fresh_errors,entries,scanned,cache,skip=frozenset()
             stored=cache.get(tool,path,entry['sha256'])
             if stored is None:continue
             findings+=stored[0];errors+=stored[1];reused+=1
-        findings.sort(key=lambda f:(f.get('path') or '',f.get('line') or 0,str(f.get('rule_id'))))
+    # Sort unconditionally: a full (no-cache) scan must return findings in the
+    # same order an incremental one does, or the report/SARIF order and the
+    # baseline diff differ between the two modes for one project. Audit A6.
+    findings.sort(key=lambda f:(f.get('path') or '',f.get('line') or 0,str(f.get('rule_id'))))
     sha_of={entry['path']:entry['sha256'] for entry in entries}
     rows=[(path,sha_of[path],by_path.get(path,[]),errors_by_path.get(path,[])) for path in scanned
           if path in sha_of and (tool!='pmd' or path.endswith(APEX_SUFFIXES))] if storable else None
@@ -1542,7 +1561,7 @@ def execute(target,rid,full=False):
                     base=900 if (tool=='semgrep' and manifest) else 240
                     run_command,low=priority.gentle(command)
                     queue=[(part,size,0) for part,size in batches(work,mine)]
-                    pace=PacedLimit(base)
+                    pace=PacedLimit(base,scale)
                     number=0
                     while queue:
                         part,size,depth=queue.pop(0)

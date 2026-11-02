@@ -163,6 +163,21 @@ def record(item, finding, snapshot):
             snapshot, ENCODE(item), ENCODE(finding))
 
 
+def _records_for(index, stage, report, project, snapshot, found):
+    """A board-row tuple for each finding, skipping a single malformed one.
+
+    One corrupt or hand-edited finding (a string where a dict is expected, a
+    missing key) must not abort the whole sync: that would leave `force` set and
+    rebuild-then-crash the board for EVERY project until the bad report is gone.
+    Audit 2026-10-26 C4.
+    """
+    for finding in found:
+        try:
+            yield record(index.row(stage, report, finding, project), finding, snapshot)
+        except (KeyError, ValueError, TypeError, AttributeError, IndexError):
+            continue
+
+
 def insert(db, records):
     '''records: tuples of COLUMNS followed by the two JSON documents.'''
     width = len(COLUMNS)
@@ -270,8 +285,9 @@ def _sync(db, index, force):
                 continue
             project = index.project_of(stage, target)
             snapshot = report.get('input_sha256')
-            found = report.get('findings') or []
-            insert(db, (record(index.row(stage, report, finding, project), finding, snapshot) for finding in found))
+            found = report.get('findings')
+            found = found if isinstance(found, list) else []
+            insert(db, _records_for(index, stage, report, project, snapshot, found))
             coverage = {'stage': stage, 'target': target, 'scanned': True,
                         'state': report.get('state', 'completed'), 'report_id': report.get('id'),
                         'created_at': report.get('created_at'), 'findings': len(found)}
@@ -329,16 +345,29 @@ def redecorate(db, scope, pair=None, fingerprints=None):
         data = triage.read(scope)
     except (OSError, ValueError):
         return 0
-    where, values = ['project=?'], [scope]
+    base_where, base_values = ['project=?'], [scope]
     if pair is not None:
-        where += ['stage=?', 'target=?']
-        values += list(pair)
-    if fingerprints is not None:
-        prints = list(fingerprints)
-        if not prints:
-            return 0
-        where.append('fingerprint IN (' + ', '.join('?' * len(prints)) + ')')
-        values += prints
+        base_where += ['stage=?', 'target=?']
+        base_values += list(pair)
+    if fingerprints is None:
+        return _apply_decisions(db, data, base_where, base_values)
+    prints = list(dict.fromkeys(fingerprints))
+    if not prints:
+        return 0
+    # Bulk-close a project with tens of thousands of findings and a single
+    # `fingerprint IN (...)` would bind one variable per fingerprint and raise
+    # SQLite's "too many SQL variables" above ~32k. Apply in chunks. Audit C3.
+    changed = 0
+    chunk = 900
+    for start in range(0, len(prints), chunk):
+        batch = prints[start:start + chunk]
+        where = base_where + ['fingerprint IN (' + ', '.join('?' * len(batch)) + ')']
+        changed += _apply_decisions(db, data, where, base_values + batch)
+    return changed
+
+
+def _apply_decisions(db, data, where, values):
+    """Decorate and re-store every row matching `where`, returning how many changed."""
     changed = 0
     for identifier, snapshot, raw, original in db.execute(
             'SELECT rows.id, snapshot, data, finding FROM rows JOIN payload ON payload.id=rows.id WHERE '
@@ -393,15 +422,23 @@ def conditions(query, filters, now, skip=None):
     for key, value in (filters or {}).items():
         if not value or key == skip:
             continue
-        if key in ('stage', 'project', 'target'):
+        if key in ('stage', 'target'):
             where.append(f'{key}=?')
             values.append(value)
+        elif key == 'project':
+            # The facet shows the no-project bucket as the sentinel '—' (stored as
+            # the empty string); clicking it must select those rows, not zero.
+            # Audit 2026-10-26 C2.
+            where.append("project=''" if value == '—' else 'project=?')
+            values += [] if value == '—' else [value]
         elif key == 'severity':
             where.append('severity_scale IS NULL' if value == 'UNRATED' else 'severity_scale=?')
             values += [] if value == 'UNRATED' else [value]
         elif key == 'owasp':
-            where.append("owasp LIKE ? ESCAPE '\\'")
-            values.append(like('|' + value + '|'))
+            # The owasp facet buckets rows with no OWASP code under '—' (stored as
+            # the empty '||' marker); make that chip filter to exactly those rows.
+            where.append("owasp='||'" if value == '—' else "owasp LIKE ? ESCAPE '\\'")
+            values += [] if value == '—' else [like('|' + value + '|')]
         elif key == 'status':
             where.append('status IS NULL' if value == 'untriaged' else 'status=?')
             values += [] if value == 'untriaged' else [value]
@@ -507,14 +544,23 @@ def tally(index, *columns):
         db.close()
 
 
-def detail(index, fingerprint):
-    """(row, original finding, related rows) for one fingerprint, or None."""
+def detail(index, fingerprint, project=None):
+    """(row, original finding, related rows) for one fingerprint, or None.
+
+    A dependency fingerprint excludes the project by design (zanjir/findings.py),
+    so the SAME advisory on the SAME package in two projects shares a fingerprint
+    and the board holds a row per project. Pass `project` to resolve the one the
+    caller meant; without it the lowest-id row is returned as before (one project
+    installs are unaffected). Audit 2026-10-26 C1.
+    """
     sync(index)
     now_moment = triage.now()
     db = connect()
     try:
-        found = db.execute('SELECT data, finding FROM payload WHERE id=(SELECT id FROM rows WHERE fingerprint=?'
-                           ' ORDER BY id LIMIT 1)', (fingerprint,)).fetchone()
+        scope_sql = 'fingerprint=?' + (' AND project=?' if project is not None else '')
+        scope_vals = [fingerprint] + ([project] if project is not None else [])
+        found = db.execute('SELECT data, finding FROM payload WHERE id=(SELECT id FROM rows WHERE ' + scope_sql
+                           + ' ORDER BY id LIMIT 1)', scope_vals).fetchone()
         if found is None:
             return None
         item, original = present(found[0], now_moment), json.loads(found[1])
@@ -524,9 +570,12 @@ def detail(index, fingerprint):
             if item.get(key):
                 related_where.append('fingerprint=?')
                 values.append(item[key])
+        # Related rows stay within the resolved project when one was given.
+        head_sql = 'fingerprint<>?' + (' AND project=?' if project is not None else '')
+        head_vals = [fingerprint] + ([project] if project is not None else [])
         related = payloads(db, [identifier for (identifier,) in
-                                db.execute('SELECT id FROM rows WHERE fingerprint<>? AND (' + ' OR '.join(related_where)
-                                           + ') ORDER BY id', [fingerprint] + values)], now_moment)
+                                db.execute('SELECT id FROM rows WHERE ' + head_sql + ' AND (' + ' OR '.join(related_where)
+                                           + ') ORDER BY id', head_vals + values)], now_moment)
     finally:
         db.close()
     return item, original, related
