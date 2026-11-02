@@ -112,8 +112,11 @@ def nvd_weaknesses(cve_id):
             time.sleep(wait)
         ids = []
         try:
-            key = nvd_api_key()
-            headers = {'apiKey': key} if key else {}
+            # Its own name: reusing `key` overwrote the cache key, so with no API key
+            # the cache write raised TypeError (failing the whole dependency stage)
+            # and with one the secret itself became a file name in advisory-cache/.
+            api_key = nvd_api_key()
+            headers = {'apiKey': api_key} if api_key else {}
             data = _get(NVD + '?cveId=' + cve_id, headers)
             for vuln in data.get('vulnerabilities', []) if isinstance(data, dict) else []:
                 for weakness in vuln.get('cve', {}).get('weaknesses', []):
@@ -123,7 +126,9 @@ def nvd_weaknesses(cve_id):
                             ids.append(int(match.group(1)))
             ids = sorted(set(ids))
         except (FeedError, AttributeError, TypeError):
-            ids = []
+            # An outage or an unreadable answer is not "no CWE": not cached, so the
+            # next scan asks again instead of trusting an empty answer for 24 h.
+            return []
         finally:
             _last_call[0] = time.time()
     _cache_set(key, ids)
@@ -164,7 +169,9 @@ def epss_scores(cve_ids):
                 cached = {row['cve']: {'epss': float(row['epss']), 'percentile': float(row['percentile'])}
                           for row in data.get('data', []) if isinstance(row, dict) and CVE_ID.fullmatch(str(row.get('cve', '')))}
             except (FeedError, KeyError, ValueError, TypeError):
-                cached = {}
+                # Outage: this batch has no scores this time, and is asked again next
+                # scan -- an empty answer is not cached for the 24-hour TTL.
+                continue
             _cache_set(key, cached)
         result.update(cached)
     return result
