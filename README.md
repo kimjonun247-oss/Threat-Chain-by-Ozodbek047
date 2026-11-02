@@ -4,8 +4,9 @@
 
 Kod, kutubxonalar, container image, ruxsatli sayt/API va joylashtirish dalillarini bir joyda tekshirish. Pentester topilmani baholaydi, tuzatishni rejalashtiradi va qayta skan bilan solishtiradi. Bu bir kompyuter, bir foydalanuvchi uchun pilot; barcha CVE va barcha hujumlarni aniqlash kafolati emas.
 
-**Holat (2026-10-13):** 1 074 test o'tadi, `verify_platform.py` 9/9 qadamdan o'tadi (Windows 11, haqiqiy
-vositalar bilan; Linux'da ham 9/9, macOS'da 8/8 — oldingi o'lchovlar), barcha oflayn va onlayn benchmarklar o'tadi.
+**Holat (2026-11-02, `beta-readiness` shoxi):** ~1 160 unit test o'tadi, `verify_platform.py` lokal Windows 11 da
+9/9 (haqiqiy vositalar bilan); CI har push'da unit testlar va `verify_platform.py` ni Linux, Windows va macOS da
+ishga tushiradi. Beta tayyorligi va o'lchangan raqamlar: [BETA_READINESS.md](BETA_READINESS.md).
 7 ta skaner bosqichi, 11 ta Compose/Nginx qoidasi (RP-001…011), Kubernetes manifestlari, 7 ta cross-skaner
 zanjiri (SX-001…007). Python bog'liqliklari: **0 ta**.
 
@@ -55,6 +56,9 @@ python3 app.py --port 8765    # serverni ishga tushiradi
 
 So'ng brauzerda: **http://127.0.0.1:8765**
 
+> **Windows:** odatiy Windows'da `python3` Microsoft Store yorlig'iga olib boradi — bu yerdagi
+> buyruqlarda `python3` o'rniga `python` (yoki `py`) yozing.
+
 Ixtiyoriy chuqur tahlil:
 
 ```bash
@@ -71,7 +75,7 @@ python3 verify_platform.py    # vositalar, testlar, haqiqiy skan, zanjir qoidala
 
 | Narsa | Kerakmi | Izoh |
 |---|---|---|
-| **Python 3** | majburiy | 3.14 da sinalgan |
+| **Python 3.11+** | majburiy | CI 3.11 va 3.14 da sinaydi |
 | **Internet** | majburiy | "Doim online" dizayn: `setup_all` binarlarni yuklaydi; skan vaqtida OSV/NVD so'raladi |
 | **Docker** (Colima yoki Docker Desktop) | faqat image skani uchun | Docker'siz ham kod / CVE / IaC / web bosqichlari to'liq ishlaydi |
 | **Java** | faqat PMD / Apex (`.cls`, `.trigger`) uchun | Aks holda kerak emas |
@@ -81,8 +85,8 @@ python3 verify_platform.py    # vositalar, testlar, haqiqiy skan, zanjir qoidala
 qaysi biri ishlamagani aytiladi. Mahalliy holat (`.tools/`, skan natijalari, foydalanuvchilar, NVD
 kaliti) `.gitignore` da — ya'ni klon toza boshlanadi, eski ma'lumot ko'chmaydi.
 
-**Platforma:** macOS / Linux to'liq. Windows uchun `VERIFY-WINDOWS.cmd` bor va Windows'ga xos
-nuqsonlar auditdan o'tgan, lekin haqiqiy Windows yurish-natijasi hali tasdiqlanmagan.
+**Platforma:** Linux, Windows va macOS. CI har push'da uchala OS da unit testlar va `verify_platform.py` ni
+haqiqiy vositalar bilan ishga tushiradi; lokal Windows 11 da `verify_platform.py` 9/9 (`VERIFY-WINDOWS.cmd`).
 
 ## Docker bilan ishga tushirish (hech narsa o'rnatmasdan)
 
@@ -560,7 +564,7 @@ bergan sayt ustida sinab topilgan nuqsonlar. Tafsilot: [MUAMMOLAR.md](MUAMMOLAR.
 4. Qamrov va baza sanasini ko‘ring; P1/P2 topilmalarini mutaxassis tekshirsin. CVE bo‘limida mas’ul, qaror va asos yoziladi. JSON, inventar va o‘qiladigan Markdown hisobotni saqlang.
 5. Alohida branchda tuzatish kiriting, funksional test va qayta skan bajaring. Oldingi online hisobot bilan solishtiring. Joriy hisobotda yo‘qlik o‘z-o‘zidan tuzatish tasdig‘i emas.
 
-Python 3.10+ kerak. Interfeys uchun Docker shart emas, lekin internet **doim** kerak: kutubxonalar (OSV/KEV/NVD/EPSS) va Trivy tekshiruvlari internetdan foydalanadi; offline/faqat-lokal rejim mavjud emas. START.cmd ushbu kompyuterdagi Python runtime’ni taniydi (macOS/Linux’da `python3 app.py` ishlatiladi).
+Python 3.11+ kerak. Interfeys uchun Docker shart emas, lekin internet **doim** kerak: kutubxonalar (OSV/KEV/NVD/EPSS) va Trivy tekshiruvlari internetdan foydalanadi; offline/faqat-lokal rejim mavjud emas. START.cmd ushbu kompyuterdagi Python runtime’ni taniydi (macOS/Linux’da `python3 app.py` ishlatiladi).
 
 NVD so‘rov cheklovi sekin (5/30s, kalitsiz). Tezroq CWE boyitish uchun ixtiyoriy `NVD_API_KEY` muhit o‘zgaruvchisini o‘rnating (https://nvd.nist.gov/developers/request-an-api-key). Ba’zi Python o‘rnatishlarida (masalan macOS’dagi python.org paketi) standart TLS sertifikat do‘koni to‘liq bo‘lmasligi mumkin — `pip install certifi` shuni avtomatik tuzatadi.
 
@@ -574,11 +578,11 @@ NVD so‘rov cheklovi sekin (5/30s, kalitsiz). Tezroq CWE boyitish uchun ixtiyor
 |---|---|---|
 | Semgrep | 29 ta mahalliy qoida (taint: buyruq/SQL injeksiyasi, deserializatsiya, SSTI, XSS, XXE; Python/JS/Java/Go/PHP) + rasmiy `semgrep-rules` security paketi (~1343 qoida, 22 til; `setup_semgrep_rules.py`, ixtiyoriy) + `scanner-rules/local/` dagi o‘z qoidalaringiz | Universal SAST emas; paket o‘rnatilmasa faqat 29 ta lokal qoida ishlaydi; Apex qamralmaydi; web orqali faqat deklarativ Semgrep YAML qabul qilinadi (Python zanjir qoidalari va Nuclei shablonlari emas) |
 | Gitleaks | Joriy matn fayllaridagi sirlar | Git tarixi yo‘q; API hisobotida sir qiymati yashiriladi |
-| OSV + CISA KEV | npm lock v1–v3, Python `==`, Go `require`; ustuvorlik | Java/Gradle va boshqa lock formatlari qamrov bo‘shlig‘i; tranzitiv/runtime to‘liqligi kafolatlanmaydi |
-| Trivy 0.74.0 | Public Docker Hub image; digest; linux/amd64; 1 GB gacha | Private registry va faol hujum sinovi yo‘q; image bajarilmaydi |
+| OSV + CISA KEV | npm lock v1–v3, Python `==`, Go `require`, NuGet `packages.lock.json`, Maven/Gradle (dependency-tree eksporti); ustuvorlik | `pom.xml`/`build.gradle` to‘g‘ridan-to‘g‘ri o‘qilmaydi (build vositasini operator ishga tushiradi); tranzitiv/runtime to‘liqligi kafolatlanmaydi |
+| Trivy 0.74.0 | Public yoki shaxsiy registry (`THREATCHAIN_REGISTRY_<HOST>_*`); teg yoki digest (teg har skanda digestga yechiladi); linux/amd64; 1 GB gacha | Faol hujum sinovi yo‘q; image bajarilmaydi |
 | Nuclei 3.11.1 + HTTP | 6 qoida, cheklangan chuqurlikdagi bir manba crawler (~16 sahifa), CORS aks ettirish, cookie bayroqlari, fingerprint, xato oshkorligi | Login, autentifikatsiya, in’ektsiya (SQLi/XSS), barcha CVE, fuzzing, POST va tashqi callback yo‘q; IPv4 nishonlar |
 | Repository | Compose + bog‘langan Nginx; fayl/satr dalillari | Cheklangan statik qoidalar |
-| Lokal demo / TLS dalili | 6 sun’iy localhost ssenariysi; oldingi 4 TLS nazorat tajribasi | Real kompaniyaning pentesti yoki deploy tuzatilgani tasdig‘i emas |
+| TLS dalili | Oldingi 4 TLS nazorat tajribasi (sun’iy "Lokal demo" ssenariysi 0.6 da olib tashlangan) | Real kompaniyaning pentesti yoki deploy tuzatilgani tasdig‘i emas |
 
 Kod snapshotida Git tarixi, vendor/node_modules, binar va 1 MB dan katta fayllar yo‘q. Kutubxona adapteri 16 MB gacha manifest, jami 64 MB/500 manifest va 12 000 paket nusxasi bilan cheklangan. Xatolar va qo‘llanmaydigan formatlar toza natija deb ko‘rsatilmaydi.
 
@@ -603,7 +607,7 @@ python verify_platform.py    # shu OS da hamma narsa haqiqatan ishlashini tekshi
 
 URL misoli o‘rniga haqiqiy ruxsatli manzilingizni kiriting. Lokal/intranet ro‘yxati uchun `--allow-private` kerak; link-local metadata manzillari har doim rad etiladi. Profilni almashtirish uchun yangi ID ishlating. Nuclei lokal o‘rnatilishi: `python setup_nuclei.py`; rasmiy release SHA-256 tekshiriladi. Reliz imzosini mustaqil tekshirish bajarilmagan. Template manbasi va xeshlari `scanner-rules/nuclei/manifest.json` da; rasmiy ikki template litsenziyasi shu papkada.
 
-O‘z public image’ingiz: `python check_image.py --register my-image --image IMAGE@sha256:DIGEST`, so‘ng `python check_image.py --target my-image`. IMAGE/DIGEST haqiqiy Docker Hub nomi va 64 belgili digest bilan almashtiriladi. Tag (`latest`) va private registry qabul qilinmaydi. Trivy kerak bo‘lsa `python setup_tools.py` rasmiy relizni SHA-256 bilan tekshirib lokal o‘rnatadi; Sigstore imzosi tekshirilmaydi.
+O‘z public image’ingiz: `python check_image.py --register my-image --image IMAGE@sha256:DIGEST`, so‘ng `python check_image.py --target my-image`. IMAGE/DIGEST haqiqiy Docker Hub nomi va 64 belgili digest bilan almashtiriladi. Teg ham qabul qilinadi (har skan `resolved_digest` ni yozadi); shaxsiy registry uchun `THREATCHAIN_REGISTRY_<HOST>_USERNAME`/`_PASSWORD` yoki mavjud `docker login` seansi ishlatiladi ([SCANNERS.md](SCANNERS.md)). Trivy kerak bo‘lsa `python setup_tools.py` rasmiy relizni SHA-256 bilan tekshirib lokal o‘rnatadi; Sigstore imzosi tekshirilmaydi.
 
 Compose/Nginx ro‘yxatga olish: `python app.py --register-project my-deploy --repo C:\repos\my-app --compose deploy/compose.yml`. Nginx mapping va oldingi versiya tafsilotlari README-0.3-ARCHIVE.md da; undagi offline cheklovlar tarixiy holatni bildiradi.
 
@@ -636,6 +640,6 @@ Hisobotlar `dependency-runs/`, `image-runs/`, `scanner-runs/`, `web-runs/`, `ass
 
 Manba kodi OSV ga yuborilmaydi; lokal scanner ish papkasida manba nusxasi bo‘lishi mumkin. Trivy raw ImageConfig/Env API eksportiga kiritilmaydi; normal tugashda raw JSON o‘chadi, majburan to‘xtashda lokal qoldiq qolishi mumkin. Mahalliy profillar, kesh va natijalar `.gitignore`ga kiritilgan; bu shifrlash emas. Tashqi tomonga to‘liq ish papkasini emas, ko‘rib chiqilgan kerakli hisobotni bering.
 
-Server faqat 127.0.0.1 da, Host/Origin tekshiruvi va CSP bilan ishlaydi. RBAC, ko‘p foydalanuvchi, internetga ochiq xizmat, VS Code kengaytmasi, ZAP, EPSS, barcha CVE bazalarining to‘liq qamrovi va umumiy hujum yo‘li aniqlash bu versiyada mavjud emas. Keyingi bosqich kompaniya stack’i, ruxsatli nishon doirasi, to‘liq inventar, autentifikatsiyalangan DAST va real pilotdagi aniqlik/vaqt yutug‘ini o‘lchashga bog‘liq. ZAP’ni hali o‘rnatilgan yoki sinalgan integratsiya deb ko‘rsatmaymiz; tanlangan Nuclei profilining qamrovi ham ochiq yozilgan.
+Server standart holatda faqat 127.0.0.1 da, Host/Origin tekshiruvi va CSP bilan ishlaydi; tarmoqqa faqat TLS va login (rollar: viewer/operator/admin) bilan ochiladi. VS Code kengaytmasi, ZAP, barcha CVE bazalarining to‘liq qamrovi va umumiy hujum yo‘li aniqlash bu versiyada mavjud emas. Keyingi bosqich kompaniya stack’i, ruxsatli nishon doirasi, to‘liq inventar, autentifikatsiyalangan DAST va real pilotdagi aniqlik/vaqt yutug‘ini o‘lchashga bog‘liq. ZAP’ni hali o‘rnatilgan yoki sinalgan integratsiya deb ko‘rsatmaymiz; tanlangan Nuclei profilining qamrovi ham ochiq yozilgan.
 
 Manbalar: [OSV API](https://google.github.io/osv.dev/api/), [CISA KEV](https://github.com/cisagov/kev-data), [Trivy](https://trivy.dev/docs/latest/scanner/vulnerability/), [Nuclei](https://docs.projectdiscovery.io/opensource/nuclei/running), [Semgrep Windows xatosi](https://github.com/semgrep/semgrep/issues/11829), [nazorat yozuvi](https://osv.dev/vulnerability/GHSA-35jh-r3h4-6jhm).

@@ -496,13 +496,16 @@ matni ("Manba o'qilmoqda: 979/2391 fayl…") ham ishlaydi.
 
 - **Birinchi skan rasmiy paket bilan sekin:** bu mashinada ~10 daqiqa / 4 000 fayl (bo'sh xotira ~1 GB,
   shuning uchun bitta ishchi). 26 500 faylli loyihaning birinchi skani bir necha soat. Kuchliroq mashinada
-  ishchilar soni oshadi; o'lchanmagan.
+  ishchilar soni bo'sh xotiraga qarab avtomatik oshadi (`semgrep_jobs`, kod tayyor — BETA_READINESS 2.1b);
+  serverda o'lchanmagan.
 - **J2 tuzatishi to'liq daraxtda o'lchanmadi** (yana ~3 soat). Mantiq testlarda tekshirilgan.
 - **Kubernetes:** Helm/Kustomize render qilinmaydi; manba ↔ workload bog'lanishi yo'q.
 - **Image, IaC va web bosqichlari bittadan** (Trivy keshi qulfi, web so'rov qoidasi).
-- **Topilmalar jadvalini noldan qurish** 150 000 qatorga 18–21 s (bir marta; keyin saqlanadi).
+- **Topilmalar jadvalini noldan qurish** 150 000 qatorga 18–21 s edi; encoder va facet indekslaridan keyin
+  120 000 qatorga 8,8 s (bir marta; keyin saqlanadi — BETA_READINESS §2.2).
 - **Inkremental kesh** hajmi va vaqt belgisi o'zgarmagan faylni ko'rmaydi (`--full` bilan chetlab o'tiladi).
-- **Sinalmagan:** CodeQL, PMD/Apex (Java kerak), Linux, macOS.
+- **Lokal sinalmagan:** CodeQL, PMD/Apex (Java kerak). Linux va macOS — CI matritsasida har push'da
+  (unit + `verify_platform.py`); CodeQL va PMD CI `benchmarks` job'ida.
 
 ---
 
@@ -532,5 +535,5 @@ asoslangan natija berardi.
 | Nuclei'ning 6 ta shabloni (9000+ emas) | Har biri qo'lda ko'rib chiqilgan va faqat GET; tekshirilmagan shablonni ishlatish ruxsat doirasidan chiqishi mumkin |
 | Gixy darajasidagi nginx tahlili yo'q | RP-002/003/004/009/010/011 proxy-ishonchga qaratilgan; to'liq nginx tahlili uchun Gixy'ning o'zi bor |
 | Masofaviy Docker daemon, SSH host skani, agent | B6 rejasidan tashqarida; ular butunlay boshqa ishonch modeli |
-| RBAC va ko'p foydalanuvchi | Lokal bir foydalanuvchili vosita; server faqat 127.0.0.1 da |
+| Ko'p-ijarali (multi-tenant) model | Rollar bor (viewer/operator/admin), lekin bitta jamoa uchun; server standart holatda 127.0.0.1 da, tarmoqqa faqat TLS + login bilan |
 | Brauzerdan manba papkasini ro'yxatga olish | Standart holatda o'chirilgan (`--allow-registration`) — brauzerga ixtiyoriy fayl yo'lini berish serverga butun diskni o'qishga yo'l ochadi. Auditda isbotlangan |

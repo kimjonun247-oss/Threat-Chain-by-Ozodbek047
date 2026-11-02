@@ -44,9 +44,8 @@ ishchi ishlaydi. Server (ko'proq RAM) ishchilar sonini oshiradi — §4.
 
 ### 2.2. Topilmalar jadvali (board) — 120 000 topilma, 4 nishon
 
-`python benchmarks/board_load.py` (sintetik, izolyatsiyalangan `THREATCHAIN_DATA_DIR`):
-
-`python benchmarks/board_load.py` (facet ustunlariga indeks bilan — severity/stage/status/project):
+`python benchmarks/board_load.py` (sintetik, izolyatsiyalangan `THREATCHAIN_DATA_DIR`; facet ustunlariga indeks bilan —
+severity/stage/status/project):
 
 | O'lchov | Natija |
 |---|---|
@@ -93,7 +92,7 @@ qayta skan 30 s (§2.1).
 | 2.1d | Til bo'yicha qoidalar | ✅ (lokal) | `scanners.project_families`/`filtered_rules`: loyihada yo'q til qoidalari berilmaydi, topilmalar soni o'zgarmaydi. Test: `test_beta_scan.py::LanguageFilterTests` |
 | 2.2 | Xotira himoyasi | ✅ (lokal) | `out_of_memory` (137/-9 Linux OOM, 0xC0000017 Windows), `fewer_jobs`; `THREATCHAIN_SEMGREP_MAX_MEMORY`. Test: `test_beta_scan.py::WorkerAndMemoryTests`, `OutOfMemoryScanTests`. Haqiqiy OOM — TEKSHIRILMAGAN (serverda) |
 | 2.3 | Uzilish + davom (aynan bir xil) | ⚠️ / TEKSHIRILMAGAN (serverda) | Bo'lak/kesh davom mantig'i (J1–J3) va kesh-darajadagi testlar bor; 26 500 faylda kill→resume fingerprint-aynan-bir-xil — serverda (`benchmarks/` kill/resume eksperimenti) |
-| 2.4 | 100 000+ topilmada baza | ✅ (lokal) | §2.2 raqamlari; `benchmarks/board_load.py`. Test: `test_load_findings.py::BoardStoreTests`, `BoardRestartTests`, `ChainVolumeTests`. Sekin so'rovga indeks — §6 (ochiq) |
+| 2.4 | 100 000+ topilmada baza | ✅ (lokal) | §2.2 raqamlari; `benchmarks/board_load.py`. Test: `test_load_findings.py::BoardStoreTests`, `BoardRestartTests`, `ChainVolumeTests`. Facet indekslari qo'shilgan; filtrsiz saralash — §6 (ochiq) |
 | 2.5 | Inkremental to'g'riligi | ✅ (lokal) | O'zgarmagan → o'qilmaydi va bir xil; 1 fayl o'zgardi → faqat u skanlanadi (`tool.runs`); o'chirilgan fayl topilmalari yopiladi; inkremental == full. Test: `test_architecture.py::IncrementalScanTests` (a/b/c/i) |
 | 3.1 | Ground-truth | TEKSHIRILMAGAN (serverda) | `benchmarks/ground_truth.py` + `.json` (klon+skan); mos-kelish mantig'i testlangan: `test_ground_truth.py` |
 | 3.3 | Zanjir izohi + ishonch | ✅ (lokal) | `chains.assess()`: har zanjirga `why[]` + `confidence`. Test: `test_chain_confidence.py` (ijobiy + salbiy) |
@@ -135,16 +134,14 @@ HIGH'dan yuqori, lekin ishlab chiqarish kodidagi har CRITICAL'dan past. Umumiy "
 
 **Ataylab (taxminga asoslanmaslik uchun):** `pom.xml`/`build.gradle` o'qilmaydi (versiya diapazoni
 — build'ni bajarish kerak), Helm/Kustomize render qilinmaydi (manba ↔ workload bog'lanishi yo'q,
-SX-001/004/006/007 Kubernetes'da ishlamaydi), Nuclei faqat 6 ko'rib chiqilgan GET shabloni, RBAC/ko'p
-foydalanuvchi yo'q (lokal 127.0.0.1).
+SX-001/004/006/007 Kubernetes'da ishlamaydi), Nuclei faqat 6 ko'rib chiqilgan GET shabloni, ko'p-ijarali (multi-tenant) model yo'q
+(rollar bor: viewer/operator/admin; standart 127.0.0.1, tarmoqqa faqat TLS + login bilan).
 
 **Ochiq (server/kelajak):**
 - Board: facet ustunlariga indeks qo'shildi (filtrlangan so'rov tez). Filtrsiz sahifa-1
   (~445 ms/120k) hamon `ORDER BY` saralashiga bog'liq — milliondan oshsa saralashni qayta ko'rish kerak.
 - CodeQL, PMD/Apex (Java), haqiqiy OOM, 26k faylda kill→resume — serverda.
 - Image/IaC/web bosqichlari bittadan (Trivy kesh qulfi, web so'rov qoidasi).
-- Birinchi skanning qoida-yuklash/skan/fayl-ro'yxati bo'linishi (2.1) alohida profil sifatida
-  yozilmagan.
 
 ## 7. Rollback
 

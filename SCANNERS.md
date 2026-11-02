@@ -1,6 +1,10 @@
 # Semgrep va Gitleaks integratsiyasi
 
-## Joriy holat — 2026-09-17: rasmiy qoida bazasi ulandi
+> Hozirgi holat (2026-11-02): 29 ta lokal Semgrep qoidasi (`scanner-rules/semgrep.yml`) + rasmiy
+> 1 343 qoidali paket; testlar soni va o'lchovlar — [BETA_READINESS.md](BETA_READINESS.md). Quyidagi
+> 2026-09-17 bo'limi tarixiy yozuv.
+
+## 2026-09-17: rasmiy qoida bazasi ulandi (tarixiy)
 
 Qoida bazasi 7 ta lokal qoidadan **7 + 1343 ta rasmiy `semgrep-rules` security qoidasiga** (22 til) kengaytirildi — `python3 setup_semgrep_rules.py`, pinlangan commit `40b8c63f75dc7c22c8a77482d73bfb864b146f7e`. macOS arm64, Semgrep **1.177.0**, Gitleaks **8.30.1**.
 

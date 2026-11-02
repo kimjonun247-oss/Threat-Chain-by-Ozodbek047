@@ -32,7 +32,7 @@ Har qadamdan keyin: unit testlar + `verify_platform.py` + `benchmarks/run.py`, c
 | 2.4 | 100 000+ topilmada baza | Sahifalash, qidiruv, filtr p95 vaqti o'lchangan; sekin so'rovga indeks; oldin/keyin raqam | ✅ (lokal) |
 | 2.5 | Inkremental to'g'riligi | O'zgarmagan → bir xil; 1 fayl o'zgardi → faqat u qayta skanlanadi (soni o'lchangan); o'chirilgan fayl topilmalari yopiladi | ✅ (lokal) |
 | 3.1 | Ground-truth | Lokal korpusda precision/recall/FP `BENCHMARKS.md` da; ochiq zaif loyihalar uchun pinlangan skript tayyor (`TEKSHIRILMAGAN (serverda)`) | TEKSHIRILMAGAN (serverda) |
-| 3.2 | Eng shovqinli 10 qoida | Real kodda (Python stdlib + node_modules) top-10 qoida, sabab, tuzatish; har tuzatishdan keyin `sast` recall 30/30 | — |
+| 3.2 | Eng shovqinli 10 qoida | Real kodda (Python stdlib + node_modules) top-10 qoida, sabab, tuzatish; har tuzatishdan keyin `sast` recall 30/30 | ⚠️ MUAMMOLAR J6–J9 da shovqinli qoidalar toraytirilgan; top-10 tahlili yozilmagan |
 | 3.3 | Zanjir izohi + ishonch | Har zanjirda `why` va `confidence`; har zanjir qoidasi uchun ijobiy va salbiy test | ✅ (lokal) |
 | 3.4 | Prioritet tartibi | Prod / fix bor / erishuvchanlik hisobga olinadi; mantiq hujjatlangan; test | ✅ (lokal) |
 | 4.2 | Chegaraviy holatlar | Bo'sh loyiha, uzun yo'l, kirill/o'zbek yo'l, symlink, katta fayl, buzilgan lockfile, git'siz papka, CRLF/LF — har biriga test | ✅ (lokal) |
@@ -43,9 +43,9 @@ Har qadamdan keyin: unit testlar + `verify_platform.py` + `benchmarks/run.py`, c
 
 | # | Ish | Qabul mezoni | Holat |
 |---|---|---|---|
-| 6.1 | Linux Docker image | Versiyalar pinlangan Dockerfile; image ichida verify + benchmark buyrug'i tayyor. Yig'ish `TEKSHIRILMAGAN (serverda)`. macOS `TEKSHIRILMAGAN` | — |
+| 6.1 | Linux Docker image | Versiyalar pinlangan Dockerfile; image ichida verify + benchmark buyrug'i tayyor. Yig'ish `TEKSHIRILMAGAN (serverda)`. macOS `TEKSHIRILMAGAN` | ⚠️ `Dockerfile` bor (vositalar SHA-256 bilan pinlangan; asos image `python:3.14-slim-bookworm` teg bilan, digest emas); yig'ish TEKSHIRILMAGAN (serverda) |
 | 6.2 | Helm / Kustomize | `helm template` / `kustomize build` bilan render → mavjud Kubernetes/IaC skaneri; stub binar bilan test; haqiqiy vosita `TEKSHIRILMAGAN (serverda)` | — |
-| 6.3 | CI namunasi | GitHub/GitLab namunalari SARIF yuklaydi; `--prod-only`, `--fixable-only` integratsion test bilan | — |
+| 6.3 | CI namunasi | GitHub/GitLab namunalari SARIF yuklaydi; `--prod-only`, `--fixable-only` integratsion test bilan | ⚠️ `ci-examples/` SARIF yuklaydi, flag mantig'i testlarda; namunalar haqiqiy GitHub/GitLab'da ishga tushirilmagan |
 
 ## P3 — yakun
 
