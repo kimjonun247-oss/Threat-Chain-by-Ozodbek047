@@ -4,12 +4,14 @@ import datetime
 import json
 from pathlib import Path
 import threading
+import time
 import uuid
 from .engine import ROOT, DATA
 from . import inventory, advisories, scanners, repo_store, run_index, triage, fixes
 from . import verification as verification_mod
 
 RUNS=DATA/'dependency-runs'
+PROGRESS_INTERVAL=1.0   # seconds between progress writes of report.json
 # One scan per project, several projects side by side up to max_parallel_scans
 # (default 1) -- the same slots the code scanner uses. The work is manifest
 # parsing and public feed lookups, so two projects do not get in each other's way.
@@ -37,9 +39,20 @@ def history(target=None,limit=30):
 def execute(rid):
     report=None;folder=RUNS/rid
     def save():repo_store.write_json(folder/'report.json',report)
+    last_write=[float('-inf')]
     def progress(message):
+        # Cancellation is checked on every call. The report is written at most once
+        # per PROGRESS_INTERVAL: advisories call this once per advisory, and 20 000
+        # advisories were 20 000 full rewrites of report.json (plus its index,
+        # status, view and compare files). A progress line that cannot be written
+        # (an antivirus or OneDrive lock) is skipped -- it used to fail the stage.
         if CANCEL[rid].is_set():raise InterruptedError('Tekshiruv bekor qilindi.')
-        report['progress']=message;save()
+        report['progress']=message
+        moment=time.monotonic()
+        if moment-last_write[0]<PROGRESS_INTERVAL:return
+        last_write[0]=moment
+        try:save()
+        except OSError:pass
     try:
         report=read(rid)
         report['state']='running';progress('Kutubxona ro‘yxati yig‘ilmoqda')
