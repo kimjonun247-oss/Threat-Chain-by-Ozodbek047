@@ -89,10 +89,18 @@ def history(limit=30):
     return run_index.rows(RUNS, ('id', 'target', 'created_at', 'state', 'count'), read, limit=limit)
 
 
-def command(folder, output):
-    """The same binary and the same telemetry flags the image scanner uses."""
+MAX_OUTPUT = 64 * 1024 * 1024           # the same ceiling images.py puts on Trivy's JSON
+
+
+def command(folder, output, timeout=TIMEOUT):
+    """The same binary and the same telemetry flags the image scanner uses.
+
+    `--timeout` is passed explicitly: without it Trivy stopped itself at its own
+    5-minute default, so a large project failed long before this module's limit
+    and the scaled budget below never applied.
+    """
     return [str(images.BINARY), 'config', '--format', 'json', '--output', str(output),
-            *images.QUIET, '--quiet', str(folder)]
+            '--timeout', f'{max(60, int(timeout) - 30)}s', *images.QUIET, '--quiet', str(folder)]
 
 
 def normalize(data, source):
@@ -165,15 +173,21 @@ def execute(rid, target, event):
             report['coverage_scope'] = manifest['scope']
             report['snapshot_sha256'] = manifest['snapshot_sha256']
             report['files'] = manifest['files']
+            # What the snapshot left out (over 1 MB, path too long, unreadable) is
+            # stated, as the code stage states it -- a skipped CRD bundle must not
+            # be indistinguishable from a clean one.
+            report['skipped'] = {key: value for key, value in (manifest.get('skipped') or {}).items() if value}
+            # The time budget grows with the snapshot, like the code stage's.
+            budget = TIMEOUT * scanners.scan_scale(manifest.get('bytes') or 0)
             report['progress'] = 'Trivy config tekshiruvi bajarilmoqda'
             repo_store.write_json(folder / 'report.json', report)
             output = work / 'iac.json'
             with (folder / 'tool.log').open('wb') as log:
-                run_command, low = priority.gentle(command(work / 'source', output))
+                run_command, low = priority.gentle(command(work / 'source', output, budget))
                 process = subprocess.Popen(run_command, cwd=work,
                                            env=scanners.environment(work), stdout=log,
                                            stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, **low)
-                deadline = datetime.datetime.now().timestamp() + TIMEOUT
+                deadline = datetime.datetime.now().timestamp() + budget
                 while process.poll() is None:
                     if event.wait(0.5):
                         raise InterruptedError('IaC tekshiruvi bekor qilindi.')
@@ -181,6 +195,8 @@ def execute(rid, target, event):
                         raise TimeoutError('Trivy config vaqt chegarasidan oshdi.')
             if process.returncode != 0:
                 raise ValueError('Trivy config bajarilmadi; tool.log faylini tekshiring.')
+            if output.stat().st_size > MAX_OUTPUT:
+                raise ValueError('Trivy config natijasi 64 MB dan katta; loyihani qismlarga bo‘lib tekshiring.')
             report.update(normalize(json.loads(output.read_text(encoding='utf-8')), work / 'source'))
             # Diffs are made from the snapshot while it still exists (zanjir/fixes.py).
             report['fix_plan'] = fixes.iac_plan(report['findings'], work / 'source')
