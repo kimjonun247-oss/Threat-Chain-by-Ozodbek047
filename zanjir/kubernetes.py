@@ -40,7 +40,7 @@ from pathlib import Path
 
 from vendor import yaml
 
-from .engine import canonical, digest, skip_directory
+from .engine import Notes, canonical, digest, note_gap, skip_directory
 from . import taxonomy
 from . import verification as verification_mod
 
@@ -162,7 +162,7 @@ def scan(root, path, provenance=None):
     from .repository import (RULES, DATASTORE_IMAGE, DEBUG_ENV_TRUE, DANGEROUS_CAPS, VERSION, safe_read)
     started = time.perf_counter()
     root = Path(root).resolve()
-    evidence, files, unknowns, findings = [], [], [], []
+    evidence, files, unknowns, findings = [], [], Notes(), []
 
     def fact(file, line, label, value):
         eid = f'R{len(evidence) + 1:03}'
@@ -189,22 +189,23 @@ def scan(root, path, provenance=None):
 
     paths, extra = manifest_files(root, path)
     if extra:
-        unknowns.append(f'{extra} ta manifest fayli {MAX_FILES} fayl chegarasidan tashqarida qoldi; qamrov to‘liq emas.')
+        note_gap(unknowns, f'{extra} ta manifest fayli {MAX_FILES} fayl chegarasidan tashqarida qoldi; qamrov to‘liq emas.',
+                 not_reached=extra)
     workloads, services, ingresses, policies = [], [], [], []
     total = 0
     for relative in paths:
         try:
             text = safe_read(root, relative)
         except (ValueError, OSError, UnicodeDecodeError) as error:
-            unknowns.append(f'{relative}: o‘qilmadi — {error}')
+            note_gap(unknowns, f'{relative}: o‘qilmadi — {error}')
             continue
         if '{{' in text:
-            unknowns.append(f'{relative}: Helm/Go shabloni (`{{{{`), render qilinmagan — o‘qilmadi.')
+            note_gap(unknowns, f'{relative}: Helm/Go shabloni (`{{{{`), render qilinmagan — o‘qilmadi.')
             continue
         try:
             parsed = documents(text)
         except ValueError as error:
-            unknowns.append(f'{relative}: {error}')
+            note_gap(unknowns, f'{relative}: {error}')
             continue
         files.append({'path': relative, 'sha256': digest(text.encode()), 'bytes': len(text.encode())})
         for document, line in parsed:
@@ -227,7 +228,7 @@ def scan(root, path, provenance=None):
             elif kind == 'NetworkPolicy':
                 policies.append(row)
             elif kind in ('Kustomization', 'HelmRelease'):
-                unknowns.append(f'{relative}: {kind} render qilinmaydi; u qo‘shadigan resurslar ko‘rinmaydi.')
+                note_gap(unknowns, f'{relative}: {kind} render qilinmaydi; u qo‘shadigan resurslar ko‘rinmaydi.')
     if not workloads:
         raise ValueError('Kubernetes workload (Deployment, StatefulSet, Pod, …) topilmadi.')
 
@@ -380,7 +381,7 @@ def scan(root, path, provenance=None):
               'profile': {'compose': path, 'env_file': None, 'bindings': [], 'platform': 'kubernetes'},
               'input_sha256': digest(canonical({'files': files, 'bindings': [], 'compose': path, 'env_file': None})),
               'files': files, 'services': inventory, 'edges': [], 'evidence': evidence, 'findings': findings,
-              'unknowns': list(dict.fromkeys(unknowns)),
+              'unknowns': list(dict.fromkeys(unknowns)), 'coverage_gaps': unknowns.coverage(),
               'summary': {'services': len(inventory), 'published_ports': sum(len(s['ports']) for s in inventory),
                           'loopback_ports': 0, 'proxy_routes': 0, 'findings': len(findings), 'runtime_confirmed': 0,
                           'manifests': len(files), 'network_policies': len(policies), 'ingresses': len(ingresses)},

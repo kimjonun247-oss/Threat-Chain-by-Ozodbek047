@@ -184,6 +184,13 @@ def classify_stage(stage):
             # a check that did not happen.
             return 'incomplete', f'{unscanned} ta fayl tekshirilmadi (skan vaqt chegarasida tugamadi)'
         return 'gap', 'ayrim fayllarni skaner o‘qiy olmadi (qamrov bo‘shlig‘i)'
+    if kind == 'repository':
+        gaps = child.get('coverage_gaps') or {}
+        if gaps.get('not_reached'):
+            # Manifests or includes past a hard cap were never looked at: their
+            # services and workloads are in no chain, so "nothing found" is unproven.
+            return 'incomplete', f"{gaps['not_reached']} ta manifest/include chegaradan tashqarida qoldi (tekshirilmadi)"
+        return 'gap', 'ayrim Compose/Kubernetes fayllari o‘qilmadi yoki render qilinmadi (qamrov bo‘shlig‘i)'
     if kind == 'dependencies':
         kev = ((child.get('feeds') or {}).get('kev') or {}).get('state')
         if child.get('query_errors'):

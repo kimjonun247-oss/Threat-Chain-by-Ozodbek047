@@ -100,3 +100,33 @@ def digest(data: bytes) -> str:
 
 def canonical(value) -> bytes:
     return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
+class Notes(list):
+    """A report's `unknowns` that also counts the inputs which were not read.
+
+    `unread` -- an input that exists but could not be read or resolved (an include
+    that failed, a Helm template, a parse error): a coverage gap.
+    `not_reached` -- inputs past a hard cap that were never looked at: the check
+    itself did not happen for them.
+    It is still a list of sentences, so helpers that append to `unknowns` work
+    unchanged, and so does any caller that passes a plain list.
+    """
+
+    def __init__(self, *items):
+        super().__init__(*items)
+        self.unread = 0
+        self.not_reached = 0
+
+    def coverage(self):
+        return {'unread': self.unread, 'not_reached': self.not_reached}
+
+
+def note_gap(unknowns, message, not_reached=0):
+    """Record an input that was not read: the sentence always, the count when `unknowns` is Notes."""
+    unknowns.append(message)
+    if isinstance(unknowns, Notes):
+        if not_reached:
+            unknowns.not_reached += not_reached
+        else:
+            unknowns.unread += 1

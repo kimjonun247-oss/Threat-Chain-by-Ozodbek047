@@ -154,7 +154,13 @@ def run_stage(stage, event, commit):
         # Pure local YAML/Nginx parsing -- synchronous, no external tool.
         commit(stage, state='running')
         child = repo_store.scan_profile(target)
-        commit(stage, report_id=child['id'], state='completed', count=child['summary']['findings'], report=child,
+        # Inputs that were not read (an include/override that failed, a Helm template,
+        # manifests past MAX_FILES) used to leave the stage 'completed' -- workloads
+        # silently missing from every chain. ci_gate.classify_stage tells the two
+        # kinds apart: not read = coverage gap, never reached = incomplete.
+        gaps = child.get('coverage_gaps') or {}
+        state = 'partial' if gaps.get('unread') or gaps.get('not_reached') else 'completed'
+        commit(stage, report_id=child['id'], state=state, count=child['summary']['findings'], report=child,
                report_sha256=_digest(child), verification=verification_mod.summarize(child.get('findings', [])))
         return
     module = MODULES[kind]

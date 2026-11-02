@@ -10,7 +10,7 @@ import time
 import uuid
 from urllib.parse import urlsplit
 from vendor import yaml
-from .engine import canonical, digest
+from .engine import Notes, canonical, digest, note_gap
 from . import findings as findings_mod, taxonomy
 from . import verification as verification_mod
 
@@ -597,7 +597,7 @@ def resolve_extends(services, origins, read, unknowns):
         try:
             services[sid] = build(sid, service, origin, [(origin, sid)])
         except (ValueError, OSError) as error:
-            unknowns.append(f'{sid}: extends yechilmadi — {error}; shu xizmat uchun qamrov to‘liq emas.')
+            note_gap(unknowns, f'{sid}: extends yechilmadi — {error}; shu xizmat uchun qamrov to‘liq emas.')
 
 
 def include_paths(value, compose, unknowns):
@@ -605,18 +605,18 @@ def include_paths(value, compose, unknowns):
     if value is None:
         return []
     if not isinstance(value, list):
-        unknowns.append('Compose include ro‘yxat emas; yechilmadi.')
+        note_gap(unknowns, 'Compose include ro‘yxat emas; yechilmadi.')
         return []
     paths = []
     for entry in value:
         named = entry.get('path') if isinstance(entry, dict) else entry
         for one in (named if isinstance(named, list) else [named]):
             if not isinstance(one, str) or not one or '$' in one or '://' in one or one.startswith(('/', '\\')):
-                unknowns.append(f'Compose include yozuvi yechilmadi ({str(one)[:80]}); qamrov to‘liq emas.')
+                note_gap(unknowns, f'Compose include yozuvi yechilmadi ({str(one)[:80]}); qamrov to‘liq emas.')
                 continue
             paths.append(rebase(compose, one) or one)
     if len(paths) > MAX_INCLUDES:
-        unknowns.append(f'{len(paths)} ta include; faqat birinchi {MAX_INCLUDES} tasi o‘qildi.')
+        note_gap(unknowns, f'{len(paths)} ta include; faqat birinchi {MAX_INCLUDES} tasi o‘qildi.', not_reached=len(paths) - MAX_INCLUDES)
     return list(dict.fromkeys(paths))[:MAX_INCLUDES]
 
 
@@ -645,7 +645,7 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
         return kubernetes.scan(root,compose,provenance)
     started=time.perf_counter()
     root=Path(root).resolve()
-    evidence,files,unknowns,findings,edges=[],[],[],[],[]
+    evidence,files,unknowns,findings,edges=[],[],Notes(),[],[]
     bindings=bindings or []
     if not isinstance(bindings,list) or len(bindings)>50:
         raise ValueError('Proxy binding ro‘yxati noto‘g‘ri yoki juda katta.')
@@ -685,13 +685,13 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
             if not isinstance(other,dict) or not isinstance(other.get('services') or {},dict):
                 raise ValueError('services mapping yo‘q')
             if 'include' in other:
-                unknowns.append(f'{included}: ichki include yechilmadi; qamrov to‘liq emas.')
+                note_gap(unknowns, f'{included}: ichki include yechilmadi; qamrov to‘liq emas.')
             for sid,service in (other.get('services') or {}).items():
                 if sid not in document['services']:
                     document['services'][sid]=service
                     origins[sid]=(included,other_locations)
         except (ValueError,OSError) as error:
-            unknowns.append(f'include {included}: o‘qilmadi — {error}')
+            note_gap(unknowns, f'include {included}: o‘qilmadi — {error}')
     overrides=[]
     override=override_path(compose)
     if override and (root/override).is_file():
@@ -708,11 +708,11 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
                     origins[sid]=(override,other_locations)
             overrides.append(override)
         except (ValueError,OSError) as error:
-            unknowns.append(f'{override}: override fayli o‘qilmadi — {error}; qamrov to‘liq emas.')
+            note_gap(unknowns, f'{override}: override fayli o‘qilmadi — {error}; qamrov to‘liq emas.')
     if len(document['services'])>MAX_SERVICES:
         raise ValueError(f'{MAX_SERVICES} tadan ko‘p xizmat qo‘llanmaydi.')
     if 'extends' in document:
-        unknowns.append('Compose extends qo‘llanmaydi; qamrov to‘liq emas.')
+        note_gap(unknowns, 'Compose extends qo‘llanmaydi; qamrov to‘liq emas.')
     env=dotenv(read(env_file)) if env_file else {}
     inventory=[]
     service_environments={}
@@ -917,7 +917,7 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
             'created_at':now.isoformat(),'engine_version':VERSION,'duration_ms':round((time.perf_counter()-started)*1000,2),
             'repository':provenance or {'repository':root.name,'commit':None}, 'profile':{'compose':compose,'env_file':env_file,'bindings':bindings,**({'overrides':overrides} if overrides else {})},
             'input_sha256':digest(canonical({'files':files,'bindings':bindings,'compose':compose,'env_file':env_file})), 'files':files,'services':inventory,'edges':edges,
-            'evidence':evidence,'findings':findings,'unknowns':list(dict.fromkeys(unknowns)),
+            'evidence':evidence,'findings':findings,'unknowns':list(dict.fromkeys(unknowns)),'coverage_gaps':unknowns.coverage(),
             'summary':{'services':len(inventory),'published_ports':sum(len(s['ports']) for s in inventory),
                        'loopback_ports':sum(p['scope']=='loopback' for s in inventory for p in s['ports']),
                        'proxy_routes':len(edges),'findings':len(findings),'runtime_confirmed':0},
