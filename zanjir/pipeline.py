@@ -11,6 +11,9 @@ from . import verification as verification_mod
 RUNS = DATA / 'assessment-runs'
 LOCK = threading.Lock()
 CANCEL = {}
+# run_stage polls a stage's status sidecar every 0.4 s; every this many polls
+# (~30 s) it reads the full report too, so a lost final sidecar write cannot hang it.
+FULL_READ_EVERY = 75
 # The selection a caller must supply, as one source of truth. Every CLI that
 # starts a pipeline builds its payload from these names, and a test asserts they
 # still line up: adding a field here previously broke check_all.py and
@@ -159,12 +162,17 @@ def run_stage(stage, event, commit):
     commit(stage, report_id=job['id'], state='running')
     cancelled_child = False
     read_failures = 0
+    polls = 0
     while True:
         # While the stage runs only its small status file is read; the report
         # itself -- tens of megabytes on a large project -- is parsed once, at
-        # the end.
+        # the end. Every FULL_READ_EVERY polls the report is read anyway: if the
+        # sidecar ever misses the child's final write, the stage still ends
+        # instead of waiting forever with the pipeline lock held.
+        polls += 1
         quick = run_index.status(module.RUNS, job['id'])
-        if quick is None or quick.get('state') not in run_index.ACTIVE_STATES:
+        if (quick is None or quick.get('state') not in run_index.ACTIVE_STATES
+                or polls % FULL_READ_EVERY == 0):
             try:
                 child = module.read_report(job['id']) if kind == 'code' else module.read(job['id'])
                 read_failures = 0
@@ -315,7 +323,7 @@ def execute(rid, event):
             return
         try:
             run_stage(stage, event, commit)
-        except (OSError, ValueError, KeyError, TypeError) as error:
+        except Exception as error:  # noqa: BLE001 -- passive stages run on threads: an error outside a narrow tuple killed the thread and left the row at 'running' forever
             commit(stage, state='failed', message='Bosqich bajarilmadi; alohida skaner holatini tekshiring.',
                    error_type=type(error).__name__)
 
@@ -343,7 +351,16 @@ def execute(rid, event):
         # a project "partial", so `--baseline last-green` could never find one.
         report['state'] = ('cancelled' if event.is_set() else 'completed' if all(s['state'] in FINISHED_STAGE_STATES for s in selected)
                            else 'failed' if all(s['state'] == 'failed' for s in selected) else 'partial')
-        chain = correlate_stages(report)
+        # Correlation reads only finished reports; if it fails (a malformed report,
+        # or memory on a very large one) every stage result is still valid. It used
+        # to share the outer handler and turn the whole assessment 'failed'.
+        try:
+            chain = correlate_stages(report)
+        except Exception as error:  # noqa: BLE001
+            chain = {'findings': [], 'gaps': [{'kind': 'correlation_failed', 'detail':
+                     'Cross-skaner zanjirlari hisoblanmadi (' + type(error).__name__ + '); bosqich natijalari to‘liq saqlangan.'}]}
+            if report['state'] == 'completed':
+                report['state'] = 'partial'
         chain_findings = chain['findings']
         report['chain_findings'] = chain_findings
         # What could not be checked is stored beside what was: an image that

@@ -1127,7 +1127,7 @@ def execute(profile, rid, event):
         report['dismissed_findings'] = confirmation.pop('dismissed_findings')
         report['confirmation_summary'] = confirmation
         report['state'] = 'completed'
-    except (OSError, ValueError, KeyError, TypeError, http.client.HTTPException, subprocess.SubprocessError) as error:
+    except Exception as error:  # noqa: BLE001 -- like scanners/iac/images/dependencies: any failure ends the scan as failed/partial; a narrower tuple left an unexpected error's report at 'running' forever, and the pipeline waiting on it with its lock held
         stopped = collector.stopped if collector else None
         report['state'] = ('partial' if report['findings'] else 'failed') if stopped else \
             'cancelled' if event.is_set() else 'partial' if report['findings'] else 'failed'

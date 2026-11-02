@@ -26,7 +26,7 @@ import threading
 import time
 import uuid
 
-from . import repo_store, scan_window, settings
+from . import repo_store, run_index, scan_window, settings
 from .engine import DATA
 
 JOBS = DATA / 'jobs'
@@ -35,7 +35,8 @@ STATE = JOBS / 'schedule-state.json'
 SCHEDULES = DATA / 'profiles/schedules'
 KEEP = 500                      # finished jobs kept in the queue file
 TICK = 2.0
-POLL = 2.0                      # seconds between reads of a running job's report
+POLL = 2.0                      # seconds between reads of a running job's status sidecar
+FULL_READ_EVERY = 15            # ~30 s: the full report is read at least this often
 BUSY_RETRY = 20                 # seconds before trying a job whose scanner was busy
 CATCH_UP = datetime.timedelta(hours=24)
 KINDS = ('code', 'dependencies', 'images', 'iac', 'web', 'assessment')
@@ -332,10 +333,31 @@ def run(job):
         return
     update(job['id'], state='running', report_id=rid, started_at=now().isoformat(), message='Ishlayapti')
     read = reader(kind)
+    runs = getattr(modules()[kind], 'RUNS', None)
+    polls = failures = 0
     while True:
+        polls += 1
+        # The small status sidecar is enough to know the scan is still running;
+        # the full report (tens of MB on a large project, with triage attached)
+        # used to be re-parsed every POLL seconds for the whole scan. It is read
+        # when the sidecar says the run ended, when there is no sidecar, and every
+        # FULL_READ_EVERY polls as a fallback for a lost final sidecar write.
+        quick = run_index.status(runs, rid) if runs is not None else None
+        if quick is not None and quick.get('state') in run_index.ACTIVE_STATES and polls % FULL_READ_EVERY:
+            if _WORKER['stop'].wait(POLL):
+                return
+            continue
         try:
             report = read(rid)
+            failures = 0
         except (OSError, ValueError):
+            # One unlucky read (a report being replaced, an antivirus lock) is not
+            # a failed scan: the scan is still running. Only repeated failures are.
+            failures += 1
+            if failures < 3:
+                if _WORKER['stop'].wait(POLL):
+                    return
+                continue
             report = {'state': 'failed', 'message': 'Hisobotni o‘qib bo‘lmadi.'}
             break
         if report.get('state') not in ('queued', 'running'):

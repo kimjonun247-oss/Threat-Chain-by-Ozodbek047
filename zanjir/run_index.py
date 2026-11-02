@@ -20,6 +20,8 @@ of truth that can drift:
 import json
 import os
 import re
+import time
+import uuid
 from pathlib import Path
 
 CACHE_NAME = 'index.json'
@@ -60,12 +62,30 @@ def write_status(folder, report):
     if isinstance(report.get('stages'), list):
         view['stages'] = [{key: stage.get(key) for key in ('kind', 'target', 'state', 'count')}
                           for stage in report['stages'] if isinstance(stage, dict)]
+    # The pipeline and the job worker poll this file several times a second, and
+    # on Windows os.replace() fails while a reader has the destination open. One
+    # attempt used to be all it got: losing the FINAL write left the sidecar at
+    # 'running' forever while report.json said 'completed', and the pollers that
+    # trust the sidecar waited forever. Retry like repo_store.write_json does, with
+    # a temporary name of its own so two writers never share one .tmp file.
+    temporary = folder / (STATUS_NAME + '.' + uuid.uuid4().hex + '.tmp')
     try:
-        temporary = folder / (STATUS_NAME + '.tmp')
         temporary.write_text(json.dumps(view, ensure_ascii=False), encoding='utf-8')
-        os.replace(temporary, folder / STATUS_NAME)
+        for attempt in range(8):
+            try:
+                os.replace(temporary, folder / STATUS_NAME)
+                break
+            except PermissionError:
+                if attempt == 7:
+                    raise
+                time.sleep(0.02 * (attempt + 1))
     except OSError:
-        pass
+        pass                                  # a sidecar; the pollers fall back to the report
+    finally:
+        try:
+            temporary.unlink()
+        except OSError:
+            pass
 
 
 def status(runs, rid):
