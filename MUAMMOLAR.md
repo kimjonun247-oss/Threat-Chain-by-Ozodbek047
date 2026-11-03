@@ -509,6 +509,37 @@ matni ("Manba o'qilmoqda: 979/2391 fayl…") ham ishlaydi.
 
 ---
 
+## K. 2026-11-02 kamchiliklar ko'rigi — katta loyihada yiqilish va jim xatolar
+
+Ikki parallel tahlil (kod bo'lmagan bosqichlarning katta-loyiha xatolari; hujjat ↔ kod mosligi) va
+commit qilinmay qolgan 2026-10-26 audit ishi. Har topilma avval kodda tasdiqlandi, keyin tuzatildi va
+regressiya testi bilan qulflandi; ko'pchilik test eski kodda yiqilishi alohida tekshirildi.
+Commitlar va o'lchovlar: [PROGRESS.md](PROGRESS.md) 3-bosqich.
+
+| # | Muammo | Tuzatish |
+|---|---|---|
+| D3 | Audit "v3.1 ga moslash" deb CVSS **Base** ballga Environmental ModifiedImpact formulasini (`×0.9731`, `^13`, spec §7.3) qo'llagan; e'lon qilingan 9.9 (`AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H`) 10.0 bo'lardi. Testi o'sha xato formulani qayta hisoblagani uchun xatoni ushlamasdi | Spec §7.1 (`(ISS−0.02)^15`) qaytarildi; test e'lon qilingan 5 ta ball bilan |
+| LP#1 | `nvd_weaknesses` NVD API kalitini `key` nomiga yozib, kesh kalitini o'chirardi: kalitsiz (standart) holatda `TypeError` → dependencies bosqichi `failed`, topilmalar saqlanmasdi; kalit bilan — API kalit `advisory-cache/` da fayl nomi | `api_key` alohida nom (bu mashinada sizib chiqqan fayl yo'q) |
+| LP#9 | NVD/EPSS uzilishi "hech narsa topilmadi" deb 24 soatga keshlanardi | Xatoda keshlanmaydi |
+| LP#5 | `status.json` yakuniy yozuvi Windows'da poller bilan to'qnashib yo'qolsa, pipeline/job abadiy kutardi (qulf bo'shamasdi); web va pipeline stage thread'i tor `except` bilan `running`da qolardi; zanjir korrelyatsiyasi xatosi butun tekshiruvni `failed` qilardi | Sidecar qayta urinadi; ~30 s da to'liq hisobot fallback; `except Exception`; korrelyatsiya xatosi → `partial` + `correlation_failed` gap |
+| LP#6 | Job worker to'liq hisobotni (54 MB) har 2 s da qayta parse qilardi; bitta o'qish xatosi ishni `failed` qilardi | Sidecar o'qiladi; 3 ketma-ket xato kerak |
+| LP#10 | IaC: Trivy'ning 5 daqiqalik standarti modul chegarasidan oldin to'xtatardi; o'tkazib yuborilgan fayllar yozilmasdi; JSON hajmi cheklanmagan | `--timeout` (snapshot hajmiga qarab), `skipped`, 64 MB |
+| LP#8 | Har advisory uchun `report.json` qayta yozilardi (20 000 = 20 000); progress yozuvidagi qulf bosqichni yiqitardi | Sekundiga bir marta; progress yozuvi xatosi o'tkazib yuboriladi |
+| LP#2 | Repository/K8s bosqichi doim `completed`: MAX_FILES dan oshgan manifestlar, Helm shablonlari, o'qilmagan include'lar faqat matn edi — workload'lar zanjirlarga kirmasdi | `coverage_gaps` (unread / not_reached); bosqich `partial`; gate: not_reached → incomplete, unread → gap |
+| LP#4 | Zanjirlar har xizmat × topilma juftini qurib, keyin kesardi: 100×5000 = 1,16 GB | Kesish qurish paytida (`ChainSink`), natija aynan bir xil; 31,7 MB, 2,3× tezroq |
+| LP#3 | Web: API inventari 48 so'rovni sarflab, Nuclei (.env/.git/SQL dump) ishlamay qolardi; tasdiqlash uchun va'da qilingan +10 so'rov amalda yo'q edi; repo spec qidiruvi node_modules ichida chegarani tugatardi | Nuclei yo'llari zaxiralanadi; inventarga qolgani; `Collector.limit`; `skip_directory`; tashlab ketilganlar yoziladi |
+| LP#7 | Tuzatish rejasi OSV'ga har paketni ketma-ket so'rardi (2 000 paket = 6 000 tagacha so'rov), bekor qilib bo'lmasdi | `recheck_many`: ≤3 ommaviy chaqiruv, natija aynan bir xil, progress orqali bekor qilish |
+| LP#12 | Fayl/manifest/paket/hujjat/xizmat chegaralari butun bosqichni yiqitardi (CVE natijasi nol) | Yig'ilgan qism tekshiriladi, `*_limit` / not_reached gap; gate → incomplete. Fayl yurish chegarasi 1 000 000 |
+| — | Tuzatish diff'lari uchun repo ikkinchi marta yurilardi va 200 faylda indamay to'xtardi; repository dedup O(F²); K8s ID dedup O(W²) va bir xil nomli uchinchi workload ikkinchisi bilan birlashardi | Inventar ro'yxati + 64 MB; dict / set; hisoblagich |
+| F2 | Benchmark sir tekshiruvi har 16+ belgili tokenni sir deb olardi | Aynan ekilgan qiymatlar |
+
+**Ataylab o'zgartirilmagan (LP#11):** dependency topilmasi o'z paketining barcha `occurrences` ini olib
+yuradi. To'liq ro'yxat gate'ning "faqat development" qoidasi, zanjirlar va tuzatish rejasi uchun kerak —
+kesish ularning natijasini o'zgartiradi. Xotirada ro'yxat umumiy obyekt; JSON hajmi faqat yuzlab lockfile'li
+monorepoda o'sadi va interfeys `view.json` orqali sahifalaydi.
+
+---
+
 ## Qolgan holat — 2026-09-25, 0.7.0
 
 Ro'yxatdagi **barcha kod bandlari yopildi** (A1–A28, B1–B7, C1–C6, D1–D3). Qolgani ikkitasi,

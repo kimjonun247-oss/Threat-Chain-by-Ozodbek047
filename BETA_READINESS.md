@@ -11,8 +11,8 @@ test va qaysi o'lchangan raqam javob beradi. Legenda:
 **O'lchov mashinasi:** Windows 11 Pro, 12 yadro, 7,3 GB RAM, ~1 GB bo'sh fizik xotira
 skan paytida. Vositalar: Semgrep 1.177.0, Gitleaks 8.30.1, Trivy 0.74.0, Nuclei 3.11.1,
 rasmiy 1 343 qoidali paket. PMD/CodeQL/Helm/Kustomize o'rnatilmagan (Java yo'q, disk kam).
-Branch: `beta-readiness`. To'liq to'plam: **1133 test, OK (skipped=2)**, `python -m unittest
-discover -s tests`.
+Branch: `beta-readiness`. To'liq to'plam: **1213 test, OK (skipped=2)**, `python -m unittest
+discover -s tests` (2026-11-03).
 
 ---
 
@@ -26,6 +26,17 @@ qulflangan:
 - Vosita faqat **yangi ish ham, kesh ham bo'sh** bo'lsagina `failed`; aks holda kesh natijalari
   qoladi va holat `partial` (J3: oldin qayta skan 23 152 natijani yo'qotardi).
 - Bir bo'lak vaqtga sig'masa, **ikkiga bo'linib qayta uriniladi** (4 marta), butun skan emas.
+
+2026-11-02 ko'rigidan keyin ([MUAMMOLAR.md](MUAMMOLAR.md) K) qo'shimcha kafolatlar:
+
+- **Chegara — xato emas.** Fayl/manifest/paket/hujjat/xizmat chegarasiga yetgan bosqich yiqilmaydi: yig'ilgan
+  qism tekshiriladi, qolgani nomlangan gap; CI gate buni `incomplete` deydi (tekshirilmagan ≠ toza).
+- **Skan abadiy qotmaydi.** Yakuniy holat yozuvi yo'qolsa ham pipeline/job ~30 s ichida to'liq hisobotdan
+  tugaganini biladi; kutilmagan xato bosqichni `failed` qiladi, `running`da qoldirmaydi.
+- **O'qilmagan kirish ko'rinadi.** Repository/Kubernetes'da o'qilmagan yoki yetib borilmagan fayllar
+  `coverage_gaps` da; bosqich `partial`.
+- **Web'da asosiy tekshiruv birinchi.** Nuclei so'rovlari zaxiralanadi; qo'shimcha API inventari qolganini sarflaydi.
+- **NVD kalitisiz ham dependencies ishlaydi** (ilgari `TypeError` bilan yiqilardi).
 
 Qolgan cheklov — **tezlik va isbotlanmaganlik**, halokat emas: bu noutbukda birinchi skan
 sekin (bo'sh RAM ~1 GB → bitta ishchi). Serverda ishchilar soni avtomatik oshadi (§4).
@@ -81,6 +92,17 @@ Xulosa: kichik loyihada **qat'iy startup narxi** (versiya tekshiruvi + 1 343 qoi
 tayyorlash) skanning o'zidan ko'p — bu narx bir marta to'lanadi va katta loyihada `scan_s`
 ustun bo'ladi (amortizatsiya). Shu sabab birinchi skan 4 000 fayl uchun ~10 daqiqa, lekin
 qayta skan 30 s (§2.1).
+
+### 2.4. Zanjir korrelyatsiyasi — butun-repo build-kontekstli xizmatlar
+
+Har (qoida, xizmat) guruhi `CHAIN_LIMIT=50` gacha kesiladi; kesish endi zanjirlar qurilayotganda
+qo'llanadi (natija avvalgi "hammasini qurib, keyin kesish" bilan aynan bir xil — testda solishtiriladi):
+
+| Xizmat × topilma | Xotira cho'qqisi (oldin → hozir) | Vaqt (oldin → hozir) |
+|---|---|---|
+| 20 × 2 000 | 93 → 6,9 MB | 2,56 → 1,11 s |
+| 50 × 3 000 | 347 → 20,5 MB | 8,76 → 3,80 s |
+| 100 × 5 000 | **1 156 → 31,7 MB** | — |
 
 ## 3. PLAN bandlariga dalil
 
@@ -142,6 +164,8 @@ SX-001/004/006/007 Kubernetes'da ishlamaydi), Nuclei faqat 6 ko'rib chiqilgan GE
   (~445 ms/120k) hamon `ORDER BY` saralashiga bog'liq — milliondan oshsa saralashni qayta ko'rish kerak.
 - CodeQL, PMD/Apex (Java), haqiqiy OOM, 26k faylda kill→resume — serverda.
 - Image/IaC/web bosqichlari bittadan (Trivy kesh qulfi, web so'rov qoidasi).
+- Dependency topilmasi paketining barcha `occurrences` ini olib yuradi (LP#11, ataylab): yuzlab lockfile'li
+  monorepoda `report.json` kattalashadi. Kesish gate/zanjir/reja natijasini o'zgartirgani uchun qilinmagan.
 
 ## 7. Rollback
 

@@ -4,7 +4,7 @@
 
 Kod, kutubxonalar, container image, ruxsatli sayt/API va joylashtirish dalillarini bir joyda tekshirish. Pentester topilmani baholaydi, tuzatishni rejalashtiradi va qayta skan bilan solishtiradi. Bu bir kompyuter, bir foydalanuvchi uchun pilot; barcha CVE va barcha hujumlarni aniqlash kafolati emas.
 
-**Holat (2026-11-02, `beta-readiness` shoxi):** ~1 160 unit test o'tadi, `verify_platform.py` lokal Windows 11 da
+**Holat (2026-11-03, `beta-readiness` shoxi):** 1 213 unit test o'tadi, `verify_platform.py` lokal Windows 11 da
 9/9 (haqiqiy vositalar bilan); CI har push'da unit testlar va `verify_platform.py` ni Linux, Windows va macOS da
 ishga tushiradi. Beta tayyorligi va o'lchangan raqamlar: [BETA_READINESS.md](BETA_READINESS.md).
 7 ta skaner bosqichi, 11 ta Compose/Nginx qoidasi (RP-001…011), Kubernetes manifestlari, 7 ta cross-skaner
