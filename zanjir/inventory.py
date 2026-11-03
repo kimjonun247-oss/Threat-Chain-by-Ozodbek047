@@ -20,6 +20,12 @@ MAX_TOTAL=256*1024*1024
 MAX_PACKAGES=50000
 MAX_OCCURRENCES=500000
 MAX_MANIFESTS=20000
+# Files looked at by name while walking (node_modules, vendor, .git are not entered).
+# Only a name test per file, so the bound is generous; reaching it, like the
+# manifest and package bounds below, ends the walk with a `*_limit` gap and
+# keeps what was collected -- it used to fail the stage with zero CVE results.
+MAX_WALK_FILES=1000000
+LIMIT_REASONS=frozenset({'file_walk_limit','manifest_limit','package_limit'})
 try:
     import tomllib
 except ModuleNotFoundError:           # Python 3.10 has no tomllib
@@ -546,9 +552,10 @@ def parser_for(name,is_python):
 
 
 def collect(root):
-    root=Path(root).resolve();manifests=[];rows=[];gaps=[];total=0;seen=0;excluded=0;distinct=set()
+    root=Path(root).resolve();manifests=[];rows=[];gaps=[];total=0;seen=0;excluded=0;distinct=set();stopped=None
     if not root.is_dir():raise ValueError('Loyiha papkasi topilmadi.')
     for current,dirs,files in os.walk(root,followlinks=False):
+        if stopped:break
         allowed=[]
         for name in sorted(dirs):
             path=Path(current)/name
@@ -558,7 +565,8 @@ def collect(root):
         dirs[:]=allowed
         for name in sorted(files):
             seen+=1
-            if seen>100000:raise ValueError('Loyiha 100000 fayl chegarasidan oshdi.')
+            if seen>MAX_WALK_FILES:
+                stopped={'path':'.','reason':'file_walk_limit','limit':MAX_WALK_FILES};break
             is_python=bool(re.fullmatch(r'requirements(?:[-_.][A-Za-z0-9_.-]+)?\.txt',name))
             if name.endswith(('.csproj','.fsproj','.vbproj')):
                 # NuGet resolves versions at restore time; only its lock file states them.
@@ -576,7 +584,8 @@ def collect(root):
             if file.stat().st_size>MAX_MANIFEST:
                 gaps.append({'path':relative,'reason':'manifest_over_16mb'});continue
             raw=file.read_bytes();total+=len(raw)
-            if total>MAX_TOTAL or len(manifests)>=MAX_MANIFESTS:raise ValueError(f'Manifestlar {MAX_TOTAL//1024**2} MB yoki {MAX_MANIFESTS} fayl chegarasidan oshdi.')
+            if total>MAX_TOTAL or len(manifests)>=MAX_MANIFESTS:
+                stopped={'path':relative,'reason':'manifest_limit','limit':f'{MAX_TOTAL//1024**2} MB / {MAX_MANIFESTS} fayl'};break
             item={'path':relative,'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw),'state':'unsupported'}
             manifests.append(item)
             if name in UNSUPPORTED:
@@ -595,7 +604,8 @@ def collect(root):
             except (ValueError,TypeError,KeyError,RecursionError):
                 item['state']='invalid';gaps.append({'path':relative,'reason':'invalid_manifest'})
             if len(distinct)>MAX_PACKAGES or len(rows)>MAX_OCCURRENCES:
-                raise ValueError(f'{MAX_PACKAGES} ta turli paket yoki {MAX_OCCURRENCES} ta paket nusxasi chegarasidan oshdi.')
+                stopped={'path':relative,'reason':'package_limit','limit':f'{MAX_PACKAGES} paket / {MAX_OCCURRENCES} nusxa'};break
+    if stopped:gaps.append(stopped)
     rows.sort(key=lambda p:(p['manifest'],p['ecosystem'],p['name'],p['version'],p['locator']))
     return {'schema_version':1,'packages':rows,'manifests':manifests,'gaps':gaps,
             'sha256':digest(manifests),'unique_packages':len({(p['ecosystem'],p['name'],p['version']) for p in rows}),

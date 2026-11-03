@@ -710,7 +710,12 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
         except (ValueError,OSError) as error:
             note_gap(unknowns, f'{override}: override fayli o‘qilmadi — {error}; qamrov to‘liq emas.')
     if len(document['services'])>MAX_SERVICES:
-        raise ValueError(f'{MAX_SERVICES} tadan ko‘p xizmat qo‘llanmaydi.')
+        # A bound, not a failure: the first MAX_SERVICES are analysed and the rest
+        # are reported as never reached (it used to fail the repository stage).
+        excess=len(document['services'])-MAX_SERVICES
+        document['services']=dict(list(document['services'].items())[:MAX_SERVICES])
+        note_gap(unknowns, f'{MAX_SERVICES+excess} ta xizmat; faqat birinchi {MAX_SERVICES} tasi tahlil qilindi.',
+                 not_reached=excess)
     if 'extends' in document:
         note_gap(unknowns, 'Compose extends qo‘llanmaydi; qamrov to‘liq emas.')
     env=dotenv(read(env_file)) if env_file else {}

@@ -193,7 +193,13 @@ def scan(root, path, provenance=None):
                  not_reached=extra)
     workloads, services, ingresses, policies = [], [], [], []
     total = 0
-    for relative in paths:
+    for position, relative in enumerate(paths):
+        if total >= MAX_DOCUMENTS:
+            # A bound, not a failure: what was read is analysed, the rest is reported
+            # as never reached (it used to fail the whole repository stage).
+            note_gap(unknowns, f'{MAX_DOCUMENTS} ta manifest hujjati chegarasiga yetildi; qolgan '
+                               f'{len(paths) - position} ta fayl o‘qilmadi.', not_reached=len(paths) - position)
+            break
         try:
             text = safe_read(root, relative)
         except (ValueError, OSError, UnicodeDecodeError) as error:
@@ -211,7 +217,9 @@ def scan(root, path, provenance=None):
         for document, line in parsed:
             total += 1
             if total > MAX_DOCUMENTS:
-                raise ValueError(f'{MAX_DOCUMENTS} tadan ko‘p manifest hujjati qo‘llanmaydi.')
+                note_gap(unknowns, f'{relative}: {MAX_DOCUMENTS} ta hujjat chegarasidan keyingi qismi o‘qilmadi.',
+                         not_reached=1)
+                break
             kind = document.get('kind')
             metadata = document.get('metadata') if isinstance(document.get('metadata'), dict) else {}
             name, namespace = metadata.get('name'), metadata.get('namespace') or 'default'

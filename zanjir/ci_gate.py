@@ -197,6 +197,12 @@ def classify_stage(stage):
             return 'incomplete', f"{len(child['query_errors'])} ta paket OSV’da tekshirilmadi"
         if kev not in (None, 'available'):
             return 'incomplete', 'CISA KEV ro‘yxati olinmadi'
+        # The walk stopped at a bound: manifests past it were never read, so their
+        # packages were never checked (inventory.LIMIT_REASONS).
+        limited = [gap.get('reason') for gap in (child.get('coverage') or {}).get('gaps') or []
+                   if isinstance(gap, dict) and str(gap.get('reason', '')).endswith('_limit')]
+        if limited:
+            return 'incomplete', 'kutubxona ro‘yxati chegarada to‘xtadi (' + ', '.join(sorted(set(limited))) + ')'
         return 'gap', 'qo‘llanmaydigan manifest yoki lockfile yo‘q (qamrov bo‘shlig‘i)'
     if kind == 'web':
         coverage = child.get('coverage') or {}

@@ -448,11 +448,15 @@ class DependencyVolumeTests(Workspace):
         self.assertEqual((found['occurrences'], found['unique_packages']), (80, 10))
 
     def test_b_it_is_still_a_limit(self):
+        # Still a bound, but it ends the walk with a `package_limit` gap and keeps
+        # what was collected instead of failing the stage (shortcomings review
+        # 2026-11-02, LP#12); the CI gate counts that as incomplete.
         self.monorepo(services=2, packages=10)
-        with patch.object(inventory, 'MAX_PACKAGES', 5), self.assertRaises(ValueError):
-            inventory.collect(self.source)
-        with patch.object(inventory, 'MAX_OCCURRENCES', 15), self.assertRaises(ValueError):
-            inventory.collect(self.source)
+        for name, value in (('MAX_PACKAGES', 5), ('MAX_OCCURRENCES', 15)):
+            with patch.object(inventory, name, value):
+                found = inventory.collect(self.source)
+            self.assertIn('package_limit', [gap['reason'] for gap in found['gaps']], name)
+            self.assertTrue(found['packages'], name)
 
     def test_c_every_matched_advisory_is_fetched(self):
         def fetcher(url, payload=None, salt=''):
@@ -557,8 +561,13 @@ class ComposeScaleTests(Workspace):
         self.assertEqual(len(report['findings']), 450)
 
     def test_c_it_is_still_a_limit(self):
-        with patch.object(repository, 'MAX_SERVICES', 2), self.assertRaises(ValueError):
-            self.scan('services:\n  a: {image: x}\n  b: {image: x}\n  c: {image: x}\n')
+        # Still a bound, but no longer a failure (shortcomings review 2026-11-02,
+        # LP#12): the first MAX_SERVICES are analysed, the rest are counted as
+        # never reached, and the CI gate treats that as an incomplete check.
+        with patch.object(repository, 'MAX_SERVICES', 2):
+            report = self.scan('services:\n  a: {image: x}\n  b: {image: x}\n  c: {image: x}\n')
+        self.assertEqual(report['summary']['services'], 2)
+        self.assertEqual(report['coverage_gaps']['not_reached'], 1)
 
     def test_d_included_files_are_read_and_evidence_points_at_them(self):
         self.put('infra/db.yml', 'services:\n  db:\n    image: postgres:16\n  cache:\n    image: redis:7\n    ports: ["6379:6379"]\n')
