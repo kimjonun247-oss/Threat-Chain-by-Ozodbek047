@@ -370,6 +370,10 @@ class Collector:
         self.evidence = []
         self.errors = []
         self.requests = 0
+        # Collection may use MAX_REQUESTS; execute() raises this by CONFIRM_BUDGET
+        # for the confirmation pass, which the documented scope promises on top
+        # (scope_text: "48 collection + 10 confirmation"). It used to share the 48.
+        self.limit = MAX_REQUESTS
         self.blocked = 0
         self.wire = None
         self.connections = 0
@@ -472,7 +476,7 @@ class Collector:
             if self.window_closes is not None and not self.cancel.is_set() and \
                     datetime.datetime.now(datetime.timezone.utc) >= self.window_closes:
                 self._stop('window_closed', path)
-            if self.cancel.is_set() or time.monotonic() - self.started > DEADLINE or self.requests >= MAX_REQUESTS:
+            if self.cancel.is_set() or time.monotonic() - self.started > DEADLINE or self.requests >= self.limit:
                 raise ValueError('Jarayon to‘xtatilgan yoki so‘rov/vaqt chegarasiga yetdi.')
             if self.cancel.wait(max(0, self.next_request - time.monotonic())):
                 raise ValueError('Jarayon bekor qilingan.')
@@ -1112,9 +1116,16 @@ def execute(profile, rid, event):
         # Documented API surface: live spec URLs plus any spec in the linked
         # source repo, then one unauthenticated GET per static endpoint. GET only,
         # same bounded collector, no parameter guessing (see api_inventory).
+        # The API inventory is supplementary and may only spend what the core checks
+        # do not need: every Nuclei template path plus the missing-path baseline are
+        # reserved first. It used to spend the shared budget on spec discovery and
+        # probes, so on a large site Nuclei (.env, .git, SQL dumps) never ran.
+        reserve = len(paths) + 1
+        ceiling = collector.limit if collector.request_budget is None else min(collector.limit, collector.request_budget)
         api_findings, report['api_inventory'] = api_inventory.inventory_findings(
             collector, finding, source_root=source_root_for(profile),
-            authenticated=bool(profile.get('authenticated')))
+            authenticated=bool(profile.get('authenticated')),
+            budget=max(0, ceiling - collector.requests - reserve))
         report['findings'] += api_findings
         missing_status, _, missing_body = collector.fetch(missing)
         report.update(count=len(report['findings']), progress='Nuclei tanlangan GET qoidalarini bajarmoqda.')
@@ -1123,6 +1134,7 @@ def execute(profile, rid, event):
         report['findings'] += findings
         report['tool'] = tool
         report['progress'] = 'Topilmalar ikkinchi mustaqil GET bilan tasdiqlanmoqda.'
+        collector.limit = MAX_REQUESTS + CONFIRM_BUDGET
         confirmation = confirm_findings(collector, report['findings'])
         report['dismissed_findings'] = confirmation.pop('dismissed_findings')
         report['confirmation_summary'] = confirmation
