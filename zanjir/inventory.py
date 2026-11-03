@@ -552,7 +552,7 @@ def parser_for(name,is_python):
 
 
 def collect(root):
-    root=Path(root).resolve();manifests=[];rows=[];gaps=[];total=0;seen=0;excluded=0;distinct=set();stopped=None
+    root=Path(root).resolve();manifests=[];rows=[];gaps=[];total=0;seen=0;excluded=0;distinct=set();stopped=None;project_files=[]
     if not root.is_dir():raise ValueError('Loyiha papkasi topilmadi.')
     for current,dirs,files in os.walk(root,followlinks=False):
         if stopped:break
@@ -572,6 +572,10 @@ def collect(root):
                 # NuGet resolves versions at restore time; only its lock file states them.
                 if not (Path(current)/'packages.lock.json').is_file():
                     gaps.append({'path':(Path(current)/name).relative_to(root).as_posix(),'reason':'nuget_lockfile_missing'})
+                # Not a manifest of its own, but the file a NuGet fix diff edits -- a
+                # library project's lock can sit in another (the app's) folder.
+                if not linked(Path(current)/name):
+                    project_files.append((Path(current)/name).relative_to(root).as_posix())
                 continue
             if name not in SUPPORTED|TOML_SUPPORTED|UNSUPPORTED|{'package.json','pyproject.toml'} and not is_python:continue
             file=Path(current)/name;relative=file.relative_to(root).as_posix()
@@ -609,7 +613,7 @@ def collect(root):
     rows.sort(key=lambda p:(p['manifest'],p['ecosystem'],p['name'],p['version'],p['locator']))
     return {'schema_version':1,'packages':rows,'manifests':manifests,'gaps':gaps,
             'sha256':digest(manifests),'unique_packages':len({(p['ecosystem'],p['name'],p['version']) for p in rows}),
-            'occurrences':len(rows),'excluded_directories':excluded,
+            'occurrences':len(rows),'excluded_directories':excluded,'project_files':sorted(project_files),
             'scope':('npm lock v1–v3, yarn.lock (v1 va Berry), pnpm-lock.yaml (v5–v9), Python == pins va Pipfile/poetry/uv lock, Go require, '
                      'Gradle lockfile (Maven), Gemfile.lock (RubyGems), composer.lock (Packagist), '
                      'Cargo.lock (crates.io), packages.lock.json (NuGet), `mvn dependency:tree` natijasi '

@@ -257,12 +257,21 @@ def scan(root, path, provenance=None):
                 routed.setdefault((ingress['namespace'], target), ingress)
 
     inventory = []
+    used_ids = set()
     for workload in workloads:
         spec, labels = pod_spec(workload['kind'], workload['document'])
         containers = containers_of(spec)
         sid = workload['name'] if workload['namespace'] == 'default' else f"{workload['namespace']}/{workload['name']}"
-        if any(row['id'] == sid for row in inventory):
-            sid = f"{sid}:{workload['kind'].lower()}"
+        # A set, not a scan of `inventory` per workload (O(W^2)). And a third
+        # workload with the same name and kind (overlay folders, say) gets a counter:
+        # it used to receive the same `name:kind` id as the second, merging two
+        # different workloads into one service.
+        if sid in used_ids:
+            base = f"{sid}:{workload['kind'].lower()}"
+            sid, counter = base, 2
+            while sid in used_ids:
+                sid, counter = f'{base}:{counter}', counter + 1
+        used_ids.add(sid)
         service_eid = fact(workload['path'], workload['line'], 'Workload', {'kind': workload['kind'], 'name': sid})
         ports = []
         for service in services:

@@ -641,12 +641,40 @@ DIFFABLE = re.compile(r'^(requirements(?:[-_.][A-Za-z0-9_.-]+)?\.txt|pyproject\.
                       r'build\.gradle(?:\.kts)?|.+\.(?:cs|fs|vb)proj)$')
 
 
-def read_manifests(root, limit=200, max_bytes=512 * 1024):
+MANIFEST_TEXT_BUDGET = 64 * 1024 * 1024      # total manifest text kept for fix diffs
+
+
+def read_manifests(root, limit=200, max_bytes=512 * 1024, paths=None):
+    """{relative path: text} of the manifests a fix diff can edit.
+
+    With `paths` (the inventory's manifests) only those files are read: no second
+    walk of the repository, and no silent stop at `limit` files -- a monorepo
+    with more than 200 lockfiles lost every diff past the 200th. The bound is
+    then total bytes (MANIFEST_TEXT_BUDGET); the caller can tell what was left
+    out by comparing with its list.
+    """
     import os
     from pathlib import Path
     from .engine import skip_directory
     base = Path(root).resolve()
     found = {}
+    if paths is not None:
+        total = 0
+        for relative in sorted(set(paths)):
+            if not DIFFABLE.match(relative.rsplit('/', 1)[-1]):
+                continue
+            path = base / relative
+            try:
+                if path.is_symlink() or not path.resolve().is_relative_to(base):
+                    continue
+                size = path.stat().st_size
+                if size > max_bytes or total + size > MANIFEST_TEXT_BUDGET:
+                    continue
+                found[relative] = path.read_text(encoding='utf-8')
+                total += size
+            except (OSError, UnicodeDecodeError):
+                continue
+        return found
     for current, dirs, files in os.walk(base, followlinks=False):
         dirs[:] = sorted(d for d in dirs if not skip_directory(current, d) and not os.path.islink(os.path.join(current, d)))
         for name in sorted(files):

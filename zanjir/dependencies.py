@@ -60,7 +60,8 @@ def execute(rid):
         # inventory is read; the manifests are copied into inventory.json first.
         with scanners.source_for(report['target']) as (root,provenance):
             collected=inventory.collect(root)
-            manifest_texts=fixes.read_manifests(root)
+            # Only the manifests the inventory found: no second walk, no 200-file cut.
+            manifest_texts=fixes.read_manifests(root,paths=[m['path'] for m in collected['manifests']]+collected.get('project_files',[]))
         report['source']=provenance
         repo_store.write_json(folder/'inventory.json',collected)
         report.update(inventory_sha256=collected['sha256'],coverage={k:v for k,v in collected.items() if k!='packages'})

@@ -658,9 +658,10 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
         eid=f'R{len(evidence)+1:03}'
         evidence.append({'id':eid,'path':path,'line':line,'label':label,'value':value})
         return eid
+    by_fingerprint={}   # a scan through `findings` per new finding was O(F^2) on a large Compose file
     def finding(rule,service,key,detail,eids,severity='warning'):
         fingerprint=digest(canonical([rule,service,key]))[:24]
-        existing=next((f for f in findings if f['fingerprint']==fingerprint),None)
+        existing=by_fingerprint.get(fingerprint)
         if existing:
             existing['evidence_ids']=list(dict.fromkeys(existing['evidence_ids']+eids))
             return
@@ -670,6 +671,7 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
                          'remediation':RULES[rule][1],'runtime_verified':False,'verified':False,
                          'cwe_ids':tags['cwe_ids'],'owasp_top10_2025':tags['owasp_top10_2025'],
                          'verification_note':'Compose/Nginx konfiguratsiyasidan statik o‘qilgan deklaratsiya; runtime, firewall va autentifikatsiya tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart.'})
+        by_fingerprint[fingerprint]=findings[-1]
     compose_text=read(compose)
     document,locations=parse_yaml(compose_text)
     if not isinstance(document,dict) or not isinstance(document.get('services'),dict):
