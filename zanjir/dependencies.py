@@ -74,7 +74,10 @@ def execute(rid):
             findings=advisories.normalize(collected['packages'],matches,details,kev,kev_meta['state']=='available')
             advisories.enrich(findings,progress=progress)
             progress('Tuzatish rejasi: maqsad versiyalar OSV’da qayta tekshirilmoqda')
-            report['fix_plan']=fixes.dependency_plan(findings,manifest_texts,advisories.query_packages)
+            # The re-check of proposed versions goes through progress(), so it reports
+            # where it is and a cancelled scan stops there instead of waiting it out.
+            report['fix_plan']=fixes.dependency_plan(findings,manifest_texts,
+                lambda packages:advisories.query_packages(packages,progress=lambda message:progress('Tuzatish versiyalari: '+message)))
             report.update(findings=findings,count=len(findings),query_errors=errors,
                           feeds={'osv':{'checked_packages':len(matches),'requested_packages':collected['unique_packages'],
                                         'responses':len(provenance),'oldest_retrieved_at':min((p['retrieved_at'] for p in provenance),default=None),
