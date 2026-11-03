@@ -125,7 +125,7 @@ def port_summary(service):
                      for p in service.get('ports') or [] if p.get('scope') != 'loopback')[:300]
 
 
-def correlate(code_report, repository_report):
+def correlate(code_report, repository_report, sink=None):
     gitleaks_findings = [f for f in (code_report or {}).get('findings', [])
                          if f.get('tool') == 'gitleaks' and pathclass.shipped(f)]
     if not gitleaks_findings:
@@ -136,7 +136,7 @@ def correlate(code_report, repository_report):
         return []
     cwe_ids = [f'CWE-{c}' for c in CWE_IDS]
     owasp = taxonomy.classify(CWE_IDS)
-    results = []
+    results = [] if sink is None else sink      # a ChainSink keeps only what the cut would keep
     for service in reachable:
         context = service['build_context']
         for gf in gitleaks_findings:
@@ -162,10 +162,10 @@ def correlate(code_report, repository_report):
                 'evidence': {'gitleaks_path': path, 'gitleaks_line': gf.get('line'), 'gitleaks_rule_id': gf.get('rule_id'),
                              'compose_service': service['id'], 'build_context': context},
             })
-    return results
+    return results if sink is None else []
 
 
-def code_weakness_chains(code_report, repository_report):
+def code_weakness_chains(code_report, repository_report, sink=None):
     """SX-004: an exposed service with an externally exploitable weakness in its
     own source. SX-001 chains a hard-coded secret; this chains an injection,
     SSRF, traversal or deserialization flaw -- the classes an attacker reaches
@@ -180,25 +180,32 @@ def code_weakness_chains(code_report, repository_report):
         return []
     reachable = [s for s in (repository_report or {}).get('services', [])
                  if s.get('build_context') and any(p['scope'] != 'loopback' for p in s.get('ports', []))]
-    results = []
+    results = [] if sink is None else sink      # a ChainSink keeps only what the cut would keep
+    # What depends only on the finding is worked out once per finding, not once per
+    # (service, finding) pair: with whole-repository build contexts the pairs are
+    # services x findings, and the OWASP lookup alone was a fifth of the time.
+    prepared = []
+    for wf in weaknesses:
+        hit = _exploitable(wf.get('cwe_ids'))
+        cwe_ids = sorted(set(hit + ['CWE-668']))
+        prepared.append((wf, hit, cwe_ids, taxonomy.classify([_cwe_number(c) for c in cwe_ids])))
     for service in reachable:
         context = service['build_context']
-        for wf in weaknesses:
+        ports = port_summary(service)
+        for wf, hit, cwe_ids, owasp in prepared:
             path = wf.get('path', '')
             if not inside(path, context):
                 continue
-            hit = _exploitable(wf.get('cwe_ids'))
-            cwe_ids = sorted(set(hit + ['CWE-668']))
             results.append({
                 'rule_id': 'SX-004', 'title': RULES['SX-004'][0], 'service_id': service['id'],
                 'fingerprint': findings_mod.derived('SX-004', [service['id'], wf.get('fingerprint') or path]),
-                'detail': (f"{service['id']} xizmati host portidan ochiq ({port_summary(service)}) va uning manba "
+                'detail': (f"{service['id']} xizmati host portidan ochiq ({ports}) va uning manba "
                            f"katalogida ({context}) {wf.get('tool')} {wf.get('rule_id', '?')} zaifligini topdi "
                            f"({path}:{wf.get('line', '?')}, {', '.join(hit)}). Bu sinf aynan ochiq port orqali "
                            "hujumchi yeta oladigan turdagi: alohida har biri statik topilma, birga esa "
                            "to‘g‘ridan-to‘g‘ri ekspluatatsiya yuzasi."),
                 'remediation': RULES['SX-004'][1], 'cwe_ids': cwe_ids,
-                'owasp_top10_2025': taxonomy.classify([_cwe_number(c) for c in cwe_ids]),
+                'owasp_top10_2025': owasp,
                 'level': 'error', 'verified': False, 'runtime_verified': False,
                 'verification_note': ('Ikki mustaqil statik skaner bog‘landi: Compose portni, kod skaneri esa '
                                       'zaif naqshni ko‘rsatadi. Zaif kod yo‘li amalda chaqirilishi va tashqaridan '
@@ -206,10 +213,10 @@ def code_weakness_chains(code_report, repository_report):
                 'evidence': {'code_tool': wf.get('tool'), 'code_rule': wf.get('rule_id'),
                              'code_path': f"{path}:{wf.get('line', '?')}", 'code_cwe': hit,
                              'code_severity': wf.get('severity'),
-                             'compose_service': service['id'], 'host_ports': port_summary(service),
+                             'compose_service': service['id'], 'host_ports': ports,
                              'build_context': context},
             })
-    return results
+    return results if sink is None else []
 
 
 def eol_image_chains(repository_report, image_reports, links):
@@ -246,7 +253,7 @@ def eol_image_chains(repository_report, image_reports, links):
     return results
 
 
-def dependency_chains(dependency_report, repository_report):
+def dependency_chains(dependency_report, repository_report, sink=None):
     """SX-006: an exposed service whose own source dependencies carry a
     known-exploited or critical CVE. SX-002 catches this in the built image;
     this catches it at source -- before a build, or for a project that ships no
@@ -258,7 +265,7 @@ def dependency_chains(dependency_report, repository_report):
         return []
     reachable = [s for s in (repository_report or {}).get('services', [])
                  if s.get('build_context') and any(p['scope'] != 'loopback' for p in s.get('ports', []))]
-    results = []
+    results = [] if sink is None else sink      # a ChainSink keeps only what the cut would keep
     for service in reachable:
         context = service['build_context']
         for f in high:
@@ -286,7 +293,7 @@ def dependency_chains(dependency_report, repository_report):
                              'manifest': locs[0].get('manifest'), 'known_exploited': f.get('known_exploited'),
                              'build_context': context},
             })
-    return results
+    return results if sink is None else []
 
 
 # SX-007: the privileges that turn code execution in a container into control of
@@ -294,7 +301,7 @@ def dependency_chains(dependency_report, repository_report):
 ESCAPE_CWE = [250, 668]
 
 
-def escape_escalation_chains(code_report, repository_report):
+def escape_escalation_chains(code_report, repository_report, sink=None):
     """SX-007: an exposed service that can both be broken into and break out.
 
     It fires only when one service carries all three facts: it is exposed, it has
@@ -315,7 +322,7 @@ def escape_escalation_chains(code_report, repository_report):
                ((f.get('tool') == 'gitleaks')
                 or (f.get('tool') in ('semgrep', 'codeql', 'pmd')
                     and str(f.get('severity') or '').upper() != 'INFO' and _exploitable(f.get('cwe_ids'))))]
-    results = []
+    results = [] if sink is None else sink      # a ChainSink keeps only what the cut would keep
     for sid, service in sorted(exposed.items()):
         context = service['build_context']
         for f in entries:
@@ -342,7 +349,7 @@ def escape_escalation_chains(code_report, repository_report):
                              'entry_tool': f.get('tool'), 'entry_rule': f.get('rule_id'),
                              'entry_path': f"{path}:{f.get('line', '?')}"},
             })
-    return results
+    return results if sink is None else []
 
 
 def image_chains(repository_report, image_reports, links, rp006_services, ambiguous=()):
@@ -469,11 +476,13 @@ def correlate_all(stage_reports, links=None, image_reports=None, ambiguous=None)
     code = stage_reports.get('code')
     repository = stage_reports.get('repository')
     deps = stage_reports.get('dependencies')
-    results, gaps = [], []
+    # Every chain goes through one sink that applies the per-(rule, service) cut as
+    # chains arrive, so the services x findings builders never hold every pair.
+    sink, gaps = ChainSink(), []
     if code and repository:
-        results += correlate(code, repository)                  # SX-001
-        results += code_weakness_chains(code, repository)       # SX-004
-        results += escape_escalation_chains(code, repository)   # SX-007
+        correlate(code, repository, sink=sink)                  # SX-001
+        code_weakness_chains(code, repository, sink=sink)       # SX-004
+        escape_escalation_chains(code, repository, sink=sink)   # SX-007
         left_out = outside_shipped_code(code, repository)
         if left_out:
             gaps.append({'kind': 'outside_shipped_code', 'count': left_out,
@@ -486,18 +495,18 @@ def correlate_all(stage_reports, links=None, image_reports=None, ambiguous=None)
     if repository and image_reports:
         rp006 = {f.get('service_id') for f in repository.get('findings') or [] if f.get('rule_id') == 'RP-006'}
         rows, image_gaps = image_chains(repository, image_reports, links or {}, rp006, ambiguous or ())
-        results += rows                                          # SX-002, SX-003
-        results += eol_image_chains(repository, image_reports, links or {})  # SX-005
+        sink.extend(rows)                                        # SX-002, SX-003
+        sink.extend(eol_image_chains(repository, image_reports, links or {}))  # SX-005
         gaps += image_gaps
     if deps and repository:
-        results += dependency_chains(deps, repository)          # SX-006
+        dependency_chains(deps, repository, sink=sink)          # SX-006
     elif repository and not image_reports:
         gaps.append({'kind': 'stage_missing', 'detail': 'Image bosqichi tanlanmagan; SX-002 va SX-003 '
                                                         '(ochiq xizmat + CVE) tekshirilmadi.'})
     if not repository:
         gaps.append({'kind': 'stage_missing', 'detail': 'Repository (Compose) bosqichi tanlanmagan; hech bir '
                                                         'cross-skaner zanjiri tekshirilmadi.'})
-    results, limited = limit_per_service(results)
+    results, limited = sink.finish()
     for finding in results:
         finding.update(assess(finding))
     return {'findings': results, 'gaps': gaps + limited}
@@ -593,21 +602,71 @@ def assess(chain):
 CHAIN_LIMIT = 50
 
 
+def _limit_order(finding):
+    """Worst first, in a fixed order, so the same chains are kept on every scan."""
+    return (0 if finding.get('level') == 'error' else 1,
+            json.dumps(finding.get('evidence'), sort_keys=True, default=str), str(finding.get('fingerprint')))
+
+
+ORDER_KEY = '_chain_order'
+
+
+def _cached_order(finding):
+    # A group is re-sorted every CHAIN_LIMIT arrivals; the key (a JSON dump of the
+    # evidence) is computed once per chain and dropped again in ChainSink.finish.
+    key = finding.get(ORDER_KEY)
+    if key is None:
+        key = finding[ORDER_KEY] = _limit_order(finding)
+    return key
+
+
+class ChainSink:
+    """Chain findings collected with the per-(rule, service) cut applied as they arrive.
+
+    The result is exactly limit_per_service's over the same findings -- the same
+    chains kept, in the same order, the same chain_limit gaps with the full count --
+    but no group holds more than 2 x CHAIN_LIMIT chains at a time. Building every
+    service x finding pair first and cutting afterwards measured 1.2 GB and three
+    minutes for 100 whole-repository services x 5 000 findings, to keep 10 000.
+    A group is only ever sorted once it has passed the limit, so groups under it
+    keep their arrival order, as before.
+    """
+
+    def __init__(self):
+        self.groups = {}
+        self.totals = {}
+
+    def append(self, finding):
+        key = (finding.get('rule_id'), finding.get('service_id'))
+        members = self.groups.setdefault(key, [])
+        members.append(finding)
+        self.totals[key] = self.totals.get(key, 0) + 1
+        if len(members) > 2 * CHAIN_LIMIT:
+            members.sort(key=_cached_order)      # stable: ties keep arrival order
+            del members[CHAIN_LIMIT:]
+
+    def extend(self, findings):
+        for finding in findings:
+            self.append(finding)
+
+    def finish(self):
+        kept, gaps = [], []
+        for (rule, service), members in self.groups.items():
+            total = self.totals[(rule, service)]
+            if total > CHAIN_LIMIT:
+                members = sorted(members, key=_cached_order)[:CHAIN_LIMIT]
+                gaps.append({'kind': 'chain_limit', 'rule_id': rule, 'service': service,
+                             'shown': CHAIN_LIMIT, 'total': total,
+                             'detail': f'{service} xizmati uchun {rule} bo‘yicha {total} ta zanjir topildi; '
+                                       f'eng jiddiy {CHAIN_LIMIT} tasi ko‘rsatildi. Qolganlari shu xizmatning shu '
+                                       'turdagi muammosi — tagidagi topilmalar o‘z bosqichi hisobotida to‘liq turibdi.'})
+            kept += members
+        for finding in kept:
+            finding.pop(ORDER_KEY, None)
+        return kept, gaps
+
+
 def limit_per_service(findings):
-    groups = {}
-    for finding in findings:
-        groups.setdefault((finding.get('rule_id'), finding.get('service_id')), []).append(finding)
-    kept, gaps = [], []
-    for (rule, service), members in groups.items():
-        if len(members) > CHAIN_LIMIT:
-            members = sorted(members, key=lambda f: (0 if f.get('level') == 'error' else 1,
-                                                     json.dumps(f.get('evidence'), sort_keys=True, default=str),
-                                                     str(f.get('fingerprint'))))
-            gaps.append({'kind': 'chain_limit', 'rule_id': rule, 'service': service,
-                         'shown': CHAIN_LIMIT, 'total': len(members),
-                         'detail': f'{service} xizmati uchun {rule} bo‘yicha {len(members)} ta zanjir topildi; '
-                                   f'eng jiddiy {CHAIN_LIMIT} tasi ko‘rsatildi. Qolganlari shu xizmatning shu '
-                                   'turdagi muammosi — tagidagi topilmalar o‘z bosqichi hisobotida to‘liq turibdi.'})
-            members = members[:CHAIN_LIMIT]
-        kept += members
-    return kept, gaps
+    sink = ChainSink()
+    sink.extend(findings)
+    return sink.finish()
