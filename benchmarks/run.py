@@ -22,7 +22,6 @@ import contextlib
 import json
 import os
 import random
-import re
 import shutil
 import socket
 import string
@@ -123,9 +122,12 @@ def fake_secrets(folder):
     """Realistic-format fake secrets, generated -- never stored in the repository."""
     r = random.Random(7)
     alnum = string.ascii_letters + string.digits
+    planted = []
 
     def s(chars, n):
-        return ''.join(r.choice(chars) for _ in range(n))
+        value = ''.join(r.choice(chars) for _ in range(n))
+        planted.append(value)                       # exactly what was planted, for the leak check
+        return value
     files = {
         'aws.py': f'AWS_ACCESS_KEY_ID = "{"AKIA"}{s("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567", 16)}"\n'
                   f'AWS_SECRET_ACCESS_KEY = "{s(alnum + "/+", 40)}"\n',
@@ -146,27 +148,27 @@ def fake_secrets(folder):
     key = subprocess.run(['openssl', 'genrsa', '2048'], capture_output=True, text=True) if shutil.which('openssl') else None
     if key and key.returncode == 0:
         (folder / 'id_rsa').write_text(key.stdout, encoding='utf-8')
+        planted.extend(line for line in key.stdout.splitlines() if len(line) >= 40 and 'PRIVATE KEY' not in line)
     history_token = 'ghp_' + s(alnum, 36)
-    return history_token
+    return history_token, planted
 
 
-def secret_values(folder, history_token):
-    """Every secret value the corpus holds: the random part of each, at least 12 characters."""
-    found = {history_token}
-    for path in folder.iterdir():
-        if path.is_file() and not path.name.startswith('neg_'):
-            text = path.read_text(encoding='utf-8', errors='replace')
-            if path.name == 'id_rsa':
-                found |= {line for line in text.splitlines() if len(line) >= 40 and 'PRIVATE KEY' not in line}
-            found |= set(re.findall(r'[A-Za-z0-9/+_.-]{16,}', text)) - {'db.internal'}
-    return {value for value in found if len(value) >= 12}
+def secret_values(planted):
+    """The secret values to look for: exactly the random parts fake_secrets planted.
+
+    It used to harvest every 16+ character token from the corpus files, so a token
+    that is not a secret but also appears in a report (a rule id, a path segment)
+    could fail the leak check with no leak. Parts under 12 characters are left out
+    -- too short to tell from chance.
+    """
+    return {value for value in planted if len(value) >= 12}
 
 
 def bench_secrets():
     need(scanners.gitleaks_exe().is_file() and shutil.which('git'), 'Gitleaks yoki git yo‘q')
     root = WORK / 'secrets'
     root.mkdir()
-    history_token = fake_secrets(root)
+    history_token, planted = fake_secrets(root)
     git = ['git', '-C', str(root), '-c', 'user.email=bench@threatchain.invalid', '-c', 'user.name=bench',
            '-c', 'commit.gpgsign=false']
     subprocess.run(['git', 'init', '-q', str(root)], check=True)
@@ -185,7 +187,7 @@ def bench_secrets():
     # Not only the report: every place a value could travel to -- the SARIF and
     # Markdown exports, the finding detail panel, and every file the scan left in
     # the data directory (the run folder, the incremental cache, the board).
-    values = secret_values(root, history_token)
+    values = secret_values(planted)
     from zanjir import findings_index, pipeline
     assessment = {'id': 'bench', 'state': report['state'], 'created_at': report.get('created_at'),
                   'stages': [{'kind': 'code', 'target': 'bench-secrets', 'state': report['state'], 'report': report}],
