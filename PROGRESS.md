@@ -17,18 +17,18 @@ rasmiy 1 343 qoidali paket. PMD, CodeQL, Helm, Kustomize o'rnatilmagan. Branch: 
 `stream.reconfigure(errors='replace')`. Tekshiruv: `python benchmarks/run.py --only fixes > fayl` →
 `PASS fixes: iac: 5 ... 41 → 36; compose: 13 ... 17 → 3`. Benchmark mezoni o'zgartirilmadi.
 
-Commitlar: `e1f0423` (oldingi raundlar ishi), `93f612a` (benchmark stdout).
+Commitlar: `8b49d3c` (oldingi raundlar ishi), `b0789b7` (benchmark stdout).
 
 ## 2026-10-21/22 — 2-bosqich: P0/P1 mantiq, 2.1, 4.3, 2.5, kod-ko'rik
 
 | Ish | Dalil | Commit |
 |---|---|---|
-| Commit qilinmagan beta P0/P1 ishi ko'rib chiqildi va kiritildi; `test_ground_truth` import-tartibi xatosi tuzatildi | `discover` → 1133 OK | `449d8fb` |
-| `board_load.py` benchmark (owasp shakli) tuzatildi | 120k: qurish 7,7 s, sahifa ~490 ms | `84b26f0` |
-| `BETA_READINESS.md` | havola qilingan 78 test qayta ishga tushirildi | `a4b1f42` |
-| 2.1 birinchi skan vaqt bo'linishi (`report['timing']`) | 12 fayl, rasmiy paket: files 0,19 / rules 0,09 / scan 15,38 / other 17,78 / jami 33,44 s | `1070cbd` |
-| Kod-ko'rik (high): zanjir ishonchi ziddiyati, OOM gate, facet indekslari | filtrlangan so'rov 494→219 ms | `9148a25`, `6a92428` |
-| 4.3 provenance, 2.5 inkremental (o'chirilgan fayl) | `discover` → 1139 OK | `d27d7b0` |
+| Commit qilinmagan beta P0/P1 ishi ko'rib chiqildi va kiritildi; `test_ground_truth` import-tartibi xatosi tuzatildi | `discover` → 1133 OK | `f6406d8` |
+| `board_load.py` benchmark (owasp shakli) tuzatildi | 120k: qurish 7,7 s, sahifa ~490 ms | `7eeefe7` |
+| `BETA_READINESS.md` | havola qilingan 78 test qayta ishga tushirildi | `0752922` |
+| 2.1 birinchi skan vaqt bo'linishi (`report['timing']`) | 12 fayl, rasmiy paket: files 0,19 / rules 0,09 / scan 15,38 / other 17,78 / jami 33,44 s | `b3717fb` |
+| Kod-ko'rik (high): zanjir ishonchi ziddiyati, OOM gate, facet indekslari | filtrlangan so'rov 494→219 ms | `debff6b`, `88939a1` |
+| 4.3 provenance, 2.5 inkremental (o'chirilgan fayl) | `discover` → 1139 OK | `e5299d7` |
 
 ## 2026-11-02/03 — 3-bosqich: kamchiliklar ko'rigi va tuzatishlar
 
@@ -38,19 +38,19 @@ yozildi (ko'pchiligi eski kodda yiqilishi tekshirildi). Batafsil: [MUAMMOLAR.md]
 
 | Ish | Dalil | Commit |
 |---|---|---|
-| 2026-10-26 audit ishi kiritildi; **D3 formulasi qaytarildi** (Base ballga Environmental formula qo'llangan edi: e'lon qilingan 9.9 → 10.0) | FIRST v3.1 spec §7.1/§7.3 iqtibosi; 5 ta e'lon qilingan ball testda | `f7132e5` |
-| Hujjatlar kod bilan moslashtirildi | — | `cbaa771` |
-| LP#1 NVD kesh kaliti API kalit bilan ustiga yozilardi (kalitsiz → `TypeError`, dependencies bosqichi `failed`) | 6 test; eski kodda 4 error + 2 fail | `6812766` |
-| LP#5/#6 bosqich abadiy `running`da qolishi; job worker to'liq hisobotni har 2 s da qayta o'qishi | 7 test; eski kodda 7/7 yiqiladi | `ab909fc` |
-| LP#10 IaC: Trivy `--timeout`, o'tkazib yuborilganlar, 64 MB chegara | soxta Trivy bilan execute | `1a6b767` |
-| LP#8 dependencies progress har advisoryda qayta yozish; qulf bosqichni yiqitishi | eski kodda 2/2 yiqiladi | `923c771` |
-| LP#2 repository/K8s o'qilmagan kirishlar → `partial`, gate gap/incomplete | bundled namunalarda 0 bo'shliq | `ecde58a` |
-| LP#4 zanjir korrelyatsiyasi: kesish qurish paytida | 100×5000: 1 156 → 31,7 MB; 50×3000: 8,76 → 3,80 s; 25 seed'da aynan bir xil | `d8681f7` |
-| LP#3 web: Nuclei so'rovlari zaxiralanadi, inventar faqat qolganini sarflaydi | 7 test (haqiqiy Collector) | `270abf9` |
-| LP#7 tuzatish rejasi OSV qayta tekshiruvi ommaviy | 2 000 paket: ≤3 chaqiruv (oldin ≤6 000); 20 seed'da aynan bir xil | `fb7eff7` |
-| LP#12 chegaralar bosqichni yiqitmaydi, `*_limit` gap | 6 test | `ad121ec` |
-| Diff uchun ikkinchi repo yurishi yo'q; O(F²)/O(W²) dedup; workload ID to'qnashuvi | korpusda eski yurish bilan aynan bir xil fayllar | `3b1bea0` |
-| F2 benchmark sir tekshiruvi aynan ekilgan qiymatlar bo'yicha | `benchmarks/run.py --only secrets` → PASS 11/11, 39 qiymat, sizish yo'q | `1486cc5` |
+| 2026-10-26 audit ishi kiritildi; **D3 formulasi qaytarildi** (Base ballga Environmental formula qo'llangan edi: e'lon qilingan 9.9 → 10.0) | FIRST v3.1 spec §7.1/§7.3 iqtibosi; 5 ta e'lon qilingan ball testda | `7e0b29f` |
+| Hujjatlar kod bilan moslashtirildi | — | `4dc5ba8` |
+| LP#1 NVD kesh kaliti API kalit bilan ustiga yozilardi (kalitsiz → `TypeError`, dependencies bosqichi `failed`) | 6 test; eski kodda 4 error + 2 fail | `3821e54` |
+| LP#5/#6 bosqich abadiy `running`da qolishi; job worker to'liq hisobotni har 2 s da qayta o'qishi | 7 test; eski kodda 7/7 yiqiladi | `cb31b92` |
+| LP#10 IaC: Trivy `--timeout`, o'tkazib yuborilganlar, 64 MB chegara | soxta Trivy bilan execute | `5181ed3` |
+| LP#8 dependencies progress har advisoryda qayta yozish; qulf bosqichni yiqitishi | eski kodda 2/2 yiqiladi | `c419729` |
+| LP#2 repository/K8s o'qilmagan kirishlar → `partial`, gate gap/incomplete | bundled namunalarda 0 bo'shliq | `efa7424` |
+| LP#4 zanjir korrelyatsiyasi: kesish qurish paytida | 100×5000: 1 156 → 31,7 MB; 50×3000: 8,76 → 3,80 s; 25 seed'da aynan bir xil | `ef65efe` |
+| LP#3 web: Nuclei so'rovlari zaxiralanadi, inventar faqat qolganini sarflaydi | 7 test (haqiqiy Collector) | `a819a89` |
+| LP#7 tuzatish rejasi OSV qayta tekshiruvi ommaviy | 2 000 paket: ≤3 chaqiruv (oldin ≤6 000); 20 seed'da aynan bir xil | `65618ef` |
+| LP#12 chegaralar bosqichni yiqitmaydi, `*_limit` gap | 6 test | `84d3df2` |
+| Diff uchun ikkinchi repo yurishi yo'q; O(F²)/O(W²) dedup; workload ID to'qnashuvi | korpusda eski yurish bilan aynan bir xil fayllar | `adadc0b` |
+| F2 benchmark sir tekshiruvi aynan ekilgan qiymatlar bo'yicha | `benchmarks/run.py --only secrets` → PASS 11/11, 39 qiymat, sizish yo'q | `d6ab602` |
 
 To'liq to'plam: `python -m unittest discover -s tests` → **1213 test, OK (skipped=2)** (255 s).
 
