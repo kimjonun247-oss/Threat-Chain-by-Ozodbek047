@@ -472,6 +472,12 @@ def snapshot(source,destination,progress=None,cancel=None,cache=None,tools=(),co
     and the snapshot hash describe the whole project either way; `copied` says
     which files are actually in `destination`.
     """
+    # The root is resolved once, as inventory.collect does: containment below is
+    # checked against resolved directories, so an unresolved root -- a Windows 8.3
+    # short name (RUNNER~1), macOS /var -> /private/var, a junction or symlinked
+    # project folder -- made every directory look outside it and failed the scan.
+    # Links INSIDE the tree are still never followed.
+    source=Path(source).resolve()
     expected=check_size(source,progress)
     destination.mkdir()
     entries=[]
