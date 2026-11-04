@@ -17,6 +17,9 @@ RESULT_DIRS = ('scanner-runs', 'dependency-runs', 'image-runs', 'repository-runs
 # Triage decisions reference findings by fingerprint; once the reports are gone
 # the decisions are orphaned, so they are cleared with them.
 DECISION_DIRS = ('profiles/triage',)
+# What earlier scans remembered about each project's files. A clean board
+# starts with clean scans, so the next one reads everything again.
+CACHE_DIRS = ('scan-cache',)
 
 
 def _empty_dir(path):
@@ -42,7 +45,7 @@ def _empty_dir(path):
 def clear_results():
     """Remove all scan reports and triage decisions; return a per-directory count."""
     cleared = {}
-    for name in RESULT_DIRS + DECISION_DIRS:
+    for name in RESULT_DIRS + DECISION_DIRS + CACHE_DIRS:
         cleared[name] = _empty_dir(DATA / name)
     findings_index.invalidate()
     return {'cleared': cleared, 'total': sum(cleared.values())}

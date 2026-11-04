@@ -55,6 +55,21 @@ MAX_CRAWL_PAGES = 16
 MAX_CRAWL_DEPTH = 2
 TIMEOUT = 8
 DEADLINE = 180
+
+
+def scope_text():
+    """The authorized-scope line written into every web-scan report.
+
+    Derived from the enforced limits so the promise can never understate what
+    the collector is coded to do. The report is the record shown to the scanned
+    party to document authorized scope, so a hard-coded number the scanner may
+    exceed is a provenance defect. Audit 2026-10-26 B3.
+    """
+    rate = int(round(1 / DEFAULT_RATE_DELAY)) if DEFAULT_RATE_DELAY else 0
+    return ('Exact registered origin and base path; GET, {rps} req/s, up to {total} requests '
+            '({maxr} collection + {conf} confirmation), {kib} KiB/response, {secs} s.').format(
+        rps=rate, total=MAX_REQUESTS + CONFIRM_BUDGET, maxr=MAX_REQUESTS,
+        conf=CONFIRM_BUDGET, kib=MAX_BODY // 1024, secs=DEADLINE)
 CORS_PROBE_ORIGIN = 'https://zanjir-cors-probe.invalid'
 STOP_MESSAGES = {
     'rate_limited': 'Nishon so‘rovlarni cheklashni so‘radi (429). Nishonni himoya qilish uchun skan to‘xtatildi; '
@@ -355,6 +370,10 @@ class Collector:
         self.evidence = []
         self.errors = []
         self.requests = 0
+        # Collection may use MAX_REQUESTS; execute() raises this by CONFIRM_BUDGET
+        # for the confirmation pass, which the documented scope promises on top
+        # (scope_text: "48 collection + 10 confirmation"). It used to share the 48.
+        self.limit = MAX_REQUESTS
         self.blocked = 0
         self.wire = None
         self.connections = 0
@@ -457,7 +476,7 @@ class Collector:
             if self.window_closes is not None and not self.cancel.is_set() and \
                     datetime.datetime.now(datetime.timezone.utc) >= self.window_closes:
                 self._stop('window_closed', path)
-            if self.cancel.is_set() or time.monotonic() - self.started > DEADLINE or self.requests >= MAX_REQUESTS:
+            if self.cancel.is_set() or time.monotonic() - self.started > DEADLINE or self.requests >= self.limit:
                 raise ValueError('Jarayon to‘xtatilgan yoki so‘rov/vaqt chegarasiga yetdi.')
             if self.cancel.wait(max(0, self.next_request - time.monotonic())):
                 raise ValueError('Jarayon bekor qilingan.')
@@ -1097,9 +1116,16 @@ def execute(profile, rid, event):
         # Documented API surface: live spec URLs plus any spec in the linked
         # source repo, then one unauthenticated GET per static endpoint. GET only,
         # same bounded collector, no parameter guessing (see api_inventory).
+        # The API inventory is supplementary and may only spend what the core checks
+        # do not need: every Nuclei template path plus the missing-path baseline are
+        # reserved first. It used to spend the shared budget on spec discovery and
+        # probes, so on a large site Nuclei (.env, .git, SQL dumps) never ran.
+        reserve = len(paths) + 1
+        ceiling = collector.limit if collector.request_budget is None else min(collector.limit, collector.request_budget)
         api_findings, report['api_inventory'] = api_inventory.inventory_findings(
             collector, finding, source_root=source_root_for(profile),
-            authenticated=bool(profile.get('authenticated')))
+            authenticated=bool(profile.get('authenticated')),
+            budget=max(0, ceiling - collector.requests - reserve))
         report['findings'] += api_findings
         missing_status, _, missing_body = collector.fetch(missing)
         report.update(count=len(report['findings']), progress='Nuclei tanlangan GET qoidalarini bajarmoqda.')
@@ -1108,11 +1134,12 @@ def execute(profile, rid, event):
         report['findings'] += findings
         report['tool'] = tool
         report['progress'] = 'Topilmalar ikkinchi mustaqil GET bilan tasdiqlanmoqda.'
+        collector.limit = MAX_REQUESTS + CONFIRM_BUDGET
         confirmation = confirm_findings(collector, report['findings'])
         report['dismissed_findings'] = confirmation.pop('dismissed_findings')
         report['confirmation_summary'] = confirmation
         report['state'] = 'completed'
-    except (OSError, ValueError, KeyError, TypeError, http.client.HTTPException, subprocess.SubprocessError) as error:
+    except Exception as error:  # noqa: BLE001 -- like scanners/iac/images/dependencies: any failure ends the scan as failed/partial; a narrower tuple left an unexpected error's report at 'running' forever, and the pipeline waiting on it with its lock held
         stopped = collector.stopped if collector else None
         report['state'] = ('partial' if report['findings'] else 'failed') if stopped else \
             'cancelled' if event.is_set() else 'partial' if report['findings'] else 'failed'
@@ -1237,7 +1264,7 @@ def start(target, background=True):
         repo_store.write_json(RUNS / rid / 'report.json', {'id': rid, 'target': target, 'url': profile['url'],
                              'authorization': {'owner': profile['owner'], 'recorded_at': profile['authorized_at']},
                              'created_at': now(), 'state': 'queued', 'count': 0, 'findings': [], 'limits': LIMITS,
-                             'scope': 'Exact registered origin and base path; GET, 2 req/s, 32 requests, 64 KiB/response, 180 s.',
+                             'scope': scope_text(),
                              'permission': allowed})
         CANCEL[rid] = event
         if background:

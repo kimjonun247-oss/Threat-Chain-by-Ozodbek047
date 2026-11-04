@@ -149,6 +149,10 @@ def write_json(path,value):
     # Keep the run index current without re-walking the folder (run_index.written).
     from . import run_index
     run_index.written(path,value)
+    if path.name=='report.json' and isinstance(value,dict) and 'state' in value and 'id' in value:
+        run_index.write_status(path.parent,value)
+        run_index.write_view(path.parent,value)
+        run_index.write_compare(path.parent,value)
 
 
 def read_json(path):

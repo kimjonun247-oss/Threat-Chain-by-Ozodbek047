@@ -187,14 +187,48 @@ def decide(scope, fingerprint, status, owner, note, bound_to=None, stage='', tar
         event(scope, {'scope': scope, 'fingerprint': fingerprint, **record})
         data['decisions'][fingerprint] = record
         write(scope, data)
-    # The findings board caches its flattened view for a few seconds; a decision
-    # taken from that screen has to show on it immediately.
+    # A decision taken from the board has to show on it immediately; its rows
+    # are updated in place, no report is read again.
     try:
         from . import findings_index
-        findings_index.invalidate()
+        findings_index.triage_changed(scope, [fingerprint])
     except ImportError:
         pass
     return record
+
+
+def decide_many(scope, fingerprints, status, owner, note, bound_to=None, stage='', target=''):
+    """The same decision for several findings, stored with one read and one write.
+
+    decide() rewrites the whole state file per finding. Closing two hundred
+    findings of a large project that way rewrote an 8.7 MB file two hundred
+    times -- 110 s measured, during which the request simply hung. Every finding
+    still gets its own audit event.
+    """
+    if status not in STATUSES:
+        raise ValueError('Triage holati noto‘g‘ri: ' + ', '.join(STATUSES))
+    wanted = list(dict.fromkeys(fingerprints))
+    if not wanted or not all(re.fullmatch(r'[0-9a-f]{24}', str(value or '')) for value in wanted):
+        raise ValueError('Topilma identifikatori noto‘g‘ri.')
+    if not isinstance(owner, str) or not 1 <= len(owner.strip()) <= 120:
+        raise ValueError('Qaror uchun mas’ul kerak (120 belgigacha).')
+    if not isinstance(note, str) or not 1 <= len(note.strip()) <= 1000:
+        raise ValueError('Qaror uchun asos kerak (1000 belgigacha).')
+    record = {'status': status, 'owner': owner.strip(), 'note': note.strip(),
+              'updated_at': now().isoformat(), 'bound_to': bound_to or None,
+              'stage': str(stage or '')[:40], 'target': str(target or '')[:120]}
+    with LOCK:
+        data = read(scope)
+        for fingerprint in wanted:
+            event(scope, {'scope': scope, 'fingerprint': fingerprint, **record})
+            data['decisions'][fingerprint] = dict(record)
+        write(scope, data)
+    try:
+        from . import findings_index
+        findings_index.triage_changed(scope, wanted)
+    except ImportError:
+        pass
+    return {fingerprint: dict(record) for fingerprint in wanted}
 
 
 def observe(scope, findings, at=None):
@@ -355,6 +389,9 @@ def locate(stage, report_id):
     return report, scope_for(stage, target), target
 
 
+BULK_LIMIT = 200
+
+
 def apply(payload):
     """One or many decisions from one report. Returns the stored records."""
     allowed = {'stage', 'report_id', 'status', 'owner', 'note'}
@@ -365,8 +402,8 @@ def apply(payload):
     if (single is None) == (many is None):
         raise ValueError('Aynan bittasi kerak: fingerprint yoki fingerprints.')
     wanted = [single] if single is not None else many
-    if not isinstance(wanted, list) or not 1 <= len(wanted) <= 200 or not all(isinstance(v, str) for v in wanted):
-        raise ValueError('fingerprints — 1 dan 200 gacha satrdan iborat ro‘yxat bo‘lsin.')
+    if not isinstance(wanted, list) or not 1 <= len(wanted) <= BULK_LIMIT or not all(isinstance(v, str) for v in wanted):
+        raise ValueError(f'fingerprints — 1 dan {BULK_LIMIT} gacha satrdan iborat ro‘yxat bo‘lsin.')
     report, scope, target = locate(payload['stage'], payload['report_id'])
     present = {f.get('fingerprint') for f in report.get('findings') or []}
     missing = sorted(set(wanted) - present)
@@ -375,10 +412,8 @@ def apply(payload):
     # Repository reviews have always been bound to one source snapshot, and that
     # is kept: a decision about a file does not carry over to a changed file.
     bound = report.get('input_sha256') if payload['stage'] == 'repository' else None
-    records = {}
-    for fingerprint in dict.fromkeys(wanted):
-        records[fingerprint] = decide(scope, fingerprint, payload['status'], payload['owner'],
-                                      payload['note'], bound, payload['stage'], target)
+    records = decide_many(scope, wanted, payload['status'], payload['owner'],
+                          payload['note'], bound, payload['stage'], target)
     return {'scope': scope, 'stage': payload['stage'], 'target': target,
             'report_id': report.get('id'), 'decisions': records}
 

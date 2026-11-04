@@ -304,6 +304,242 @@ taint tahlili doirasidan tashqarida; sayoz (depth 1) masofaviy klonda git tarixi
 
 ---
 
+## G. 2026-10-09 katta loyiha auditi — topilgan va tuzatilgan
+
+Kod katta repozitoriy nuqtai nazaridan o'qib chiqildi; har band kichik proba bilan tasdiqlangan va
+`tests/test_large_projects.py` da regressiya testiga ega. Bu mashinada `.tools/` o'rnatilmagan —
+haqiqiy Semgrep/Trivy yurishi **bajarilmadi**.
+
+| # | Muammo | Tuzatish |
+|---|---|---|
+| G1 | Bitta faylda bir xil matnli ikki qator (yoki bitta IaC faylidagi bir necha resurs) bitta identifikator olardi: ikkinchi zaif qator baseline uchun "yangi emas" edi, bitta triage qarori ikkalasini yopardi | `findings.separate()`: ikkinchi va keyingi takrorlar o'z tartib raqami bilan xeshlanadi. Birinchisi aynan avvalgidek — mavjud identifikatorlar o'zgarmaydi |
+| G2 | RP-010 (`error`): `proxy_pass http://backend$request_uri` SSRF deb belgilanardi | Faqat manzilning host qismidagi mijoz o'zgaruvchisi sanaladi |
+| G3 | RP-004 (`error`): `proxy_set_header Authorization $http_authorization` (oddiy uzatish) ishonch sarlavhasi edi | Faqat gateway o'zi hisoblagan qiymat (`$remote_user`, literal, boshqa nomdagi sarlavha) sanaladi; uzatish va bo'shatish — yo'q |
+| G4 | RP-005 image nomidagi istalgan qism bo'yicha mos kelardi (`postgres-exporter`, `kafka-ui`, `chromatic`, `netcdf`); identifikator yetib boradigan xizmatlar ro'yxatiga bog'liq edi | Nom tokenlari bo'yicha, yordamchi vositalar istisno; identifikator faqat ma'lumotlar bazasining o'zi. **Bir martalik oqibat:** mavjud RP-005 topilmalari keyingi skanda yangi identifikator oladi |
+| G5 | YAML anchor/merge (`<<: *defaults`) ishlatgan Compose fayli butunlay rad etilardi | O'qiladi; tugun soni chegarasi (30 000) va chuqurlik (50) alias bombasini to'xtatadi; takror kalit hamon xato |
+| G6 | `build: .` bo'lgan xizmat uchun SX-001/004/006/007 hech qachon ishlamasdi | `chains.inside()` |
+| G7 | Test fixture'dagi soxta sir ochiq xizmat bilan zanjirga ulanardi | Yangi `zanjir/pathclass.py`: har kod topilmasida `path_class`; zanjirlar faqat ishlab chiqarish kodiga quriladi, qolganlari `outside_shipped_code` bo'shlig'i sifatida sanaladi |
+| G8 | Umumiy hisobotning Markdown eksporti SX-001 dan boshqa zanjir bo'lsa `KeyError` bilan yiqilardi | Barcha zanjirlar uchun bitta jadval |
+| G9 | Foydalanuvchi loyihasidagi `profiles/`, `runs/`, `pilot/` papkalari jimgina skanerlanmasdi | Ilovaning o'z papkalari faqat ilova papkasining bevosita ichida o'tkazib yuboriladi (`engine.skip_directory`) |
+| G10 | Lokal va rasmiy qoida bitta qatorda ikki topilma berardi | Bir vosita ichida ham, **CWE umumiy bo'lsa**, `duplicate_of` bilan bog'lanadi |
+| G11 | Gate test/hujjat/namunadagi har bir mos kelishda to'xtardi | Ixtiyoriy `ci_gate.py --prod-only`; standart xulq o'zgarmagan |
+| G12 | Faqat CVSS vektori bor advisory'lar (Go, RustSec, PyPA) `UNKNOWN` bo'lib gate'dan chiqib ketardi | CVSS v3.x bazaviy bali rasmiy formula bo'yicha hisoblanadi; `database_specific.severity` bo'lsa u ustun |
+| G13 | Hajm chegarasi 10× ko'tarilgan, vaqt chegaralari esa 50 MB uchun yozilgan holicha qolgan | Vaqt chegarasi va Semgrep ishchilari soni snapshot hajmiga mutanosib (1–16×); 50 MB gacha hech narsa o'zgarmaydi |
+| G14 | To'rtta lokal qoida ortiqcha signal berardi | `flask-debug` (`asyncio.run` istisno), `yaml-unsafe-load` (ruamel `YAML()` istisno), Python SQL/buyruq injeksiyasi (`int()`, `float()`, `shlex.quote()` sanitizer). **Semgrep bilan tekshirilmagan** — CI'dagi `sast` benchmarki tasdiqlashi kerak |
+
+**Ochiq qolganlar** keyin o'lchandi va bir qismi tuzatildi — joriy ro'yxat H bo'limi oxirida.
+
+---
+
+## H. 2026-10-09 yuklama sinovi — o'lchangan, tuzatilgan, qolgan
+
+Haqiqiy kod (Python `Lib`: 26 499 fayl, 260 MB, Semgrep 1.174, faqat 29 lokal qoida) va sun'iy
+50 000 topilmali hisobotlar bilan o'lchandi. Mashina: Windows 11, 12 yadro, 7,3 GB RAM (~1 GB bo'sh).
+Regressiya testlari: `tests/test_load_findings.py`.
+
+**Sinalmagan:** rasmiy 1 300 qoidali paket, Gitleaks (tizimdagi 8.24.3 ≠ kutilgan 8.30.1), Trivy,
+Nuclei, CodeQL, PMD, haqiqiy OSV tarmog'i, Linux.
+
+| # | O'lchangan muammo | Tuzatish | Keyin |
+|---|---|---|---|
+| H1 | Hajm chegarasi faqat nusxalash paytida bilinardi; nusxalash paytida progress yo'q | `scanners.check_size()` oldindan sanaydi (nom+hajm, chegaraga yaqin bo'lsa 4 KB dan o'qib); har 500 faylda progress | Rad etishdan oldin 0 fayl nusxalanadi |
+| H2 | Windows: manbadagi 214 belgili yo'l nusxada 309 bo'lib, butun skan `FileNotFoundError` bilan yiqilardi | Bunday fayl o'tkazib yuboriladi, sanaladi va nomi bilan ko'rsatiladi (`coverage.path_too_long`); o'qilmagan fayl ham skanni yiqitmaydi | Skan davom etadi |
+| H3 | UTF-16 fayllar "binar" deb hech qachon skanerlanmasdi | Snapshot'ga UTF-8 qilib yoziladi (`transcoded_utf16`) | — |
+| H4 | 50 000 natijani normallashtirish 41,5 s | Har fayl bir marta o'qiladi; yo'l tekshiruvi fayl bo'yicha eslab qolinadi | 13,8 s |
+| H5 | Kod skanini bekor qilib bo'lmasdi | `scanners.cancel()`, `POST /api/scanners/cancel`; nusxalash paytida va vositalar orasida to'xtaydi (ishlab turgan vosita o'z vaqt chegarasida tugaydi) | holat `cancelled` |
+| H6 | Mos kelmagan vosita versiyasi faqat "Tekshiruv tugallanmadi" derdi | `version_note`: o'rnatilgan va kutilgan versiya, o'rnatish buyrug'i | — |
+| H7 | 7 GB mashinada 6 ta Semgrep ishchisi tizimni qotirardi | Ishchilar soni bo'sh xotiraga qarab cheklanadi (`engine.available_memory_mb`) | — |
+| H8 | Holat so'rovi (`?status=1`) butun hisobotni o'qirdi: 2,06 s (46 MB) | Har hisobot yonida kichik `status.json`; quvur ham shuni o'qiydi | 0,07 s |
+| H9 | O'ldirilgan skan abadiy `running` qolardi, manba nusxasi diskda qolardi | `zanjir/recovery.py`: server ishga tushganda egasi (pid) o'lgan hisobot `failed/Interrupted` qilinadi, `work-*` o'chiriladi | — |
+| H10 | 8 ta bir vaqtdagi `/api/findings`: 102 s, server 1,1 GB (har biri jadvalni qayta qurardi) | Bitta quruvchi; hech narsa o'zgarmagan bo'lsa kesh 4 s dan keyin ham saqlanadi | 6,2 s, 499 MB |
+| H11 | 200 topilmani birdan triage qilish: 110 s | `triage.decide_many()` — bitta o'qish, bitta yozish, har topilmaga o'z audit yozuvi | 3,5 s |
+| H12 | 40 xizmat × 400 paket (1 200 noyob) rad etilardi; 2 001 manifest rad etilardi | Chegara **noyob** paket bo'yicha (50 000); nusxalar 500 000; manifestlar 20 000 | o'tadi |
+| H13 | 4 000 zaif paketdan 2 500 tasi hisobotga tushmasdi (1 500 chegarasi) | Barcha advisory olinadi (chegara 50 000, 8 oqim, 24 soat kesh) | 0 tushib qolgan |
+| H14 | 6/26 499 fayl o'qilmagani uchun skan `partial` → baseline va SX zanjirlari ishlamasdi | `baseline.gap_only()`: faqat qamrov bo'shlig'i bo'lgan `partial` skan asos bo'la oladi (ogohlantirish bilan) va zanjir unga tayana oladi. Vosita yiqilgan skan — hamon yo'q | — |
+| H15 | `build: .` + 40 xizmat + 3 000 topilma = 60 000 zanjir (81 MB) | Har (qoida, xizmat) uchun 50 ta, eng jiddiylari, barqaror tartibda; qolgani `chain_limit` bo'shlig'i | 2 000 |
+| H16 | Compose: 201 xizmat rad etilardi; port diapazoni topilma bermasdi; `include:` o'qilmasdi | 2 000 xizmat; `8000-8010:8000-8010` o'qiladi; `include:` fayllari o'qiladi (dalil o'sha faylga ishora qiladi); `build:` konteksti repo ildiziga keltiriladi | 1 001 xizmat: 7,7 s |
+| H17 | `$REQ.GET` manbasi `Command.GET` ga mos kelib, Selenium'ning `self.execute(Command.GET, …)` ini SQL injeksiyasi derdi (gate'ni to'xtatgan 2 topilmadan 1 tasi) | Manba faqat lug'at sifatida o'qilganda: `.GET.get(...)`, `.GET[...]` | haqiqiy Semgrep bilan tekshirildi |
+
+**Tuzatilmaganlar** keyin qurildi — I bo'limiga qarang; hali ochiq qolgani o'sha bo'lim oxirida.
+
+---
+
+## I. 2026-10-10 katta loyihalar uchun uchta arxitektura o'zgarishi
+
+Regressiya testlari: `tests/test_architecture.py`, `tests/test_load_findings.py`. O'lchovlar o'sha
+mashinada (Windows 11, 12 yadro, 7,3 GB RAM), Semgrep 1.174, faqat lokal qoidalar bilan.
+
+### I1. Inkremental skan (`zanjir/scan_cache.py`)
+
+O'lchov shuni ko'rsatdi: sekinlik nusxalashda emas, har faylni **birinchi marta ochishda** (93 fayl/s;
+tizim keshidagi fayl — 1 000 fayl/s; hardlink bilan nusxalash orasidagi farq ahamiyatsiz). Shuning uchun
+yechim — o'zgarmagan faylni umuman ochmaslik va qayta skanerlamaslik.
+
+- Har loyiha uchun `scan-cache/<nishon>.sqlite3`: fayl → hajm, mtime, SHA-256; va (qoidalar+vosita
+  versiyasi, vosita, fayl) → o'sha mazmun uchun topilmalar va o'qilmagan-fayl xatolari.
+- Hajmi va mtime o'zgarmagan fayl ochilmaydi. Mazmuni avval skanerlangan fayl skanerga berilmaydi.
+- Qoida fayli yoki vosita versiyasi o'zgarsa — hech narsa mos kelmaydi, hammasi qayta skanerlanadi
+  (sinovda aynan shunday bo'ldi: qoidani tahrirlaganimdan keyin kesh o'zini bekor qildi).
+- Har vosita o'z ehtiyoji bo'yicha: yiqilgan vosita (masalan, mos kelmagan Gitleaks) hamma faylni
+  qayta so'raydi, lekin Semgrep'ni qayta ishlatmaydi.
+- To'liq skan: `scan_code.py --full` yoki `THREATCHAIN_FULL_SCAN=1`. CodeQL yoqilgan bo'lsa manba
+  har doim to'liq nusxalanadi (u fayllararo tahlil qiladi).
+- Hisobotda `coverage.incremental`: nechta fayl skanerlandi, nechta oldingi skandan olindi.
+
+**Chegarasi (git indeksi bilan bir xil):** mazmuni o'zgarib, hajmi va mtime o'zgarmagan fayl ko'rinmaydi.
+
+| | Birinchi skan | O'zgarishsiz qayta skan | 1 fayl o'zgargan |
+|---|---|---|---|
+| stdlib (2 305 fayl) | 37 s | **7 s** | 14 s |
+| To'liq `Lib` (26 503 fayl) | 664 s | **49 s** | — |
+
+Inkremental natija to'liq skan natijasi bilan aynan bir xil (fingerprint'lar va snapshot xeshi) —
+bu testda ham, haqiqiy kodda ham tekshirildi.
+
+### I2. Topilmalar jadvali SQLite'da (`zanjir/findings_store.py`)
+
+- Qatorlar diskdagi jadvalda; qidiruv, saralash, sahifalash va faset sonlari — SQL so'rovi.
+- Har (bosqich, nishon) qaysi hisobotdan qurilganini eslaydi: yangi skan faqat o'sha nishon qatorlarini almashtiradi.
+- Triage qarori qatorlarni joyida yangilaydi, hisobot qayta o'qilmaydi.
+- Server jadvalni `findings-board/` da saqlaydi; qayta ishga tushganda faqat nima o'zgarganini tekshiradi.
+
+| 150 000 qator | Oldin (xotirada) | Keyin |
+|---|---|---|
+| Server xotirasi | 499 MB (cho'qqi 1,1 GB) | **65 MB** |
+| Filtrlangan qidiruv | 1,15 s | 0,6 s (matn bilan 1,1 s) |
+| Topilma tafsiloti | 2,4 s | 0,01 s |
+| 8 ta parallel so'rov | 102 s → 6,2 s (H10) | 6,3 s |
+| Birinchi qurish | 10,8 s | **18–21 s (sekinroq)** |
+| Server qayta ishga tushgandan keyin | 10,8 s | 2,0 s |
+
+Birinchi qurish sekinroq — bu to'lov. U bir marta, bo'sh o'rnatmada to'lanadi; keyin faqat o'zgargan
+nishon qayta quriladi (50 000 topilma uchun ~7 s).
+
+### I3. Katta hisobotlar
+
+- **Hisobot sahifasi:** 2 000 dan ko'p topilmali hisobot yonida `view.json` — eng jiddiy 2 000 tasi va
+  haqiqiy son. Sahifa shuni oladi va `message` da nechta ko'rsatilganini aytadi.
+  50 000 topilma: 55 MB / 3,9 s → **1,9 MB / 0,09 s**. Yuklab olish va eksport — hamon to'liq hisobot.
+- **Sahifalash:** har qanday hisobot URL'ida `?offset=&limit=` (ko'pi bilan 1 000).
+- **Umumiy hisobot** bosqich hisobotlarini nusxalamaydi, ID bilan ko'rsatadi; o'qilganda qayta yig'iladi
+  (iste'molchilar uchun shakl o'zgarmagan). 54 MB → 1 KB dan kam. Eski hisobotlar avvalgidek ochiladi.
+- **SARIF:** `ci_gate.py --sarif-max-results N` — eng jiddiylari qoladi, haqiqiy son run xossalarida.
+
+### I4. Qolgan kamchiliklar
+
+| Muammo | Tuzatish |
+|---|---|
+| Bekor qilish faqat vositalar orasida ishlardi | `run_tool()`: ishlab turgan vosita va uning bolalari o'ldiriladi; chiqish fayllarga yoziladi (xotiraga emas) |
+| Bitta global qulf | `ScanSlots`: turli loyihalar `max_parallel_scans` gacha parallel (standart 1 — xulq o'zgarmagan); bitta loyiha ikki marta emas |
+| Compose `extends` | Yechiladi (shu fayl va boshqa fayl), Compose birlashtirish qoidalari bilan; yechilmagani `unknowns` da |
+| CodeQL qat'iy 2 GB / 2 oqim | Bo'sh xotiraning yarmi (2–16 GB), yadrolarning yarmi. **Sinalmagan** — CodeQL o'rnatilmagan |
+| `eval("literal")`, `SET`/`PRAGMA` shovqini | Ikkala qoida toraytirildi; haqiqiy Semgrep bilan tekshirildi. To'liq daraxtda 502 → 468 topilma |
+
+### I5. 2026-10-11 — qolgan ochiq bandlar
+
+| Band | Nima qilindi |
+|---|---|
+| Interfeysda bekor qilish tugmasi | Kod ko'rinishida "Bekor qilish" tugmasi va server yuborayotgan jonli progress matni. `npm run all` (TypeScript strict + ESLint + build) va `npm run check` o'tdi; brauzerda sahifa xatosiz ochildi |
+| Kubernetes | `zanjir/kubernetes.py`: manifest papkasi (yoki fayli) `compose` maydonida ko'rsatilsa, Deployment/StatefulSet/DaemonSet/Job/CronJob/Pod, Service, Ingress va NetworkPolicy o'qiladi. Hisobot Compose hisoboti bilan bir xil shaklda, shuning uchun image bog'lash va SX zanjirlari o'zgarishsiz ishlaydi. RP-001/005/006/007/008 Kubernetes shartlari bilan. Testlar: `tests/test_kubernetes.py` |
+| Compose override | `docker-compose.override.yml` / `compose.override.yaml` standart nomli fayl yonida bo'lsa, Compose kabi avtomatik birlashtiriladi; hisobotda `profile.overrides` |
+| Boshqa bosqichlarda parallel skan | Kutubxona (CVE) bosqichi ham loyiha bo'yicha slotlarga o'tdi. **Image, IaC va web ataylab bittadan qoldi:** Trivy umumiy kesh bazasini qulflaydi (parallel ishga tushirish xato beradi), web esa nishonga bir vaqtda bitta so'rov qoidasiga bog'liq |
+| Ikki hisobotni solishtirish | Katta hisobot yonida `compare.json` (faqat identifikator va qisqa tavsif); solishtirish shuni o'qiydi. Natija to'liq hisobotdan olingan bilan bir xil (testda tekshirilgan) |
+
+**Kubernetes chegaralari:** fayllar yozilganidek o'qiladi. Helm shablonlari va Kustomize overlay'lari render
+qilinmaydi (`{{` bo'lgan fayl "o'qilmadi" deb ko'rsatiladi), klasterga so'rov yuborilmaydi, `matchExpressions`
+li NetworkPolicy himoya deb sanalmaydi, ko'p konteynerli pod'da image bog'lanishi birinchi konteyner bo'yicha.
+Manba kodi bilan bog'lanish yo'q (`build_context` yo'q), shuning uchun SX-001/004/006/007 Kubernetes'da ishlamaydi —
+faqat image'ga tayanadigan SX-002/003/005.
+
+Hali ochiq qolganlar J bo'limida.
+
+---
+
+## J. 2026-10-13 haqiqiy vositalar bilan sinov
+
+`setup_all.py` bilan o'rnatildi: Semgrep 1.177.0, Gitleaks 8.30.1, Trivy 0.74.0, Nuclei 3.11.1 va rasmiy
+1 343 qoidali paket. PMD o'rnatilmadi (Java yo'q). Mashina: Windows 11, 12 yadro, 7,3 GB RAM.
+
+**O'tdi:** barcha benchmarklar (oflayn: SAST 30/30, sirlar 11/11, IaC, Compose, tuzatishlar, web, ta'sir, gate;
+onlayn: lockfile'lar, JVM/.NET, image — Trivy'ning o'zi bilan 85 = 85, SBOM mos), `verify_platform.py` 9/9,
+1 074 unit test (ketma-ket 3 marta).
+
+| # | Topilgan muammo | Tuzatish |
+|---|---|---|
+| J1 | Rasmiy paket bilan 26 503 faylni bitta yurishda skanerlash 55 daqiqada tugamadi va **hech narsa saqlamadi** | Bo'laklab skanerlash: har bo'lak natijasi darhol keshga yoziladi; bekor qilingan yoki uzilgan skan qolgan joyidan davom etadi |
+| J2 | Bo'lakli skanda 4 000 faylli bo'lakka qat'iy 15 daqiqa berilgan; kattaroq bo'laklar sig'madi, ikkitasi ketma-ket tugamadi va 3 351 fayl skanerlanmadi | Vaqt chegarasi tugagan bo'laklarning haqiqiy tezligidan o'rganiladi (3 × kutilgan, ko'pi bilan 4 soat); vaqtga sig'magan bo'lak ikkiga bo'linib qayta uriniladi (4 marta) — sekin fayl faqat o'zini to'xtatadi |
+| J3 | **Qayta skan keshdagi 23 152 natijani yo'qotdi:** faqat avval vaqtga sig'magan fayllar qayta urinilgan, ular yana sig'magach Semgrep `failed` deb belgilanib, keshdagi topilmalar hisobotga tushmagan (1 895 → 0) | Vosita faqat yangi ish ham, kesh ham bo'sh bo'lsagina `failed`; aks holda kesh natijalari qoladi va holat `partial`. Regressiya testi eski xulq bilan yiqilishi tekshirildi |
+| J4 | Rad etilgan POST'da Windows ulanishni javob yetib bormasdan uzishi mumkin edi (testlar to'plamida tasodifiy yiqilish) | Kichik o'qilmagan tana (≤ 64 KB) javobdan oldin o'qib tashlanadi. Shundan keyin to'plam 3/3 toza (oldin 3 dan 2 tasida yiqilgan) — sababi shu ekani ehtimoliy, isbotlanmagan |
+| J5 | `verify_platform.py` global Semgrep versiyasini ko'rsatardi (1.174.0, o'rnatilgani 1.177.0); skanning o'zi to'g'ri versiyada ishlagan | Tekshiruv skan bilan bir xil PATH bilan ishga tushiradi |
+| J6 | SQLAlchemy ifodasi (`select(...).where(col == request.args[...])`) SQL injeksiyasi deb belgilanardi | `.where/.filter/.filter_by/.values/.bindparams` sanitizer; haqiqiy Semgrep bilan tekshirildi |
+| J7 | JS `client.query({query, variables: req.body})` (GraphQL) SQL injeksiyasi deb belgilanardi | Obyekt argumenti chiqarildi |
+| J8 | PHP'da WordPress/Laravel ekranlash funksiyalari sanitizer emas edi | `esc_html/esc_attr/esc_url/esc_js/wp_kses/e/json_encode/urlencode/absint`, SQL uchun `$wpdb->prepare/esc_sql/(float)` |
+| J9 | Gitleaks `generic-api-key`: real daraxtda 66 tadan 35 tasi konstanta nomi, `.pyi` tur izohi yoki vaqt zonasi edi | Faqat shu qoida uchun, faqat shu uch shaklga allowlist (66 → 31). Olib tashlanganlarning hammasi ko'rib chiqildi; test real kalit shakllari o'tib ketmasligini tekshiradi. (Hujjatdagi AWS namuna kalitlarini Gitleaks o'zi allaqachon o'tkazib yuboradi — bunga qoida qo'shilmadi) |
+| J10 | Dev bog'liqliklar va tuzatishi yo'q CVE'lar gate'ni to'xtatardi | `--prod-only` endi faqat development deb e'lon qilingan kutubxonalarni ham chiqaradi; yangi `--fixable-only`. Standart xulq o'zgarmagan |
+
+**Haqiqiy o'lchovlar (rasmiy 1 343 qoidali paket bilan):**
+
+| | Birinchi skan | O'zgarishsiz qayta skan |
+|---|---|---|
+| stdlib, 2 305 fayl | 447 s | **30,6 s**, natija aynan bir xil (312) |
+| To'liq `Lib`, 26 503 fayl (J2 dan oldin) | 2 soat 44 daqiqa, 23 152 fayl skanerlandi, 2 034 topilma | J3 xatosi tufayli yaroqsiz — tuzatilgan versiya bilan qayta o'lchanmadi |
+
+To'liq daraxtdagi 1 895 Semgrep topilmasining 1 598 tasi vendor (site-packages), 293 tasi ishlab chiqarish
+kodi. 139 Gitleaks topilmasining 138 tasi test yoki vendor kodida — `path_class` ularni zanjirlardan,
+`--prod-only` esa gate'dan chiqaradi.
+
+**Interfeysda bekor qilish jonli skanda tekshirildi:** bosishdan "Bekor qilingan" holatigacha 7 s, ishlab
+turgan Semgrep jarayonlari to'xtadi, hisobot `cancelled`, vaqtinchalik nusxa o'chirildi. Jonli progress
+matni ("Manba o'qilmoqda: 979/2391 fayl…") ham ishlaydi.
+
+### Hali ochiq
+
+- **Birinchi skan rasmiy paket bilan sekin:** bu mashinada ~10 daqiqa / 4 000 fayl (bo'sh xotira ~1 GB,
+  shuning uchun bitta ishchi). 26 500 faylli loyihaning birinchi skani bir necha soat. Kuchliroq mashinada
+  ishchilar soni bo'sh xotiraga qarab avtomatik oshadi (`semgrep_jobs`, kod tayyor — BETA_READINESS 2.1b);
+  serverda o'lchanmagan.
+- **J2 tuzatishi to'liq daraxtda o'lchanmadi** (yana ~3 soat). Mantiq testlarda tekshirilgan.
+- **Kubernetes:** Helm/Kustomize render qilinmaydi; manba ↔ workload bog'lanishi yo'q.
+- **Image, IaC va web bosqichlari bittadan** (Trivy keshi qulfi, web so'rov qoidasi).
+- **Topilmalar jadvalini noldan qurish** 150 000 qatorga 18–21 s edi; encoder va facet indekslaridan keyin
+  120 000 qatorga 8,8 s (bir marta; keyin saqlanadi — BETA_READINESS §2.2).
+- **Inkremental kesh** hajmi va vaqt belgisi o'zgarmagan faylni ko'rmaydi (`--full` bilan chetlab o'tiladi).
+- **Lokal sinalmagan:** CodeQL, PMD/Apex (Java kerak). Linux va macOS — CI matritsasida har push'da
+  (unit + `verify_platform.py`); CodeQL va PMD CI `benchmarks` job'ida.
+
+---
+
+## K. 2026-11-02 kamchiliklar ko'rigi — katta loyihada yiqilish va jim xatolar
+
+Ikki parallel tahlil (kod bo'lmagan bosqichlarning katta-loyiha xatolari; hujjat ↔ kod mosligi) va
+commit qilinmay qolgan 2026-10-26 audit ishi. Har topilma avval kodda tasdiqlandi, keyin tuzatildi va
+regressiya testi bilan qulflandi; ko'pchilik test eski kodda yiqilishi alohida tekshirildi.
+Commitlar va o'lchovlar: [PROGRESS.md](PROGRESS.md) 3-bosqich.
+
+| # | Muammo | Tuzatish |
+|---|---|---|
+| D3 | Audit "v3.1 ga moslash" deb CVSS **Base** ballga Environmental ModifiedImpact formulasini (`×0.9731`, `^13`, spec §7.3) qo'llagan; e'lon qilingan 9.9 (`AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H`) 10.0 bo'lardi. Testi o'sha xato formulani qayta hisoblagani uchun xatoni ushlamasdi | Spec §7.1 (`(ISS−0.02)^15`) qaytarildi; test e'lon qilingan 5 ta ball bilan |
+| LP#1 | `nvd_weaknesses` NVD API kalitini `key` nomiga yozib, kesh kalitini o'chirardi: kalitsiz (standart) holatda `TypeError` → dependencies bosqichi `failed`, topilmalar saqlanmasdi; kalit bilan — API kalit `advisory-cache/` da fayl nomi | `api_key` alohida nom (bu mashinada sizib chiqqan fayl yo'q) |
+| LP#9 | NVD/EPSS uzilishi "hech narsa topilmadi" deb 24 soatga keshlanardi | Xatoda keshlanmaydi |
+| LP#5 | `status.json` yakuniy yozuvi Windows'da poller bilan to'qnashib yo'qolsa, pipeline/job abadiy kutardi (qulf bo'shamasdi); web va pipeline stage thread'i tor `except` bilan `running`da qolardi; zanjir korrelyatsiyasi xatosi butun tekshiruvni `failed` qilardi | Sidecar qayta urinadi; ~30 s da to'liq hisobot fallback; `except Exception`; korrelyatsiya xatosi → `partial` + `correlation_failed` gap |
+| LP#6 | Job worker to'liq hisobotni (54 MB) har 2 s da qayta parse qilardi; bitta o'qish xatosi ishni `failed` qilardi | Sidecar o'qiladi; 3 ketma-ket xato kerak |
+| LP#10 | IaC: Trivy'ning 5 daqiqalik standarti modul chegarasidan oldin to'xtatardi; o'tkazib yuborilgan fayllar yozilmasdi; JSON hajmi cheklanmagan | `--timeout` (snapshot hajmiga qarab), `skipped`, 64 MB |
+| LP#8 | Har advisory uchun `report.json` qayta yozilardi (20 000 = 20 000); progress yozuvidagi qulf bosqichni yiqitardi | Sekundiga bir marta; progress yozuvi xatosi o'tkazib yuboriladi |
+| LP#2 | Repository/K8s bosqichi doim `completed`: MAX_FILES dan oshgan manifestlar, Helm shablonlari, o'qilmagan include'lar faqat matn edi — workload'lar zanjirlarga kirmasdi | `coverage_gaps` (unread / not_reached); bosqich `partial`; gate: not_reached → incomplete, unread → gap |
+| LP#4 | Zanjirlar har xizmat × topilma juftini qurib, keyin kesardi: 100×5000 = 1,16 GB | Kesish qurish paytida (`ChainSink`), natija aynan bir xil; 31,7 MB, 2,3× tezroq |
+| LP#3 | Web: API inventari 48 so'rovni sarflab, Nuclei (.env/.git/SQL dump) ishlamay qolardi; tasdiqlash uchun va'da qilingan +10 so'rov amalda yo'q edi; repo spec qidiruvi node_modules ichida chegarani tugatardi | Nuclei yo'llari zaxiralanadi; inventarga qolgani; `Collector.limit`; `skip_directory`; tashlab ketilganlar yoziladi |
+| LP#7 | Tuzatish rejasi OSV'ga har paketni ketma-ket so'rardi (2 000 paket = 6 000 tagacha so'rov), bekor qilib bo'lmasdi | `recheck_many`: ≤3 ommaviy chaqiruv, natija aynan bir xil, progress orqali bekor qilish |
+| LP#12 | Fayl/manifest/paket/hujjat/xizmat chegaralari butun bosqichni yiqitardi (CVE natijasi nol) | Yig'ilgan qism tekshiriladi, `*_limit` / not_reached gap; gate → incomplete. Fayl yurish chegarasi 1 000 000 |
+| — | Tuzatish diff'lari uchun repo ikkinchi marta yurilardi va 200 faylda indamay to'xtardi; repository dedup O(F²); K8s ID dedup O(W²) va bir xil nomli uchinchi workload ikkinchisi bilan birlashardi | Inventar ro'yxati + 64 MB; dict / set; hisoblagich |
+| F2 | Benchmark sir tekshiruvi har 16+ belgili tokenni sir deb olardi | Aynan ekilgan qiymatlar |
+
+**Ataylab o'zgartirilmagan (LP#11):** dependency topilmasi o'z paketining barcha `occurrences` ini olib
+yuradi. To'liq ro'yxat gate'ning "faqat development" qoidasi, zanjirlar va tuzatish rejasi uchun kerak —
+kesish ularning natijasini o'zgartiradi. Xotirada ro'yxat umumiy obyekt; JSON hajmi faqat yuzlab lockfile'li
+monorepoda o'sadi va interfeys `view.json` orqali sahifalaydi.
+
+---
+
 ## Qolgan holat — 2026-09-25, 0.7.0
 
 Ro'yxatdagi **barcha kod bandlari yopildi** (A1–A28, B1–B7, C1–C6, D1–D3). Qolgani ikkitasi,
@@ -330,5 +566,5 @@ asoslangan natija berardi.
 | Nuclei'ning 6 ta shabloni (9000+ emas) | Har biri qo'lda ko'rib chiqilgan va faqat GET; tekshirilmagan shablonni ishlatish ruxsat doirasidan chiqishi mumkin |
 | Gixy darajasidagi nginx tahlili yo'q | RP-002/003/004/009/010/011 proxy-ishonchga qaratilgan; to'liq nginx tahlili uchun Gixy'ning o'zi bor |
 | Masofaviy Docker daemon, SSH host skani, agent | B6 rejasidan tashqarida; ular butunlay boshqa ishonch modeli |
-| RBAC va ko'p foydalanuvchi | Lokal bir foydalanuvchili vosita; server faqat 127.0.0.1 da |
+| Ko'p-ijarali (multi-tenant) model | Rollar bor (viewer/operator/admin), lekin bitta jamoa uchun; server standart holatda 127.0.0.1 da, tarmoqqa faqat TLS + login bilan |
 | Brauzerdan manba papkasini ro'yxatga olish | Standart holatda o'chirilgan (`--allow-registration`) — brauzerga ixtiyoriy fayl yo'lini berish serverga butun diskni o'qishga yo'l ochadi. Auditda isbotlangan |

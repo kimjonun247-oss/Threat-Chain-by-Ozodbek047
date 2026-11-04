@@ -9,6 +9,8 @@ advisory-cache/
 dependency-runs/
 image-runs/
 scanner-runs/
+scan-cache/
+findings-board/
 profiles/code/
 profiles/images/
 validation-runs/

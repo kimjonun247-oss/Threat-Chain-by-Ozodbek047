@@ -1,0 +1,71 @@
+{
+  "_comment": "Known vulnerabilities in public deliberately-vulnerable projects, for benchmarks/ground_truth.py. Each entry: a path glob (relative to the repository root) and the CWE family a scanner finding there must carry to count as found. Written from the projects' documentation and source layout as known on 2026-10-13 WITHOUT network access: paths must be confirmed on the first server run (the script prints every label it could not match to any file, so a moved file shows up as 'label path missing', never as a silent miss). 'clean' projects have no labels: every ERROR/WARNING finding there is counted as a false positive candidate.",
+  "projects": {
+    "dvwa": {
+      "repo": "https://github.com/digininja/DVWA.git",
+      "ref": "master",
+      "labels": [
+        {"path": "vulnerabilities/sqli/source/low.php", "cwe": [89], "what": "SQL injection (low)"},
+        {"path": "vulnerabilities/sqli_blind/source/low.php", "cwe": [89], "what": "blind SQL injection (low)"},
+        {"path": "vulnerabilities/exec/source/low.php", "cwe": [78, 77], "what": "command injection (low)"},
+        {"path": "vulnerabilities/xss_r/source/low.php", "cwe": [79], "what": "reflected XSS (low)"},
+        {"path": "vulnerabilities/fi/source/low.php", "cwe": [98, 22], "what": "file inclusion (low)"},
+        {"path": "vulnerabilities/upload/source/low.php", "cwe": [434], "what": "unrestricted upload (low)"}
+      ]
+    },
+    "juice-shop": {
+      "repo": "https://github.com/juice-shop/juice-shop.git",
+      "ref": "master",
+      "labels": [
+        {"path": "routes/login.ts", "cwe": [89], "what": "SQL injection in login"},
+        {"path": "routes/search.ts", "cwe": [89], "what": "SQL injection in product search"},
+        {"path": "routes/b2bOrder.ts", "cwe": [94, 95], "what": "code injection via vm/eval"},
+        {"path": "routes/fileUpload.ts", "cwe": [611], "what": "XXE in XML upload"},
+        {"path": "routes/redirect.ts", "cwe": [601], "what": "open redirect"},
+        {"path": "routes/profileImageUrlUpload.ts", "cwe": [918], "what": "SSRF"},
+        {"path": "lib/insecurity.ts", "cwe": [798, 321], "what": "hard-coded private key", "secret": true}
+      ]
+    },
+    "nodegoat": {
+      "repo": "https://github.com/OWASP/NodeGoat.git",
+      "ref": "master",
+      "labels": [
+        {"path": "app/routes/contributions.js", "cwe": [94, 95], "what": "server-side JS injection (eval)"},
+        {"path": "app/data/allocations-dao.js", "cwe": [943, 89], "what": "NoSQL injection ($where)"},
+        {"path": "app/routes/index.js", "cwe": [601], "what": "open redirect"}
+      ]
+    },
+    "webgoat": {
+      "repo": "https://github.com/WebGoat/WebGoat.git",
+      "ref": "main",
+      "labels": [
+        {"path": "src/main/java/org/owasp/webgoat/lessons/sqlinjection/introduction/SqlInjectionLesson5a.java", "cwe": [89], "what": "SQL injection lesson 5a"},
+        {"path": "src/main/java/org/owasp/webgoat/lessons/sqlinjection/introduction/SqlInjectionLesson2.java", "cwe": [89], "what": "SQL injection lesson 2"},
+        {"path": "src/main/java/org/owasp/webgoat/lessons/xxe/**", "cwe": [611], "what": "XXE lessons"},
+        {"path": "src/main/java/org/owasp/webgoat/lessons/deserialization/**", "cwe": [502], "what": "insecure deserialization"}
+      ]
+    },
+    "vulnerableapp": {
+      "repo": "https://github.com/SasanLabs/VulnerableApp.git",
+      "ref": "master",
+      "labels": [
+        {"path": "src/main/java/org/sasanlabs/service/vulnerability/sqlInjection/**", "cwe": [89], "what": "SQL injection levels"},
+        {"path": "src/main/java/org/sasanlabs/service/vulnerability/commandInjection/**", "cwe": [78, 77], "what": "command injection levels"},
+        {"path": "src/main/java/org/sasanlabs/service/vulnerability/pathTraversal/**", "cwe": [22], "what": "path traversal levels"},
+        {"path": "src/main/java/org/sasanlabs/service/vulnerability/xxe/**", "cwe": [611], "what": "XXE levels"}
+      ]
+    },
+    "requests": {
+      "repo": "https://github.com/psf/requests.git",
+      "ref": "main",
+      "clean": true,
+      "labels": []
+    },
+    "flask": {
+      "repo": "https://github.com/pallets/flask.git",
+      "ref": "main",
+      "clean": true,
+      "labels": []
+    }
+  }
+}

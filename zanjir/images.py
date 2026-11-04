@@ -224,11 +224,12 @@ def enrich(findings):
     kev, kev_meta = advisories.kev_catalog() if cves else ({}, {'state': 'not_needed'})
     scores = threatfeeds.epss_scores(cves) if cves else {}
     available = kev_meta.get('state') == 'available'
+    looked_up = set(cves)                    # built once, not once per finding
     for finding in findings:
         advisory = finding.get('advisory_id')
         # A finding whose advisory is not a CVE (a Trivy vendor id, say) was never
         # looked up, so it stays None. Saying False would claim it was checked.
-        checked = available and advisory in set(cves)
+        checked = available and advisory in looked_up
         finding['known_exploited'] = (advisory in kev) if checked else None
         finding['kev_added_on'] = str((kev.get(advisory) or {}).get('dateAdded', '')) or None if checked else None
         finding['epss'] = scores.get(advisory)

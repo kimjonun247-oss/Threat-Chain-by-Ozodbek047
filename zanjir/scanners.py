@@ -12,12 +12,13 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import uuid
 
 from vendor import yaml
 
-from .engine import ROOT, DATA
-from . import priority, repo_store, code_targets, taxonomy, custom_rules, run_index, baseline, findings as findings_mod, triage, verification as verification_mod
+from .engine import ROOT, DATA, skip_directory, available_memory_mb
+from . import pathclass, priority, repo_store, scan_cache, code_targets, taxonomy, custom_rules, run_index, baseline, findings as findings_mod, triage, verification as verification_mod
 
 TOOLS=ROOT/'.tools'
 RUNS=DATA/'scanner-runs'
@@ -143,12 +144,49 @@ def _verify_registry_manifest():
         if hashlib.sha256(path.read_bytes()).hexdigest()!=merged['sha256']:
             raise ValueError('Birlashtirilgan qoida fayli o‘zgargan: '+merged['file'])
     return manifest
-LOCK=threading.Lock()
+class ScanSlots:
+    """Which projects are being scanned, and whether one more may start.
+
+    This was a single lock: one code scan on the whole installation, whichever
+    project it was for. A project is still never scanned twice at once, but two
+    different projects may now run side by side, up to the operator's
+    `max_parallel_scans` setting. Its default is 1, so an installation that
+    never changed it behaves exactly as before.
+    """
+
+    def __init__(self):
+        self._guard=threading.Lock()
+        self.active=set()
+
+    @staticmethod
+    def capacity():
+        try:
+            from . import settings
+            return max(1,min(4,int(settings.read().get('max_parallel_scans',1))))
+        except (OSError,ValueError,TypeError):
+            return 1
+
+    def acquire(self,key='*',blocking=False):
+        with self._guard:
+            if key in self.active or len(self.active)>=self.capacity():return False
+            self.active.add(key);return True
+
+    def release(self,key='*'):
+        with self._guard:self.active.discard(key)
+
+    def locked(self,key=None):
+        """With a key: is that project running. Without: is there no free slot."""
+        with self._guard:
+            return key in self.active if key is not None else len(self.active)>=self.capacity()
+
+
+LOCK=ScanSlots()
+CANCEL={}
 ID=run_index.RUN_ID  # one definition shared by every scanner
 EXCLUDED={'.git','.tools','.venv','venv','node_modules','vendor','__pycache__','scanner-runs','dependency-runs','image-runs','web-runs','assessment-runs','validation-runs','advisory-cache','repository-runs','runs','pilot','profiles'}
 IGNORE_FILES={'.semgrepignore','.gitleaksignore','.gitleaks.toml'}
 MAX_FILE=1024*1024
-MAX_TOTAL=50*1024*1024
+MAX_TOTAL=500*1024*1024
 
 
 def write(path,data):
@@ -315,57 +353,425 @@ def scanner_environment(work):
         yield environment(work,path)
 
 
-def snapshot(source,destination):
+MAX_FILES=100000
+# Windows refuses a path of 260 characters or more unless long paths are enabled
+# system-wide. The snapshot lives under the run folder, which adds its own
+# length to every file, so a path that is fine in the project can be too long in
+# the copy. One such file used to fail the whole scan with FileNotFoundError.
+WINDOWS_PATH_LIMIT=259
+UTF16_BOMS=(b'\xff\xfe',b'\xfe\xff')
+SCAN_ALL_VARIABLE='THREATCHAIN_SCAN_ALL_CODE'
+MINIFIED_SUFFIXES=('.js','.mjs','.cjs','.css')
+
+
+def looks_minified(key,raw):
+    """A JavaScript/CSS file written for machines: very long lines, almost no line breaks.
+
+    Only by content and only for these suffixes -- a long-lined Python data file is
+    still somebody's source. Average line over 300 characters, or one line of 10 000
+    or more, in a file of at least 2 KB.
+    """
+    if len(raw)<2048 or not key.lower().endswith(MINIFIED_SUFFIXES):return False
+    lines=raw.count(b'\n')+1
+    if len(raw)/lines>300:return True
+    return max(map(len,raw.split(b'\n')))>=10000
+
+
+def semgrep_skip_reason(key,kind):
+    """Why Semgrep leaves this file out ('vendored', 'generated', 'minified'), or None.
+
+    Someone else's code (site-packages, third_party, bower_components...) and build
+    output are not what a code review of this project can fix; on the 26 503-file
+    tree measured 2026-10-13, 1 598 of 1 895 Semgrep findings were in site-packages.
+    Their dependencies are judged by the CVE stage, and Gitleaks still reads them
+    for secrets. THREATCHAIN_SCAN_ALL_CODE=1 scans everything.
+    """
+    if os.environ.get(SCAN_ALL_VARIABLE,'').strip().lower() in {'1','true','yes','on'}:return None
+    if kind=='minified':return 'minified'
+    found=pathclass.classify(key)
+    return found if found in ('vendored','generated') else None
+PROGRESS_EVERY=500
+
+
+class Cancelled(Exception):
+    """The operator cancelled the scan; raised between files and between tools."""
+
+
+def _walk(source):
+    """(directory, file names) for everything a snapshot would look at, plus what it left out."""
+    skipped={'excluded':0,'links':0}
+    def linked(path):
+        info=os.lstat(path)
+        return stat.S_ISLNK(info.st_mode) or bool(getattr(info,'st_file_attributes',0)&getattr(stat,'FILE_ATTRIBUTE_REPARSE_POINT',1024))
+    def walk():
+        for current,dirs,files in os.walk(source,followlinks=False):
+            allowed=[]
+            for name in sorted(dirs):
+                path=os.path.join(current,name)
+                if skip_directory(current,name):skipped['excluded']+=1
+                elif linked(path):skipped['links']+=1
+                else:allowed.append(name)
+            dirs[:]=allowed
+            yield current,sorted(files),linked
+    return walk(),skipped
+
+
+def measure(source,sniff=False):
+    """Files and bytes a snapshot of `source` would hold, without copying anything.
+
+    Without `sniff` only names and sizes are read, which gives an upper bound: a
+    binary file is still counted because telling needs its content. With `sniff`
+    the first 4 KB of each file is read to leave binaries out, which is close to
+    exact. Returns (files, bytes).
+    """
+    walker,_=_walk(source)
+    files=total=0
+    for current,names,linked in walker:
+        for name in names:
+            if name in IGNORE_FILES:continue
+            path=os.path.join(current,name)
+            try:
+                if linked(path):continue
+                size=os.stat(path).st_size
+                if size>MAX_FILE:continue
+                if sniff:
+                    with open(path,'rb') as handle:head=handle.read(4096)
+                    if b'\0' in head and not head.startswith(UTF16_BOMS):continue
+            except OSError:continue
+            files+=1;total+=size
+    return files,total
+
+
+def check_size(source,progress=None):
+    """Refuse an oversized project before copying it, and say how big it is.
+
+    The limit used to be noticed only while copying: a project over it was read
+    and written for minutes and then thrown away. Names and sizes are counted
+    first; only when that upper bound is over a limit is the slower, more exact
+    count made. Returns the number of files the copy should expect.
+    """
+    files,total=measure(source)
+    if files>MAX_FILES or total>MAX_TOTAL:
+        if progress:progress('Loyiha hajmi o‘lchanmoqda (chegaraga yaqin)')
+        files,total=measure(source,sniff=True)
+        if files>MAX_FILES or total>MAX_TOTAL:
+            raise ValueError(f'Loyiha {MAX_TOTAL//1024**2} MB yoki {MAX_FILES} fayl chegarasidan oshdi: '
+                             f'taxminan {files} ta matn fayli, {total//1024**2} MB. Hech narsa nusxalanmadi. '
+                             'Loyihani qismlarga bo‘lib (masalan, har xizmatni alohida) ro‘yxatga oling.')
+    return files
+
+
+def snapshot(source,destination,progress=None,cancel=None,cache=None,tools=(),copy_all=True):
+    """Describe the project and copy what has to be scanned into `destination`.
+
+    Without a cache every text file is read and copied, as it always was. With
+    one (zanjir/scan_cache.py) a file whose size and mtime are unchanged is not
+    opened: its hash comes from the cache, and it is copied only when one of
+    `tools` has no stored result for that exact content (or `copy_all` asks for
+    everything, as the whole-program analysis does). The manifest, the counts
+    and the snapshot hash describe the whole project either way; `copied` says
+    which files are actually in `destination`.
+    """
+    # The root is resolved once, as inventory.collect does: containment below is
+    # checked against resolved directories, so an unresolved root -- a Windows 8.3
+    # short name (RUNNER~1), macOS /var -> /private/var, a junction or symlinked
+    # project folder -- made every directory look outside it and failed the scan.
+    # Links INSIDE the tree are still never followed.
+    source=Path(source).resolve()
+    expected=check_size(source,progress)
     destination.mkdir()
     entries=[]
     skipped={'excluded':0,'links':0,'binary':0,'large':0}
-    total=0
-    def linked(path):
-        info=path.lstat()
-        return stat.S_ISLNK(info.st_mode) or bool(getattr(info,'st_file_attributes',0)&getattr(stat,'FILE_ATTRIBUTE_REPARSE_POINT',1024))
-    for current,dirs,files in os.walk(source,followlinks=False):
-        allowed=[]
-        for name in sorted(dirs):
+    extra={'path_too_long':0,'unreadable':0}
+    too_long=[];transcoded=0;copied=[];copied_bytes=0;unread=0
+    semgrep_skipped={'vendored':0,'generated':0,'minified':0};semgrep_skip=set();semgrep_skip_examples=[]
+    needs={tool:[] for tool in tools}
+    total=0;seen=0
+    walker,counted=_walk(source)
+    made=set()
+    for current,names,linked in walker:
+        # Containment is proved once per directory. Links are never followed
+        # (directories and files that are links are skipped above and below), so
+        # a file directly inside a contained directory is contained too --
+        # resolving every single file cost one extra open per file on Windows.
+        if names and not Path(current).resolve().is_relative_to(source):raise ValueError('Manba yo‘li loyiha chegarasidan chiqdi.')
+        for name in names:
+            seen+=1
+            if cancel is not None and cancel.is_set():raise Cancelled('Skan bekor qilindi.')
+            if progress and seen%PROGRESS_EVERY==0:
+                progress(f'Manba o‘qilmoqda: {len(entries)}/{expected} fayl ({len(copied)} tasi skanga)')
             path=Path(current)/name
-            if name in EXCLUDED:skipped['excluded']+=1
-            elif linked(path):skipped['links']+=1
-            else:allowed.append(name)
-        dirs[:]=allowed
-        for name in sorted(files):
-            path=Path(current)/name
-            if name in IGNORE_FILES:skipped['excluded']+=1;continue
-            if linked(path):skipped['links']+=1;continue
-            if not path.resolve().is_relative_to(source):raise ValueError('Manba yo‘li loyiha chegarasidan chiqdi.')
-            if path.stat().st_size>MAX_FILE:skipped['large']+=1;continue
-            raw=path.read_bytes()
-            if b'\0' in raw:skipped['binary']+=1;continue
-            total+=len(raw)
-            if total>MAX_TOTAL or len(entries)>=10000:raise ValueError('Loyiha 50 MB yoki 10000 fayl chegarasidan oshdi.')
-            relative=path.relative_to(source)
-            target=destination/relative
-            target.parent.mkdir(parents=True,exist_ok=True)
-            target.write_bytes(raw)
-            entries.append({'path':relative.as_posix(),'sha256':hashlib.sha256(raw).hexdigest()})
+            if name in IGNORE_FILES:counted['excluded']+=1;continue
+            raw=None
+            try:
+                if linked(path):counted['links']+=1;continue
+                info=path.stat()
+                if info.st_size>MAX_FILE:skipped['large']+=1;continue
+                relative=path.relative_to(source)
+                key=relative.as_posix()
+                known=cache.lookup(key,info.st_size,info.st_mtime_ns) if cache is not None else None
+                if known is None:
+                    raw=path.read_bytes()
+                    kind='text'
+                    if raw.startswith(UTF16_BOMS):
+                        # UTF-16 source (common for Windows-authored .cs/.ps1/.sql) is full
+                        # of NUL bytes and was dropped as binary, so it was never scanned.
+                        # The copy handed to the scanners is the same text as UTF-8.
+                        try:raw=raw.decode('utf-16').encode('utf-8');kind='utf16'
+                        except UnicodeDecodeError:kind='binary'
+                    if kind!='binary' and b'\0' in raw:kind='binary'
+                    if kind=='text' and looks_minified(key,raw):kind='minified'
+                    sha=hashlib.sha256(raw).hexdigest() if kind!='binary' else '';size=len(raw)
+                else:
+                    sha,kind,size=known;unread+=1
+                if cache is not None:cache.remember(key,info.st_size,info.st_mtime_ns,sha,kind,size)
+                if kind=='binary':skipped['binary']+=1;continue
+                if kind=='utf16':transcoded+=1
+                # Per tool: one whose last run failed has nothing stored and needs
+                # every file, and that must not make the others scan again.
+                applies=[t for t in tools if t!='pmd' or key.endswith(APEX_SUFFIXES)]
+                reason=semgrep_skip_reason(key,kind) if 'semgrep' in applies else None
+                if reason:
+                    applies.remove('semgrep');semgrep_skipped[reason]+=1
+                    semgrep_skip.add(key)
+                    if len(semgrep_skip_examples)<MAX_LISTED_FILES:semgrep_skip_examples.append(key)
+                wanted=applies if copy_all or cache is None else [t for t in applies if not cache.has(key,sha,[t])]
+                need=copy_all or cache is None or bool(wanted)
+                target=destination/relative
+                if need and IS_WINDOWS and len(str(target))>=WINDOWS_PATH_LIMIT:
+                    extra['path_too_long']+=1
+                    if len(too_long)<MAX_LISTED_FILES:too_long.append(key)
+                    continue
+                if total+size>MAX_TOTAL or len(entries)>=MAX_FILES:raise ValueError(f'Loyiha {MAX_TOTAL//1024**2} MB yoki {MAX_FILES} fayl chegarasidan oshdi.')
+                if need:
+                    if raw is None:
+                        raw=path.read_bytes()
+                        if kind=='utf16':raw=raw.decode('utf-16').encode('utf-8')
+                    if target.parent not in made:
+                        target.parent.mkdir(parents=True,exist_ok=True);made.add(target.parent)
+                    target.write_bytes(raw)
+                    copied.append(key);copied_bytes+=len(raw)
+                    for tool in wanted:needs[tool].append(key)
+            except (OSError,UnicodeDecodeError):
+                extra['unreadable']+=1;continue
+            total+=size
+            entries.append({'path':key,'sha256':sha})
+    skipped['excluded']=counted['excluded'];skipped['links']=counted['links']
+    # Only named when they happened, so a project without them reports exactly
+    # the four counts it always did.
+    skipped.update({key:value for key,value in extra.items() if value})
     if not entries:raise ValueError('Tekshiriladigan matn fayli topilmadi.')
     digest=hashlib.sha256(json.dumps(entries,sort_keys=True).encode()).hexdigest()
-    return {'files':len(entries),'bytes':total,'snapshot_sha256':digest,'skipped':skipped,'manifest':entries,
+    result={'files':len(entries),'bytes':total,'snapshot_sha256':digest,'skipped':skipped,'manifest':entries,
+            'copied':copied,'copied_bytes':copied_bytes,'unread':unread,'needs':needs,
             'scope':'Joriy matn fayllari (vendor/node_modules, binar va 1 MB dan katta fayllar kiritilmagan). Git tarixidagi sirlar Gitleaks bilan alohida tekshiriladi (.git bo‘lsa).'}
+    if transcoded:result['transcoded_utf16']=transcoded
+    result['tool_skip']={'semgrep':semgrep_skip}
+    if semgrep_skip:
+        result['semgrep_skipped']={**{k:v for k,v in semgrep_skipped.items() if v},'examples':semgrep_skip_examples,
+            'note':('Semgrep bu fayllarni tekshirmadi: boshqa birovning kodi (vendor), build natijasi yoki minify qilingan fayl. '
+                    'Gitleaks ularni ham sirlar uchun tekshiradi. Hammasini Semgrep bilan tekshirish: '+SCAN_ALL_VARIABLE+'=1.')}
+    if too_long:
+        result['path_too_long']={'files':too_long,'count':extra['path_too_long'],
+                                 'action':('Bu fayllarning skan nusxasidagi yo‘li Windows’ning 260 belgilik chegarasidan oshadi va ular '
+                                           'tekshirilmadi. THREATCHAIN_DATA_DIR ni qisqa yo‘lga (masalan C:\\tc) ko‘chiring yoki '
+                                           'Windows’da uzun yo‘llarni yoqing (LongPathsEnabled).')}
+    return result
 
 
-def tool_commands(work,registry=False,local=None,apex=False):
+BASE_BYTES=50*1024*1024
+MAX_SCALE=16
+
+
+def scan_scale(size):
+    """How many times the original 50 MB budget a snapshot is, from 1 to 16.
+
+    Every time limit was written for a 50 MB project. A snapshot ten times that
+    size with the same fifteen minutes does not finish: the tool is killed and
+    the stage reports nothing at all. Limits and worker count now grow with the
+    snapshot; a project inside the original budget runs exactly as before.
+    """
+    return max(1,min(MAX_SCALE,-(-int(size)//BASE_BYTES)))
+
+
+WORKER_MEMORY_MB=750
+LOCAL_WORKER_MEMORY_MB=200
+JOBS_VARIABLE='THREATCHAIN_SEMGREP_JOBS'
+MAX_MEMORY_VARIABLE='THREATCHAIN_SEMGREP_MAX_MEMORY'
+
+
+def env_int(name,low,high):
+    """A whole number from the environment within [low, high], or None when unset or not a number."""
+    try:value=int(str(os.environ.get(name,'')).strip())
+    except ValueError:return None
+    return max(low,min(high,value))
+
+
+def semgrep_jobs(scale,registry=True):
+    """Semgrep workers for a snapshot of this scale.
+
+    Two for a project inside the original budget, up to half the cores for a
+    larger one -- but never more than free memory can hold, small projects
+    included. Measured 2026-10-13 with Semgrep's own `max_memory_bytes`: two
+    workers with the full registry pack peaked at 1.5 GB on 167 stdlib files
+    (~750 MB each); with the seven local rules a worker stays near 130 MB. Two
+    full-pack workers on a machine with 1 GB free is how a scan runs the machine
+    out of memory. THREATCHAIN_SEMGREP_JOBS overrides the count (1-32).
+    """
+    forced=env_int(JOBS_VARIABLE,1,32)
+    if forced:return forced
+    wanted=2 if scale<=1 else max(2,min(8,(os.cpu_count() or 2)//2))
+    free=available_memory_mb()
+    if free is not None:wanted=max(1,min(wanted,free//(WORKER_MEMORY_MB if registry else LOCAL_WORKER_MEMORY_MB)))
+    return wanted
+
+
+def semgrep_memory_limit():
+    """Semgrep's own per-file memory limit in MB (`--max-memory`), or None for its default (none).
+
+    Set THREATCHAIN_SEMGREP_MAX_MEMORY on a small machine: a file that needs more
+    is then reported as that file's error instead of the whole run being killed
+    by the system. Not set by default, because a limit derived from the memory
+    free at that moment would make the same file pass on one scan and fail on
+    the next.
+    """
+    value=env_int(MAX_MEMORY_VARIABLE,0,1024*1024)
+    return value or None
+
+
+# Semgrep language name -> a family of file extensions. JavaScript and TypeScript
+# share one family on purpose (rules list either or both). A language missing from
+# this table is never filtered out.
+LANGUAGE_FAMILY={'python':'python','py':'python','python2':'python','python3':'python',
+                 'javascript':'js','js':'js','typescript':'js','ts':'js','vue':'js',
+                 'java':'java','kotlin':'kotlin','kt':'kotlin','scala':'scala','go':'go','golang':'go',
+                 'ruby':'ruby','rb':'ruby','php':'php','csharp':'csharp','c#':'csharp','cs':'csharp',
+                 'c':'c','cpp':'c','c++':'c','rust':'rust','swift':'swift',
+                 'hcl':'hcl','terraform':'hcl','tf':'hcl','yaml':'yaml','json':'json',
+                 'solidity':'solidity','sol':'solidity','ocaml':'ocaml','elixir':'elixir','ex':'elixir',
+                 'lua':'lua','html':'html','xml':'xml','apex':'apex','clojure':'clojure','dart':'dart',
+                 'julia':'julia','r':'r','scheme':'scheme','jsonnet':'jsonnet',
+                 'dockerfile':'dockerfile','docker':'dockerfile'}
+FAMILY_SUFFIXES={'python':('.py','.pyi','.pyw'),
+                 'js':('.js','.jsx','.mjs','.cjs','.ts','.tsx','.mts','.cts','.vue'),
+                 'java':('.java',),'kotlin':('.kt','.kts'),'scala':('.scala','.sc'),'go':('.go',),
+                 'ruby':('.rb','.rake','.gemspec','.ru','gemfile','rakefile'),
+                 'php':('.php','.phtml','.php3','.php4','.php5','.php7','.phps','.inc'),
+                 'csharp':('.cs',),'c':('.c','.h','.cc','.cpp','.cxx','.c++','.hh','.hpp','.hxx','.h++','.ino'),
+                 'rust':('.rs',),'swift':('.swift',),'hcl':('.tf','.hcl','.tfvars'),'yaml':('.yml','.yaml'),
+                 'json':('.json',),'solidity':('.sol',),'ocaml':('.ml','.mli'),'elixir':('.ex','.exs'),
+                 'lua':('.lua',),'html':('.html','.htm'),'xml':('.xml',),'apex':('.cls','.trigger'),
+                 'clojure':('.clj','.cljs','.cljc','.edn'),'dart':('.dart',),'julia':('.jl',),'r':('.r',),
+                 'scheme':('.scm','.ss'),'jsonnet':('.jsonnet','.libsonnet'),
+                 'dockerfile':('dockerfile','.dockerfile','containerfile')}
+
+
+def project_families(paths):
+    """The language families present in these snapshot-relative paths."""
+    found=set()
+    for key in paths:
+        name=str(key).rsplit('/',1)[-1].lower()
+        for family,suffixes in FAMILY_SUFFIXES.items():
+            if family not in found and name.endswith(suffixes):found.add(family)
+    return found
+
+
+_RULE_BLOCKS={}
+
+
+def rule_blocks(path):
+    """The merged pack as ([(rule text, languages)], newline), or None when its layout is not the expected one.
+
+    The pack is written by setup_semgrep_rules.py with yaml.safe_dump: `rules:`,
+    then one block per rule starting with `- ` in the first column, exactly one
+    `id:` and one `languages:` key two spaces in, the languages a block list.
+    Reading 2 MB of YAML with a parser costs more than it saves, so the text is
+    cut at those lines -- and anything that does not look exactly like that
+    disables filtering instead of guessing.
+    """
+    try:raw=Path(path).read_bytes()
+    except OSError:return None
+    digest=hashlib.sha256(raw).hexdigest()
+    if digest in _RULE_BLOCKS:return _RULE_BLOCKS[digest]
+    text=raw.decode('utf-8','replace');result=None
+    # Written with write_text, so CRLF on Windows and LF elsewhere.
+    nl='\r\n' if text.startswith('rules:\r\n') else '\n'
+    if text.startswith('rules:'+nl) and text.endswith(nl):
+        blocks=[];current=None
+        # Split on the newline only: str.splitlines() also breaks on \x0c,
+        # and the like, which can sit inside a rule's message.
+        for line in (piece+nl for piece in text[len('rules:'+nl):-len(nl)].split(nl)):
+            if line.startswith('- '):
+                if current is not None:blocks.append(current)
+                current=[line]
+            elif current is None:break
+            else:current.append(line)
+        else:
+            if current is not None:blocks.append(current)
+            parsed=[]
+            for block in blocks:
+                # The first key of a rule is written after the `- ` (usually `id`, not always).
+                keys=['  '+block[0][2:],*block[1:]]
+                if sum(line.startswith('  id: ') for line in keys)!=1:break
+                marks=[i for i,line in enumerate(keys) if line=='  languages:'+nl]
+                if len(marks)!=1:break
+                languages=[]
+                for line in keys[marks[0]+1:]:
+                    if not line.startswith('  - '):break
+                    languages.append(line[4:].strip().strip('\'"').lower())
+                if not languages:break
+                parsed.append((''.join(block),languages))
+            else:
+                result=(parsed,nl) if parsed else None
+    _RULE_BLOCKS.clear();_RULE_BLOCKS[digest]=result
+    return result
+
+
+def filtered_rules(pack,families,folder):
+    """The pack without rules for languages this project has no file in.
+
+    Semgrep applies a rule only to files of its languages, so dropping a rule
+    whose every language is absent from the project cannot change any file's
+    result -- it only removes start-up and per-file prefilter work. Measured on
+    167 stdlib files: start-up 36 s with all 1 343 rules, 15 s with the 370 that
+    apply to Python; scan 167 s -> 140 s with 2 workers. Generic/regex rules,
+    languages missing from LANGUAGE_FAMILY and an unexpected pack layout all
+    keep the full pack. Returns the path to hand to Semgrep and the rule counts.
+    """
+    found=rule_blocks(pack)
+    if found is None:return pack,None
+    blocks,nl=found
+    keep=[text for text,languages in blocks
+          if any(LANGUAGE_FAMILY.get(language) is None or LANGUAGE_FAMILY[language] in families for language in languages)]
+    if len(keep)==len(blocks):return pack,{'rules':len(blocks),'used':len(blocks)}
+    out=Path(folder)/'semgrep-rules-for-project.yml'
+    out.write_bytes(('rules:'+nl+''.join(keep) if keep else 'rules: []'+nl).encode('utf-8'))
+    return out,{'rules':len(blocks),'used':len(keep),'languages':sorted(families)}
+
+
+def tool_commands(work,registry=False,local=None,apex=False,scale=1,families=None,used=None):
     # Semgrep accepts repeated --config: this project's own rules always run, the
     # official pack and the operator's own rules are layered on top only when
     # they exist. The pack is handed over as one merged file when the installer
-    # produced it -- same rules, same findings, a fraction of the start-up cost.
+    # produced it -- same rules, same findings, a fraction of the start-up cost --
+    # and, when the project's languages are known, without the rules for
+    # languages it has no file in (filtered_rules).
     semgrep_config=['--config',str(RULES/'semgrep.yml')]
-    if registry:semgrep_config+=['--config',str(merged_rules() if merged_rules().is_file() else semgrep_registry())]
+    if registry:
+        pack=merged_rules() if merged_rules().is_file() else semgrep_registry()
+        if families is not None and pack.is_file():
+            pack,counts=filtered_rules(pack,families,work)
+            if used is not None and counts:used.update(counts)
+        semgrep_config+=['--config',str(pack)]
     if local:semgrep_config+=['--config',str(local)]
+    limit=semgrep_memory_limit()
     return {
         'semgrep':[str(semgrep_exe()),'scan',*semgrep_config,
-                   '--metrics','off','--disable-version-check','--disable-nosem','--no-rewrite-rule-ids','--no-git-ignore','--json','--quiet','--jobs','2','--timeout','10','--max-target-bytes',str(MAX_FILE),'source'],
+                   '--metrics','off','--disable-version-check','--disable-nosem','--no-rewrite-rule-ids','--no-git-ignore','--json','--quiet','--jobs',str(semgrep_jobs(scale,registry)),'--timeout','10','--max-target-bytes',str(MAX_FILE),
+                   *(['--max-memory',str(limit)] if limit else []),'source'],
         'gitleaks':[str(gitleaks_exe()),'dir','source','--config',str(RULES/'gitleaks.toml'),
                     '--report-format','json','--report-path','-','--redact=100','--no-banner','--no-color','--ignore-gitleaks-allow',
-                    '--gitleaks-ignore-path',str(RULES/'empty.ignore'),'--max-target-megabytes','1','--timeout','180'],
+                    '--gitleaks-ignore-path',str(RULES/'empty.ignore'),'--max-target-megabytes','1','--timeout',str(180*scale)],
         # Apex only: OSS Semgrep cannot parse it, PMD's security ruleset can.
         **({'pmd':[str(pmd_exe()),'check','--dir','source','--rulesets','category/apex/security.xml',
                    '--format','json','--no-progress','--no-cache','--no-fail-on-violation']}
@@ -415,7 +821,7 @@ def history_secrets(source,current,env,work):
         if identity in seen:continue
         seen.add(identity)
         tags=taxonomy.tag_static('gitleaks',rule)
-        found.append({'tool':'gitleaks','rule_id':rule,'path':path,'line':max(1,line),'fingerprint':identity,
+        found.append({'tool':'gitleaks','rule_id':rule,'path':path,'path_class':pathclass.classify(path),'line':max(1,line),'fingerprint':identity,
                       'message':(f'Git tarixida qolgan sir (commit {commit[:12]}). Hozirgi fayllarda yo‘q, lekin repozitoriy '
                                  'nusxasi bor har kim uni o‘qiy oladi. Sirni bekor qiling (rotate) va tarixni tozalang.'),
                       'severity':None,'state':'unverified_static','secret_value':'hidden',
@@ -592,24 +998,29 @@ def pmd_rows(data):
 PMD_SEVERITY={1:'ERROR',2:'ERROR',3:'WARNING',4:'INFO',5:'INFO'}
 
 
-def source_line(source,path,line):
-    """The text of one line of the snapshot, for the finding's stable identity.
+_LINES={'source':None,'files':{}}
+LINE_CACHE_FILES=256
 
-    Read from the snapshot rather than taken from the scanner's own output
-    because only semgrep reports a snippet: pmd reports none and gitleaks
-    redacts its own. path_in_snapshot() has already proved the file is inside
-    the snapshot, so this cannot read outside it. A file that cannot be read
-    yields an empty context -- the fingerprint then rests on rule and path
-    alone, which is weaker but never wrong.
+
+def source_line(source,path,line,cache):
+    """One line of a snapshot file, read through a small per-normalize cache.
+
+    A scan with fifty thousand findings reopened its files fifty thousand times
+    (41 s measured); the lines of the files being normalised are now kept for
+    that one normalize() call, at most 256 files at a time. `cache` is owned by
+    the calling normalize() -- never a module global -- so two concurrent scans
+    (max_parallel_scans > 1) can never read each other's file text into a
+    fingerprint context. Audit 2026-10-26 A2.
     """
-    try:
-        with (source/path).open('r',encoding='utf-8',errors='replace') as handle:
-            for number,text in enumerate(handle,1):
-                if number==line:return text
-                if number>line:break
-    except OSError:
-        pass
-    return ''
+    if cache['source']!=str(source):cache.update(source=str(source),files={})
+    lines=cache['files'].get(path)
+    if lines is None:
+        try:
+            with (source/path).open('r',encoding='utf-8',errors='replace') as handle:lines=handle.readlines()
+        except OSError:lines=[]
+        if len(cache['files'])>=LINE_CACHE_FILES:cache['files'].clear()
+        cache['files'][path]=lines
+    return lines[line-1] if 0<line<=len(lines) else ''
 
 
 def source_snippet(target,path,line,span=3):
@@ -648,15 +1059,68 @@ def source_snippet(target,path,line,span=3):
         return None
 
 
+def checked_paths(source):
+    """path_in_snapshot() for one snapshot, remembering each answer.
+
+    The check stats the file. A scan reports many findings per file, and on
+    Windows fifty thousand of those stats were most of the time normalising took.
+    A path that fails the check is never remembered, so it fails every time.
+    """
+    known={}
+    def check(value):
+        key=str(value)
+        if key not in known:known[key]=path_in_snapshot(value,source)
+        return known[key]
+    return check
+
+
+def line_contexts(tool,data,source,check=None):
+    """(path, line) -> identity context for every semgrep/pmd result, one read per file.
+
+    Results do not arrive grouped by file, so a per-file cache alone still
+    reopened files constantly (41 s for 50 000 results over 1 000 files). The
+    lines each file needs are collected first and every file is then read once,
+    keeping only those lines -- already reduced to what the fingerprint uses.
+    Anything this cannot resolve is simply absent, and normalize() reads that
+    line the slow way and reports any real problem itself.
+    """
+    if tool=='gitleaks':return {}
+    try:rows=pmd_rows(data) if tool=='pmd' else data.get('results')
+    except (ValueError,AttributeError):return {}
+    wanted={}
+    check=check or checked_paths(source)
+    for row in rows if isinstance(rows,list) else []:
+        try:
+            if tool=='pmd':path=check(row['filename']);line=int(row['beginline'])
+            else:path=check(row['path']);line=int(row['start']['line'])
+        except (KeyError,TypeError,ValueError):continue
+        wanted.setdefault(path,set()).add(line)
+    found={}
+    for path,lines in wanted.items():
+        last=max(lines)
+        try:
+            with (source/path).open('r',encoding='utf-8',errors='replace') as handle:
+                for number,text in enumerate(handle,1):
+                    if number in lines:found[(path,number)]=findings_mod.context(text)
+                    if number>=last:break
+        except OSError:continue
+        for line in lines:found.setdefault((path,line),'')
+    return found
+
+
 def normalize(tool,data,source,messages=None):
+    # The line cache lives for one normalisation and is local to this call: the
+    # same path can hold other text in a different (possibly concurrent) scan.
+    lines_cache={'source':None,'files':{}}
+    check=checked_paths(source)
+    contexts=line_contexts(tool,data,source,check)
     if tool=='pmd':rows=pmd_rows(data)
     else:rows=data.get('results') if tool=='semgrep' and isinstance(data,dict) else data
     if not isinstance(rows,list):raise ValueError('Skaner JSON natijasi noto‘g‘ri.')
-    result=[]
-    for row in rows:
+    def build(row):
         severity=None;meta_fields={}
         if tool=='semgrep':
-            rule=str(row['check_id']);path=path_in_snapshot(row['path'],source);line=int(row['start']['line'])
+            rule=str(row['check_id']);path=check(row['path']);line=int(row['start']['line'])
             extra=row.get('extra') if isinstance(row.get('extra'),dict) else {}
             meta=extra.get('metadata') if isinstance(extra.get('metadata'),dict) else {}
             # Official rules carry their own CWE list, explanation and severity; this
@@ -669,30 +1133,70 @@ def normalize(tool,data,source,messages=None):
             severity=level if level in ('ERROR','WARNING','INFO') else None
             meta_fields=rule_meta(meta)
         elif tool=='pmd':
-            rule=str(row['rule']);path=path_in_snapshot(row['filename'],source);line=int(row['beginline'])
+            rule=str(row['rule']);path=check(row['filename']);line=int(row['beginline'])
             message=PMD_MESSAGES.get(rule) or 'Apex xavfsizlik qoidasi mos keldi. Ma’lumot oqimini tekshiring.'
             tags=taxonomy.tag_static(tool,rule)
             severity=PMD_SEVERITY.get(row.get('priority'))
         else:
-            rule=str(row['RuleID']);path=path_in_snapshot(row['File'],source);line=int(row['StartLine'])
+            rule=str(row['RuleID']);path=check(row['File']);line=int(row['StartLine'])
             message='Maxfiy qiymatga o‘xshash matn topildi. Bu demo qiymatmi yoki amaldagi sir ekanini tekshiring.'
             tags=taxonomy.tag_static(tool,rule)
         if not re.fullmatch(r'[A-Za-z0-9_.-]{1,220}',rule) or line<1:raise ValueError('Natija identifikatori noto‘g‘ri.')
         if tool=='gitleaks':
             # The redacted secret gives nothing to hash; column and entropy come
             # from it without revealing it. See zanjir/findings.py.
-            identity=findings_mod.fingerprint(tool,{'rule_id':rule,'path':path,
-                                                    'column':int(row.get('StartColumn') or 0),
-                                                    'entropy':row.get('Entropy')})
+            values={'rule_id':rule,'path':path,'column':int(row.get('StartColumn') or 0),'entropy':row.get('Entropy')}
         else:
-            identity=findings_mod.fingerprint(tool,{'rule_id':rule,'path':path,
-                                                    'context':source_line(source,path,line)})
-        result.append({'tool':tool,'rule_id':rule,'path':path,'line':line,'fingerprint':identity,'message':message,'severity':severity,
-                       'state':'unverified_static','secret_value':'hidden' if tool=='gitleaks' else None,
-                       'cwe_ids':tags['cwe_ids'],'owasp_top10_2025':tags['owasp_top10_2025'],
-                       'verified':False,'verification_note':'Statik kod naqshi mosligi; ma’lumot oqimi, ishga tushirish sharti va amaliy ta’siri tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart.',
-                       **({'rule_meta':meta_fields} if meta_fields else {})})
+            known=contexts.get((path,line))
+            values={'rule_id':rule,'path':path,'context':known if known is not None else source_line(source,path,line,lines_cache)}
+        identity=findings_mod.fingerprint(tool,values)
+        return {'_identity':values,'tool':tool,'rule_id':rule,'path':path,'path_class':pathclass.classify(path),'line':line,'fingerprint':identity,'message':message,'severity':severity,
+                'state':'unverified_static','secret_value':'hidden' if tool=='gitleaks' else None,
+                'cwe_ids':tags['cwe_ids'],'owasp_top10_2025':tags['owasp_top10_2025'],
+                'verified':False,'verification_note':'Statik kod naqshi mosligi; ma’lumot oqimi, ishga tushirish sharti va amaliy ta’siri tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart.',
+                **({'rule_meta':meta_fields} if meta_fields else {})}
+    result=[]
+    for row in rows:
+        try:
+            # One malformed result row is skipped, not fatal: a single bad id,
+            # line<1 or missing field must not discard the whole batch's findings
+            # (and with them the cache behind the part). Audit 2026-10-26 A1.
+            result.append(build(row))
+        except (KeyError,ValueError,TypeError,IndexError):
+            continue
+    # Equal fields are not one finding: the same call on two lines of one file
+    # gets its own identity from the second occurrence on (zanjir/findings.py).
+    findings_mod.separate(result,lambda item:item['tool'],lambda item:item['_identity'])
+    for item in result:del item['_identity']
     return result
+
+
+_PINNED={}
+
+
+def pinned_version(tool):
+    """The version setup_scanners.py installs, read from that file (never imported)."""
+    if not _PINNED:
+        try:text=(ROOT/'setup_scanners.py').read_text(encoding='utf-8')
+        except OSError:text=''
+        for name in ('semgrep','gitleaks'):
+            match=re.search(rf"(?m)^{name.upper()}_VERSION\s*=\s*'([0-9.]+)'",text)
+            _PINNED[name]=match.group(1) if match else None
+    return _PINNED.get(tool)
+
+
+def version_note(tool,found):
+    """A sentence when the installed tool is not the version this project was tested with.
+
+    An older Gitleaks rejects the flags the scan passes and exits 126; the
+    report said only "the scan did not finish", with nothing pointing at the
+    binary. The note names both versions and the command that installs the
+    right one.
+    """
+    wanted=pinned_version(tool)
+    if not wanted or not found or found==wanted:return None
+    return (f'O‘rnatilgan {tool} {found}, loyiha esa {wanted} bilan sinalgan. Farqli versiya buyruq bayroqlarini '
+            'tanimasligi yoki boshqa natija berishi mumkin. To‘g‘ri versiya: python3 setup_scanners.py --force')
 
 
 def version(tool,command,env,work):
@@ -711,6 +1215,21 @@ def read_report(rid):
     # after the scan has to show on the scan it applies to, and the evidence file
     # must stay exactly as the scanners produced it.
     return triage.attach('code',report.get('target'),report)
+
+
+def read_view(rid):
+    """The report as a screen needs it: every field, the worst findings of a large one.
+
+    A small report is returned whole. A large one comes from its page view and
+    says so in `message`, which the screen already shows -- so a shortened table
+    is never mistaken for the whole result.
+    """
+    view=run_index.view(RUNS,rid)
+    if view is None:return read_report(rid)
+    note=(f'Bu sahifada {view["findings_total"]} ta topilmadan eng jiddiy {view["findings_shown"]} tasi ko‘rsatilgan. '
+          'Hammasi: “Topilmalar” bo‘limi (filtr va qidiruv bilan) yoki JSON hisobot.')
+    view['message']=(str(view['message'])+' ' if view.get('message') else '')+note
+    return triage.attach('code',view.get('target'),view)
 
 
 def history(limit=30):
@@ -739,11 +1258,243 @@ def pilot_summary():
         return {'state':'no_verified_result','checks':{},'scope':'Tekshirilgan amaliy TLS natijasi mavjud emas.'}
 
 
-def execute(target,rid):
+def kill_tree(process):
+    """Stop a scanner and the workers it started."""
+    try:
+        if IS_WINDOWS:
+            subprocess.run(['taskkill','/PID',str(process.pid),'/T','/F'],capture_output=True,timeout=30)
+        else:
+            import signal
+            try:os.killpg(os.getpgid(process.pid),signal.SIGKILL)
+            except (OSError,ProcessLookupError):process.kill()
+    except (OSError,subprocess.SubprocessError):
+        pass
+    try:process.wait(10)
+    except (OSError,subprocess.SubprocessError):pass
+
+
+class MemoryExhausted(RuntimeError):
+    """A scanner process ran out of memory: the part is split and retried, not the scan failed."""
+
+
+# 137 / -9: killed by the Linux OOM killer (SIGKILL). 0xC0000017 STATUS_NO_MEMORY and
+# 0xC00000FD stack overflow on Windows. OCaml (semgrep-core) prints Out_of_memory.
+OOM_EXIT_CODES={137,-9,0xC0000017,0xC00000FD,-1073741801,-1073741571}
+OOM_TEXT=re.compile(r'out[ _]of[ _]memory|MemoryError|cannot allocate memory|std::bad_alloc|Stack_overflow',re.I)
+
+
+def out_of_memory(process):
+    """True when a finished scanner process says, by exit code or message, that memory ran out."""
+    if process.returncode in OOM_EXIT_CODES:return True
+    if process.returncode==0:return False
+    return bool(OOM_TEXT.search((process.stderr or '')[-20000:]))
+
+
+def fewer_jobs(command):
+    """The same command with one Semgrep worker: after running out of memory, half the part on N workers can do it again."""
+    if '--jobs' not in command:return command
+    i=command.index('--jobs')
+    return [*command[:i+1],'1',*command[i+2:]]
+
+
+def run_tool(command,cwd,env,timeout,cancel=None,**low):
+    """Run one scanner to the end, to its time limit, or until cancelled.
+
+    Output goes to files instead of pipes held in memory (a large project's
+    Semgrep JSON is tens of megabytes), and the process is watched rather than
+    waited on: a cancellation used to take effect only between tools, so a
+    Semgrep run with hours of budget left kept running after "cancel".
+    """
+    with tempfile.TemporaryFile(dir=cwd) as out,tempfile.TemporaryFile(dir=cwd) as err:
+        extra={} if IS_WINDOWS else {'start_new_session':True}
+        process=subprocess.Popen(command,cwd=cwd,env=env,stdout=out,stderr=err,stdin=subprocess.DEVNULL,**extra,**low)
+        deadline=time.monotonic()+timeout
+        while True:
+            try:
+                process.wait(0.5);break
+            except subprocess.TimeoutExpired:
+                pass
+            if cancel is not None and cancel.is_set():
+                kill_tree(process);raise Cancelled('Skan bekor qilindi.')
+            if time.monotonic()>deadline:
+                kill_tree(process);raise subprocess.TimeoutExpired(command,timeout)
+        out.seek(0);err.seek(0)
+        return subprocess.CompletedProcess(command,process.returncode,out.read().decode('utf-8','replace'),
+                                           err.read().decode('utf-8','replace'))
+
+
+BATCH_FILES=4000
+BATCH_BYTES=48*1024*1024
+
+
+def batches(work,paths):
+    """The files one tool has to scan, split into parts it is run on one at a time.
+
+    One run over a whole large project is all or nothing: measured with the
+    official rule pack on 26 503 files, Semgrep was still working after an hour,
+    and a time limit or a cancellation at that point would have thrown every
+    result away. Each part's findings are stored the moment that part ends, so
+    an interrupted scan loses one part and the next scan continues after it.
+    A small project is a single part and runs exactly as before. Returns
+    [(paths, bytes), ...] in a fixed order.
+    """
+    parts=[];part=[];size=0
+    for key in sorted(paths):
+        try:length=os.path.getsize(work/'source'/key)
+        except OSError:length=0
+        if part and (len(part)>=BATCH_FILES or size+length>BATCH_BYTES):
+            parts.append((part,size));part=[];size=0
+        part.append(key);size+=length
+    if part:parts.append((part,size))
+    return parts
+
+
+MAX_SPLITS=4
+
+
+def part_bytes(work,paths):
+    total=0
+    for key in paths:
+        try:total+=os.path.getsize(work/'source'/key)
+        except OSError:pass
+    return total
+
+
+class PacedLimit:
+    """Time limit for one part, learned from the parts that already finished.
+
+    A fixed limit per part was too short with the full rule pack: a 4 000-file
+    part needed ~10 minutes, the larger ones more than the 15 allowed, two timed
+    out in a row and 3 351 files were never scanned. The first part gets the
+    size-based budget; after that a part gets three times what the measured pace
+    predicts for its file count, never less than the size-based budget and never
+    more than MAX_PART_SECONDS.
+    """
+
+    def __init__(self,base,scale=1):
+        # `scale` is the WHOLE-snapshot size scale (scan_scale(scanned_bytes)).
+        # The floor used scan_scale(size) on one PART, but batches() caps a part
+        # at BATCH_BYTES (< the 50 MB scan_scale threshold), so that was always 1
+        # and the floor never grew with project size -- a big project's gitleaks
+        # was killed at the base budget though its own --timeout was scaled up.
+        # Audit 2026-10-26 A4.
+        self.base=base;self.scale=max(1,scale);self.files=0;self.seconds=0.0
+
+    def observe(self,part,seconds):
+        self.files+=len(part);self.seconds+=max(0.0,seconds)
+
+    def limit(self,part,size):
+        floor=self.base*self.scale
+        if not self.files:return floor
+        predicted=self.seconds/self.files*len(part)
+        return int(min(MAX_PART_SECONDS,max(floor,3*predicted)))
+
+
+MAX_PART_SECONDS=4*60*60
+
+
+def tool_folder(work,tool,mine,copied,number=None):
+    """The folder to run `tool` in: its `source` holds exactly the files it must scan.
+
+    Usually that is every copied file and the tool runs in the work folder. When
+    it needs fewer -- another tool had nothing stored and pulled in more, or
+    this is one part of a large scan -- it gets a folder of its own with links
+    to just its files (a copy where links are not possible), so it does not
+    rescan what it already has results for.
+    """
+    if mine==copied and number is None:return work
+    folder=work/('only-'+tool if number is None else f'part-{tool}-{number}')
+    made=set()
+    for key in sorted(mine):
+        target=folder/'source'/key
+        if target.parent not in made:
+            target.parent.mkdir(parents=True,exist_ok=True);made.add(target.parent)
+        try:os.link(work/'source'/key,target)
+        except OSError:shutil.copyfile(work/'source'/key,target)
+    return folder
+
+
+CACHE_FORMAT=1
+FULL_SCAN_VARIABLE='THREATCHAIN_FULL_SCAN'
+
+
+def cache_folder():
+    """Beside the run folder, so a relocated or test RUNS gets its own cache."""
+    return RUNS.parent/'scan-cache'
+
+
+def full_scan_requested():
+    return os.environ.get(FULL_SCAN_VARIABLE,'').strip().lower() in {'1','true','yes','on'}
+
+
+def tool_context(tool,tool_version,manifest,local):
+    """Everything that decides what `tool` reports for a given file's content."""
+    def sha(path):
+        try:return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+        except OSError:return 'missing'
+    parts=[CACHE_FORMAT,tool,tool_version or '',MAX_FILE]
+    if tool=='semgrep':
+        parts+=[sha(RULES/'semgrep.yml'),(manifest or {}).get('commit'),((manifest or {}).get('merged') or {}).get('sha256'),
+                sha(local) if local and Path(local).is_file() else str(local or '')]
+        if local and Path(local).is_dir():
+            parts+=sorted((item.name,sha(item)) for item in Path(local).rglob('*') if item.is_file())
+    elif tool=='gitleaks':parts.append(sha(RULES/'gitleaks.toml'))
+    else:parts.append(sha(TOOLS/'pmd/provenance.json'))
+    return hashlib.sha256(json.dumps(parts,sort_keys=True,default=str).encode()).hexdigest()
+
+
+def error_relative(item):
+    """Snapshot-relative path of one scanner error entry, or None when it names no file."""
+    if not isinstance(item,dict):return None
+    raw=str(item.get('path') or item.get('filename') or '').replace('\\','/')
+    if not raw:return None
+    if raw.startswith('source/'):return raw[7:]
+    return raw.split('/source/',1)[1] if '/source/' in raw else None
+
+
+def merge_results(tool,fresh,fresh_errors,entries,scanned,cache,skip=frozenset()):
+    """One tool's findings for the whole project: this run's for the files it
+    scanned, the stored ones for the files it did not.
+
+    Returns (findings, errors, reused file count, rows to store or None). The
+    rows are None when an error names no file: it cannot be filed under a file,
+    so nothing from this run is stored and the next scan looks again.
+    """
+    by_path={};errors_by_path={};storable=True
+    for finding in fresh:by_path.setdefault(finding['path'],[]).append(finding)
+    for item in fresh_errors:
+        relative=error_relative(item)
+        if relative is None:storable=False
+        else:errors_by_path.setdefault(relative,[]).append({'type':item.get('type') if isinstance(item.get('type'),str) else None,
+                                                             'path':'source/'+relative})
+    findings=list(fresh);errors=list(fresh_errors);reused=0
+    if cache is not None:
+        for entry in entries:
+            path=entry['path']
+            if path in scanned or path in skip or (tool=='pmd' and not path.endswith(APEX_SUFFIXES)):continue
+            stored=cache.get(tool,path,entry['sha256'])
+            if stored is None:continue
+            findings+=stored[0];errors+=stored[1];reused+=1
+    # Sort unconditionally: a full (no-cache) scan must return findings in the
+    # same order an incremental one does, or the report/SARIF order and the
+    # baseline diff differ between the two modes for one project. Audit A6.
+    findings.sort(key=lambda f:(f.get('path') or '',f.get('line') or 0,str(f.get('rule_id'))))
+    sha_of={entry['path']:entry['sha256'] for entry in entries}
+    rows=[(path,sha_of[path],by_path.get(path,[]),errors_by_path.get(path,[])) for path in scanned
+          if path in sha_of and (tool!='pmd' or path.endswith(APEX_SUFFIXES))] if storable else None
+    return findings,errors,reused,rows
+
+
+def execute(target,rid,full=False):
     folder=RUNS/rid
+    cancel=CANCEL.setdefault(rid,threading.Event())
     report=read_report(rid)
     report.update(state='running',tools={},findings=[])
     write(folder/'report.json',report)
+    cache=None
+    # Where a first scan's wall time goes, so a slow one on a large project can be
+    # explained: reading files, loading rules, running scanners, everything else.
+    timing={};_t_total=time.perf_counter()
     try:
       with source_for(target) as (source,provenance):
         report['source']=provenance
@@ -752,48 +1503,171 @@ def execute(target,rid):
         with tempfile.TemporaryDirectory(prefix='work-',dir=folder) as temp, scanner_environment(Path(temp).resolve()) as env:
             work=Path(temp).resolve()
             if not work.is_relative_to(folder.resolve()):raise ValueError('Vaqtinchalik papka chegarasi noto‘g‘ri.')
-            coverage=snapshot(source,work/'source')
-            write(folder/'snapshot-manifest.json',coverage.pop('manifest'))
-            # Files a partial clone never downloaded are as unscanned as the large
-            # files the snapshot skipped, and are counted with them.
-            coverage['skipped']['large']+=(provenance.get('partial_clone') or {}).get('large_files_not_downloaded',0)
-            report['coverage']=coverage
+            def progress(text):
+                report['progress']=text
+                write(folder/'report.json',report)
             manifest=registry_manifest()
             messages={**local_messages(),**registry_messages(manifest)}
             local=custom_rules.active()
             if local:messages={**messages,**custom_rules.messages()}
-            for tool,command in tool_commands(work,registry=bool(manifest),local=local,apex=has_apex(work/'source')).items():
+            from . import deep_analysis
+            deep=deep_analysis.enabled()
+            # Tool versions first: they are part of what a stored result is valid for.
+            versions={};version_errors={}
+            for tool,command in tool_commands(work,registry=bool(manifest),local=local).items():
+                try:versions[tool]=version(tool,command,env,work)
+                except (OSError,ValueError,RuntimeError,subprocess.TimeoutExpired) as error:version_errors[tool]=error
+            contexts={tool:tool_context(tool,found,manifest,local) for tool,found in versions.items()}
+            if pmd_exe().is_file():contexts['pmd']=tool_context('pmd','',manifest,local)
+            full=full or full_scan_requested()
+            if not full:
+                cache=scan_cache.open_cache(cache_folder(),target)
+                if cache is not None:cache.load(contexts)
+            progress('Manba o‘lchanmoqda va o‘qilmoqda')
+            _t=time.perf_counter()
+            coverage=snapshot(source,work/'source',progress=progress,cancel=cancel,cache=cache,
+                              tools=list(contexts),copy_all=deep or cache is None)
+            timing['files_s']=round(time.perf_counter()-_t,2)
+            entries=coverage.pop('manifest');scanned=set(coverage.pop('copied'));scanned_bytes=coverage.pop('copied_bytes')
+            tool_skip=coverage.pop('tool_skip',{})
+            if cache is not None:cache.save_files()
+            unread=coverage.pop('unread');needs=coverage.pop('needs')
+            write(folder/'snapshot-manifest.json',entries)
+            # Files a partial clone never downloaded are as unscanned as the large
+            # files the snapshot skipped, and are counted with them.
+            coverage['skipped']['large']+=(provenance.get('partial_clone') or {}).get('large_files_not_downloaded',0)
+            # How much of this result was computed now and how much was taken from
+            # the previous scan of identical content -- stated, never implied.
+            coverage['incremental']={'mode':'incremental' if cache is not None else 'full','files_scanned':len(scanned),
+                                     'files_reused':coverage['files']-len(scanned),'files_not_reopened':unread}
+            report['coverage']=coverage
+            scale=scan_scale(scanned_bytes)
+            if scale>1:coverage['time_budget_scale']=scale
+            apex=any(entry['path'].endswith(APEX_SUFFIXES) for entry in entries)
+            rules_used={}
+            families=project_families(entry['path'] for entry in entries if entry['path'] not in tool_skip.get('semgrep',()))
+            _t=time.perf_counter()
+            command_set=tool_commands(work,registry=bool(manifest),local=local,apex=apex,scale=scale,families=families,used=rules_used)
+            timing['rules_s']=round(time.perf_counter()-_t,2)
+            _t_scan=time.perf_counter()
+            for tool,command in command_set.items():
                 stage='version'
                 process=None
+                tool_version=versions.get(tool)
+                if cancel.is_set():raise Cancelled('Skan bekor qilindi.')
+                mine=set(needs.get(tool,())) if tool in needs else {path for path in scanned if tool!='pmd' or path.endswith(APEX_SUFFIXES)}
+                progress(f'{tool}: tekshiruv bajarilmoqda ({len(mine)} fayl, {coverage["files"]-len(mine)} tasi oldingi skandan)')
                 try:
-                    tool_version=version(tool,command,env,work)
+                    if tool in version_errors:raise version_errors[tool]
+                    if tool_version is None:tool_version=version(tool,command,env,work)
                     stage='scan'
+                    fresh=[];fresh_errors=[];done=set();failed_parts=0;in_a_row=0;first_error=None;memory_retries=0
                     # The official pack raises the rule count from 7 to ~1300, so the
                     # scan legitimately takes minutes rather than seconds.
-                    limit=900 if (tool=='semgrep' and manifest) else 240
+                    base=900 if (tool=='semgrep' and manifest) else 240
                     run_command,low=priority.gentle(command)
-                    process=subprocess.run(run_command,cwd=work,env=env,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=limit,**low)
-                    # Semgrep scan (without --error): findings exit 0. Gitleaks: findings exit 1.
-                    allowed=(0,) if tool in ('semgrep','pmd') else (0,1)
-                    if process.returncode not in allowed:raise ValueError('Skaner xato bilan tugadi (kod '+str(process.returncode)+').')
-                    stage='parse_json'
-                    data=json.loads(process.stdout)
-                    stage='normalize'
-                    findings=normalize(tool,data,work/'source',messages)
-                    if tool=='gitleaks' and ((process.returncode==1)!=bool(findings)):raise ValueError('Gitleaks exit kodi va natija mos emas.')
-                    errors=len(data.get('errors',[])) if tool=='semgrep' else len(data.get('processingErrors') or []) if tool=='pmd' else 0
-                    report['tools'][tool]={'state':'partial' if errors else 'completed','version':tool_version,'count':len(findings),'errors':errors,
+                    queue=[(part,size,0) for part,size in batches(work,mine)]
+                    pace=PacedLimit(base,scale)
+                    number=0
+                    while queue:
+                        part,size,depth=queue.pop(0)
+                        number+=1
+                        if cancel.is_set():raise Cancelled('Skan bekor qilindi.')
+                        many=number>1 or bool(queue)
+                        if many:progress(f'{tool}: {number}-qism, {len(queue)} navbatda ({len(done)}/{len(mine)} fayl tekshirildi)')
+                        where=tool_folder(work,tool,set(part),scanned,number if many else None)
+                        started=time.monotonic()
+                        try:
+                            stage='scan'
+                            process=run_tool(run_command,where,env,pace.limit(part,size),cancel,**low)
+                            # Semgrep scan (without --error): findings exit 0. Gitleaks: findings exit 1.
+                            allowed=(0,) if tool in ('semgrep','pmd') else (0,1)
+                            # Only a non-allowed exit is examined: gitleaks exit 1 means
+                            # findings, not a failure, and must not be read as out-of-memory.
+                            if process.returncode not in allowed:
+                                if out_of_memory(process):raise MemoryExhausted(f'{tool}: xotira yetmadi (kod {process.returncode}).')
+                                raise ValueError('Skaner xato bilan tugadi (kod '+str(process.returncode)+').')
+                            stage='parse_json'
+                            data=json.loads(process.stdout)
+                            stage='normalize'
+                            found=normalize(tool,data,where/'source',messages)
+                            if tool=='gitleaks' and ((process.returncode==1)!=bool(found)):raise ValueError('Gitleaks exit kodi va natija mos emas.')
+                            found_errors=list(data.get('errors') or []) if tool=='semgrep' else list(data.get('processingErrors') or []) if tool=='pmd' else []
+                        except (subprocess.TimeoutExpired,MemoryExhausted) as error:
+                            if first_error is None:first_error=error
+                            # Out of memory: the rest of this tool's run uses one worker,
+                            # since N workers on half the files can exhaust it again.
+                            if isinstance(error,MemoryExhausted):
+                                run_command=fewer_jobs(run_command);memory_retries+=1
+                            # Too slow or too big as a whole: split it and try each half, so
+                            # a few heavy files cost their own part, not their neighbours'. Not
+                            # counted as a failure until a part can no longer be split.
+                            if len(part)>1 and depth<MAX_SPLITS:
+                                half=len(part)//2
+                                queue[:0]=[(part[:half],part_bytes(work,part[:half]),depth+1),
+                                           (part[half:],part_bytes(work,part[half:]),depth+1)]
+                                continue
+                            failed_parts+=1;in_a_row+=1
+                            if in_a_row>=3:break
+                            continue
+                        except (OSError,ValueError,KeyError,TypeError) as error:
+                            # A part that did not finish. The rest still run, unless three in
+                            # a row say the tool is not working. If nothing finishes at all
+                            # the tool is judged below, once it is known whether the cache
+                            # can still answer for the other files.
+                            if first_error is None:first_error=error
+                            failed_parts+=1;in_a_row+=1
+                            if in_a_row>=3:break
+                            continue
+                        finally:
+                            if where!=work:shutil.rmtree(where,ignore_errors=True)
+                        pace.observe(part,time.monotonic()-started)
+                        in_a_row=0
+                        fresh+=found;fresh_errors+=found_errors;done|=set(part)
+                        # Stored now, not when the whole tool has finished.
+                        rows=merge_results(tool,found,found_errors,entries,set(part),None)[3]
+                        if cache is not None and rows is not None and tool in contexts:cache.store(contexts[tool],tool,rows)
+                    unscanned=len(mine)-len(done)
+                    findings,all_errors,reused,_=merge_results(tool,fresh,fresh_errors,entries,mine,cache,tool_skip.get(tool,frozenset()))
+                    # Nothing finished this run AND the cache has nothing for the other
+                    # files: the tool itself is not working, reported as a failure with
+                    # its diagnostic. But when an earlier scan's results are cached for
+                    # files this run did not need (a rescan where only the newly-added or
+                    # previously-timed-out files failed), those stay -- dropping them was
+                    # a real regression: a rescan turned 23k cached findings into zero.
+                    if not done and not reused and first_error is not None:
+                        raise first_error
+                    errors=len(all_errors)
+                    report['tools'][tool]={'state':'partial' if errors or unscanned else 'completed','version':tool_version,'count':len(findings),'errors':errors,
                         'rule_set':rule_set_label(tool,manifest,custom_rules.summary()['rules'] if local else 0),
-                        'rules_sha256':hashlib.sha256((TOOLS/'pmd/provenance.json' if tool=='pmd' else RULES/('semgrep.yml' if tool=='semgrep' else 'gitleaks.toml')).read_bytes()).hexdigest()}
+                        'rules_sha256':hashlib.sha256((TOOLS/'pmd/provenance.json' if tool=='pmd' else RULES/('semgrep.yml' if tool=='semgrep' else 'gitleaks.toml')).read_bytes()).hexdigest(),
+                        'files_scanned':len(done),'files_reused':reused}
+                    # Distinct files the tool could not read: when that is every file it
+                    # was given, nothing was checked and the gate must not read it as clean.
+                    unreadable={error_relative(item) for item in all_errors}-{None}
+                    if unreadable:report['tools'][tool]['files_with_errors']=len(unreadable)
+                    if memory_retries:report['tools'][tool]['memory_retries']=memory_retries
+                    if tool=='semgrep' and rules_used:report['tools'][tool]['rules_used']=dict(rules_used)
+                    if unscanned:
+                        # Not a coverage gap: these files were never looked at. The gate
+                        # and the baseline treat the scan as unfinished (ci_gate.classify_stage);
+                        # what did finish is stored, so the next scan starts from here.
+                        report['tools'][tool].update(files_unscanned=unscanned,
+                            message=(f'{unscanned} ta fayl tekshirilmadi: {failed_parts} ta qism vaqt chegarasida tugamadi yoki xato berdi. '
+                                     'Tugagan qismlar natijasi saqlangan — skanni qayta ishga tushirsangiz, qolgan fayllardan davom etadi.'))
+                    note=version_note(tool,tool_version)
+                    if note:report['tools'][tool]['version_note']=note
                     if tool=='semgrep':
                         if manifest:report['tools'][tool]['rule_pack']={'source':manifest['source'],'commit':manifest['commit'],
                             'rules':manifest['rules'],'files':manifest['files'],'languages':manifest['languages']}
-                        report['tools'][tool]['error_kinds']=error_kinds(data.get('errors',[]))
-                        report['tools'][tool]['error_files']=error_files(data.get('errors',[]),work/'source')
+                        report['tools'][tool]['error_kinds']=error_kinds(all_errors)
+                        report['tools'][tool]['error_files']=error_files(all_errors,source)
                     report['findings']+=findings
                 except (OSError,ValueError,RuntimeError,KeyError,TypeError,subprocess.TimeoutExpired) as error:
                     report['tools'][tool]={'state':'failed','count':0,'message':'Tekshiruv tugallanmadi. O‘rnatish, qoidalar yoki bajarish cheklovini tekshiring.','error_type':type(error).__name__}
                     report['tools'][tool]['failure_stage']=stage
+                    note=version_note(tool,tool_version)
+                    if note:report['tools'][tool].update(version=tool_version,version_note=note,message=note)
                     if process is not None:report['tools'][tool]['exit_code']=process.returncode
                     if str(error)=='windows_certificate_store':
                         report['tools'][tool].update(diagnostic_code='windows_certificate_store',message='Bu ish muhitida Windows sertifikat omboriga kirib bo‘lmadi. SCAN-CODE.cmd faylini Windows’da ochib tekshiring.')
@@ -802,17 +1676,25 @@ def execute(target,rid):
                 # linked, never merged, so no evidence is lost. See baseline.py.
                 report['duplicates']=baseline.link_duplicates(report['findings'])
                 write(folder/'report.json',report)
+            timing['scan_s']=round(time.perf_counter()-_t_scan,2)
+            if cache is not None:cache.finish()
             # Optional deep analysis (CodeQL, inter-file taint): opt-in in settings,
-            # it runs on the same snapshot and counts like any other tool.
-            from . import deep_analysis
-            if deep_analysis.enabled():
+            # it runs on the same snapshot and counts like any other tool. It follows
+            # data across files, so it always sees the whole project, never a part.
+            if deep:
                 report['progress']='CodeQL: fayllararo ma’lumot oqimi tahlili (bir necha daqiqa)'
                 write(folder/'report.json',report)
-                record,deep=deep_analysis.run(work/'source',work,env)
+                record,deep_findings=deep_analysis.run(work/'source',work,env)
                 report['tools']['codeql']=record
-                report['findings']+=deep
+                report['findings']+=deep_findings
                 report['count']=len(report['findings']);report['verification_summary']=verification_mod.summarize(report['findings'])
                 report['duplicates']=baseline.link_duplicates(report['findings'])
+            timing['total_s']=round(time.perf_counter()-_t_total,2)
+            # Everything not in a named phase: tool versions, cache load, optional
+            # deep analysis, history secrets, finalising the report.
+            timing['other_s']=round(max(0.0,timing['total_s']-timing.get('files_s',0.0)
+                                        -timing.get('rules_s',0.0)-timing.get('scan_s',0.0)),2)
+            report['timing']=timing
             states=[item['state'] for item in report['tools'].values()]
             report['state']='completed' if all(s=='completed' for s in states) else 'failed' if all(s=='failed' for s in states) else 'partial'
             # Kept out of report['tools'] on purpose: a project without .git is
@@ -822,15 +1704,37 @@ def execute(target,rid):
                 report['findings']+=extra
                 report['count']=len(report['findings']);report['verification_summary']=verification_mod.summarize(report['findings'])
             write(folder/'report.json',report)
+    except Cancelled:
+        # What the finished tools found stays in the report; the state says the
+        # scan did not run to the end, so nothing reads it as a clean result.
+        report.update(state='cancelled',message='Skan bekor qilindi; tugagan vositalar natijasi saqlangan, qolganlari bajarilmadi.')
     except Exception as error:  # noqa: BLE001 -- any failure marks the scan failed rather than leaving it 'running'; dependencies.py, iac.py and images.py do the same
         report.update(state='failed',error_type=type(error).__name__)
         if isinstance(error,(OSError,ValueError)):report['message']=str(error)[:300]
     finally:
+        if cache is not None:cache.close()
         report['finished_at']=datetime.datetime.now(datetime.timezone.utc).isoformat()
+        report.pop('progress',None)
         write(folder/'report.json',report)
         triage.record_scan('code',report)
-        LOCK.release()
+        CANCEL.pop(rid,None)
+        LOCK.release(target)
     return report
+
+
+def cancel(rid):
+    """Ask a running code scan to stop.
+
+    It stops while copying the source and between tools. A tool that is already
+    running is not killed -- it ends within its own time limit -- so the answer
+    says the stop may not be immediate.
+    """
+    read_report(rid)
+    event=CANCEL.get(rid)
+    if event is None:raise ValueError('Jarayon ushbu serverda ishlamayapti.')
+    event.set()
+    return {'id':rid,'state':'cancellation_requested',
+            'message':'Bekor qilish so‘raldi. Ishlab turgan vosita o‘z vaqt chegarasida tugaydi; keyingisi boshlanmaydi.'}
 
 
 def diagnose_semgrep(rid):
@@ -869,15 +1773,17 @@ def diagnose_semgrep(rid):
     return result
 
 
-def start(target,background=True):
+def start(target,background=True,full=False):
     check_target(target)
-    if not LOCK.acquire(blocking=False):raise ValueError('Boshqa kod tekshiruvi davom etmoqda.')
+    if not LOCK.acquire(target):
+        raise ValueError('Bu loyiha hozir tekshirilmoqda.' if LOCK.locked(target) else 'Boshqa kod tekshiruvi davom etmoqda.')
     rid=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S')+'-'+uuid.uuid4().hex[:8]
+    CANCEL[rid]=threading.Event()
     try:write(RUNS/rid/'report.json',{'id':rid,'target':target,'created_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                'state':'queued','count':0,'findings':[],'tools':{},'verification':'unverified_static',
+                'state':'queued','count':0,'findings':[],'tools':{},'verification':'unverified_static','pid':os.getpid(),
                 'limits':'Topilmalar qo‘lda tekshiriladi. Maxfiy qiymat va kod parchasi hisobotga kiritilmaydi. Bu amaliy hujum tasdig‘i emas.'})
-    except Exception:LOCK.release();raise
+    except Exception:CANCEL.pop(rid,None);LOCK.release(target);raise
     if background:
-        threading.Thread(target=execute,args=(target,rid),daemon=True).start()
+        threading.Thread(target=execute,args=(target,rid,full),daemon=True).start()
         return {'id':rid,'state':'queued'}
-    return execute(target,rid)
+    return execute(target,rid,full)

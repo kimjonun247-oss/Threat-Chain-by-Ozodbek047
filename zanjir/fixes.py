@@ -38,13 +38,20 @@ def version_key(value):
     """A sort key good enough across semver, PEP 440, Maven and distro versions."""
     text = str(value or '').strip()
     text = re.sub(r'^[vV](?=\d)', '', text).split('+')[0]
+    parts = re.findall(r'\d+|[A-Za-z]+', text)
     key = []
-    for part in re.findall(r'\d+|[A-Za-z]+', text):
+    for idx, part in enumerate(parts):
         if part.isdigit():
             key.append((1, int(part), ''))
-        else:
-            word = part.lower()
-            key.append((0 if word in PRE_RELEASE else 2, 0, word))
+            continue
+        word = part.lower()
+        # A lone letter glued to the end of a release (openssl `1.0.1a`, which is
+        # NEWER than `1.0.1`) is a release suffix, not a pre-release -- unlike a
+        # named token (`beta`, `rc`) or a PEP 440 alpha with a following number
+        # (`1.0.0a1`, still a pre-release). Audit 2026-10-26 D6.
+        release_letter = (len(word) == 1 and idx == len(parts) - 1
+                          and idx > 0 and parts[idx - 1].isdigit())
+        key.append((0, 0, word) if word in PRE_RELEASE and not release_letter else (2, 0, word))
     # A release sorts after its own pre-releases and before its patch levels.
     key.append((1, -1, ''))
     return key
@@ -190,9 +197,15 @@ def dependency_plan(findings, manifests=None, query=None):
         entry['advisories'].append(finding['advisory_id'])
         step = next_fix(key[2], finding.get('fixed_versions') or [])
         (entry['fixes'] if step else entry['unfixed']).append((finding['advisory_id'], step))
+    ordered = sorted(packages.items(), key=lambda item: (item[0][0], item[0][1].lower()))
+    proposed = {key: max((step for _, step in entry['fixes']), key=version_key, default=None) for key, entry in ordered}
+    # Every proposed version is re-checked in one batched pass (recheck_many), not
+    # one package at a time.
+    checked = (recheck_many(query, {key: (key[0], key[1], target) for key, target in proposed.items() if target})
+               if query is not None else {})
     plan = []
-    for (ecosystem, name, version), entry in sorted(packages.items(), key=lambda item: (item[0][0], item[0][1].lower())):
-        target = max((step for _, step in entry['fixes']), key=version_key, default=None)
+    for (ecosystem, name, version), entry in ordered:
+        target = proposed[(ecosystem, name, version)]
         row = {'ecosystem': ecosystem, 'name': name, 'current': version, 'upgrade_to': target,
                'advisories': sorted(set(entry['advisories'])),
                'without_fix': sorted({advisory for advisory, _ in entry['unfixed']}),
@@ -200,8 +213,8 @@ def dependency_plan(findings, manifests=None, query=None):
                                      and major(target) > major(version)),
                'target_check': 'not_checked', 'diffs': [], 'command': None,
                'transitive_note': TRANSITIVE_NOTE.get(ecosystem)}
-        if target and query is not None:
-            row['upgrade_to'], row['target_check'], row['still_affected_by'] = recheck(query, ecosystem, name, target)
+        if (ecosystem, name, version) in checked:
+            row['upgrade_to'], row['target_check'], row['still_affected_by'] = checked[(ecosystem, name, version)]
             target = row['upgrade_to']
             row['major_upgrade'] = bool(major(target) is not None and major(version) is not None and major(target) > major(version))
         if target:
@@ -223,31 +236,65 @@ def dependency_plan(findings, manifests=None, query=None):
 
 def recheck(query, ecosystem, name, target):
     """(version, 'clean'|'still_affected'|'unavailable', advisories) after up to MAX_ROUNDS OSV look-ups."""
-    remaining = []
+    return recheck_many(query, {0: (ecosystem, name, target)})[0]
+
+
+def recheck_many(query, targets):
+    """recheck() for many packages at once: one OSV look-up per round for all of them.
+
+    `targets` maps any key to (ecosystem, name, proposed version); the result maps
+    the same keys to recheck()'s (version, state, advisories). A plan used to call
+    recheck() once per vulnerable package -- up to MAX_ROUNDS look-ups each, one
+    after another, each with its own thread pool and no cancellation point -- so
+    2 000 vulnerable packages were up to 6 000 sequential OSV round trips. Now it
+    is at most MAX_ROUNDS batched calls (query_packages batches 50 per request).
+    """
+    results, remaining = {}, {key: [] for key in targets}
+    current = dict(targets)
     for _ in range(MAX_ROUNDS):
-        try:
-            matches, details, errors, _ = query([{'ecosystem': ecosystem, 'name': name, 'version': target}])
-        except Exception:                            # noqa: BLE001 -- a feed outage must not break the report
-            return target, 'unavailable', []
-        if errors and not matches:
-            return target, 'unavailable', []
-        ids = [vid for vid in matches.get((ecosystem, name, target), []) if not (details.get(vid) or {}).get('withdrawn')]
-        if not ids:
-            return target, 'clean', []
-        remaining = sorted(ids)
-        fixes = []
-        for vid in ids:
-            fixed = set()
-            for affected in (details.get(vid) or {}).get('affected') or []:
-                for interval in affected.get('ranges') or []:
-                    fixed |= {e['fixed'] for e in interval.get('events') or [] if isinstance(e.get('fixed'), str)}
-            step = next_fix(target, fixed)
-            if step:
-                fixes.append(step)
-        if not fixes:
+        if not current:
             break
-        target = max(fixes, key=version_key)
-    return target, 'still_affected', remaining
+        try:
+            matches, details, errors, _ = query([{'ecosystem': e, 'name': n, 'version': v}
+                                                 for e, n, v in dict.fromkeys(current.values())])
+        except InterruptedError:
+            raise                                    # a cancelled scan stops; it is not a feed outage
+        except Exception:                            # noqa: BLE001 -- a feed outage must not break the report
+            results.update({key: (version, 'unavailable', []) for key, (_, _, version) in current.items()})
+            return results
+        errors = [error for error in errors or [] if isinstance(error, dict)]
+        failed = {tuple(error['package']) for error in errors if isinstance(error.get('package'), list)}
+        # A query-level failure that names no package (osv_query_incomplete without
+        # attribution) covers every package that came back without an answer.
+        blanket = any('package' not in error and 'advisory' not in error
+                      and str(error.get('reason', '')).startswith('osv_') for error in errors)
+        following = {}
+        for key, (ecosystem, name, version) in current.items():
+            full = (ecosystem, name, version)
+            if full not in matches and (full in failed or blanket):
+                results[key] = (version, 'unavailable', [])
+                continue
+            ids = [vid for vid in matches.get(full, []) if not (details.get(vid) or {}).get('withdrawn')]
+            if not ids:
+                results[key] = (version, 'clean', [])
+                continue
+            remaining[key] = sorted(ids)
+            fixes = []
+            for vid in ids:
+                fixed = set()
+                for affected in (details.get(vid) or {}).get('affected') or []:
+                    for interval in affected.get('ranges') or []:
+                        fixed |= {e['fixed'] for e in interval.get('events') or [] if isinstance(e.get('fixed'), str)}
+                step = next_fix(version, fixed)
+                if step:
+                    fixes.append(step)
+            if not fixes:
+                results[key] = (version, 'still_affected', remaining[key])
+                continue
+            following[key] = (ecosystem, name, max(fixes, key=version_key))
+        current = following
+    results.update({key: (version, 'still_affected', remaining[key]) for key, (_, _, version) in current.items()})
+    return results
 
 
 # ---- images ----------------------------------------------------------------------
@@ -594,14 +641,42 @@ DIFFABLE = re.compile(r'^(requirements(?:[-_.][A-Za-z0-9_.-]+)?\.txt|pyproject\.
                       r'build\.gradle(?:\.kts)?|.+\.(?:cs|fs|vb)proj)$')
 
 
-def read_manifests(root, limit=200, max_bytes=512 * 1024):
+MANIFEST_TEXT_BUDGET = 64 * 1024 * 1024      # total manifest text kept for fix diffs
+
+
+def read_manifests(root, limit=200, max_bytes=512 * 1024, paths=None):
+    """{relative path: text} of the manifests a fix diff can edit.
+
+    With `paths` (the inventory's manifests) only those files are read: no second
+    walk of the repository, and no silent stop at `limit` files -- a monorepo
+    with more than 200 lockfiles lost every diff past the 200th. The bound is
+    then total bytes (MANIFEST_TEXT_BUDGET); the caller can tell what was left
+    out by comparing with its list.
+    """
     import os
     from pathlib import Path
-    from .inventory import EXCLUDED
+    from .engine import skip_directory
     base = Path(root).resolve()
     found = {}
+    if paths is not None:
+        total = 0
+        for relative in sorted(set(paths)):
+            if not DIFFABLE.match(relative.rsplit('/', 1)[-1]):
+                continue
+            path = base / relative
+            try:
+                if path.is_symlink() or not path.resolve().is_relative_to(base):
+                    continue
+                size = path.stat().st_size
+                if size > max_bytes or total + size > MANIFEST_TEXT_BUDGET:
+                    continue
+                found[relative] = path.read_text(encoding='utf-8')
+                total += size
+            except (OSError, UnicodeDecodeError):
+                continue
+        return found
     for current, dirs, files in os.walk(base, followlinks=False):
-        dirs[:] = sorted(d for d in dirs if d not in EXCLUDED and not os.path.islink(os.path.join(current, d)))
+        dirs[:] = sorted(d for d in dirs if not skip_directory(current, d) and not os.path.islink(os.path.join(current, d)))
         for name in sorted(files):
             if not DIFFABLE.match(name):
                 continue

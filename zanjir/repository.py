@@ -3,13 +3,14 @@ from __future__ import annotations
 import datetime
 import ipaddress
 import json
+import posixpath
 import re
 from pathlib import Path
 import time
 import uuid
 from urllib.parse import urlsplit
 from vendor import yaml
-from .engine import canonical, digest
+from .engine import Notes, canonical, digest, note_gap
 from . import findings as findings_mod, taxonomy
 from . import verification as verification_mod
 
@@ -49,7 +50,46 @@ TRUST_HEADER = re.compile(r'(?i)^(x-user|x-role|x-auth[a-z-]*|x-forwarded-user|x
 # broker, cache). Used only to decide which "no host port" services are worth
 # flagging for RP-005 — a plain internal microservice with an unrecognized
 # image is left alone rather than guessed at.
-DATASTORE_IMAGE = re.compile(r'(?i)(postgres|mysql|mariadb|mongo|redis|elasticsearch|opensearch|rabbitmq|memcached|cassandra|couchdb|neo4j|influxdb|kafka|zookeeper|etcd|consul|vault|sqlserver|mssql|dynamodb|chroma)')
+DATASTORE_NAMES = frozenset({'postgres', 'postgresql', 'postgis', 'timescaledb', 'mysql', 'mariadb', 'percona',
+                             'mongo', 'mongodb', 'redis', 'valkey', 'keydb', 'elasticsearch', 'opensearch',
+                             'rabbitmq', 'memcached', 'cassandra', 'scylla', 'couchdb', 'neo4j', 'influxdb',
+                             'clickhouse', 'cockroach', 'cockroachdb', 'kafka', 'zookeeper', 'etcd', 'consul',
+                             'vault', 'sqlserver', 'mssql', 'dynamodb', 'minio', 'chroma', 'chromadb'})
+# Tools that sit beside a data store and carry its name without being one: a
+# metrics exporter, an admin UI, a backup job. A substring match on the image
+# name flagged every one of them (postgres-exporter, mongo-express, kafka-ui).
+DATASTORE_COMPANIONS = frozenset({'exporter', 'ui', 'express', 'admin', 'adminer', 'insight', 'redisinsight',
+                                  'commander', 'client', 'cli', 'backup', 'operator', 'proxy', 'manager',
+                                  'dashboard', 'browser', 'gui', 'web', 'migrate', 'migrations', 'tools',
+                                  'connect', 'rest', 'schema', 'registry', 'pgadmin', 'pgadmin4', 'phpmyadmin',
+                                  'kibana', 'agent', 'sidecar', 'init', 'test', 'tests'})
+
+
+class _DatastoreImage:
+    """`.search(image)` -> truthy when the image is itself a data store.
+
+    The repository path (registry host, tag and digest removed) is split into
+    name tokens and one of them has to *be* a data store name: `chromatic/web`
+    and `mycorp/netcdf-tools` contain "chroma" and "etcd" as substrings and are
+    neither. An image naming a companion tool is left alone -- guessing there
+    would report a metrics exporter as an unsegmented database.
+    """
+
+    @staticmethod
+    def tokens(image):
+        name = str(image or '').lower().split('@', 1)[0]
+        parts = name.split('/')
+        if len(parts) > 1 and ('.' in parts[0] or ':' in parts[0] or parts[0] == 'localhost'):
+            parts = parts[1:]                       # registry host[:port]
+        parts[-1] = parts[-1].split(':', 1)[0]      # tag
+        return [token for part in parts for token in re.split(r'[^a-z0-9]+', part) if token]
+
+    def search(self, image):
+        tokens = set(self.tokens(image))
+        return bool(tokens & DATASTORE_NAMES) and not tokens & DATASTORE_COMPANIONS
+
+
+DATASTORE_IMAGE = _DatastoreImage()
 # Framework env vars that switch on verbose errors, interactive debuggers or
 # dev-only routes. Each maps its variable name (lowercased) to the set of
 # values (lowercased) that mean "debug/dev is on" for that framework.
@@ -67,24 +107,49 @@ DOCKER_SOCKET = re.compile(r'(?i)/var/run/docker\.sock|//\./pipe/docker_engine')
 DANGEROUS_CAPS = {'ALL','SYS_ADMIN','SYS_PTRACE','SYS_MODULE','SYS_RAWIO','NET_ADMIN','DAC_READ_SEARCH'}
 
 
+# Written for a demo stack; a platform's Compose file has hundreds of services
+# and is several megabytes with its anchors expanded. Every limit is still a
+# limit -- the parser never reads an unbounded document.
+MAX_CONFIG_BYTES = 8_000_000
+MAX_YAML_EVENTS = 600_000
+MAX_YAML_NODES = 300_000
+MAX_SERVICES = 2000
+MAX_INCLUDES = 50
+
+
 def safe_read(root, relative):
     if not isinstance(relative, str) or not relative or Path(relative).is_absolute():
         raise ValueError('Repository ichidagi nisbiy fayl yo‘li kerak.')
     file = (root / relative).resolve()
     if not file.is_relative_to(root.resolve()) or not file.is_file():
         raise ValueError('Fayl repository chegarasidan tashqarida yoki mavjud emas.')
-    if file.stat().st_size > 2_000_000:
-        raise ValueError('Fayl 2 MB chegarasidan katta.')
+    if file.stat().st_size > MAX_CONFIG_BYTES:
+        raise ValueError(f'Fayl {MAX_CONFIG_BYTES // 1_000_000} MB chegarasidan katta.')
     return file.read_bytes().decode('utf-8-sig')
+
+
+MERGE_TAG = 'tag:yaml.org,2002:merge'
 
 
 class StrictLoader(yaml.SafeLoader):
     def construct_mapping(self, node, deep=False):
+        # A key written twice in one mapping is still an error. Keys that arrive
+        # through a merge (`<<: *defaults`) are not duplicates: the mapping's own
+        # keys override them, which is what Compose does.
+        own = set()
+        for key_node, _ in node.value:
+            if key_node.tag == MERGE_TAG:
+                continue
+            key = self.construct_object(key_node, deep=deep)
+            if not isinstance(key, (str, int, float, bool)) or key in own:
+                raise ValueError('YAML kaliti takrorlangan yoki qo‘llanmaydi.')
+            own.add(key)
+        self.flatten_mapping(node)
         result = {}
         for key_node, value_node in node.value:
             key = self.construct_object(key_node, deep=deep)
-            if not isinstance(key, (str, int, float, bool)) or key in result:
-                raise ValueError('YAML kaliti takrorlangan yoki qo‘llanmaydi.')
+            if not isinstance(key, (str, int, float, bool)):
+                raise ValueError('YAML kaliti qo‘llanmaydi.')
             result[key] = self.construct_object(value_node, deep=deep)
         return result
 
@@ -109,7 +174,7 @@ def parse_yaml(text):
 
 
 def _parse_yaml(text):
-    if len(text) > 2_000_000:
+    if len(text) > MAX_CONFIG_BYTES:
         raise ValueError('YAML hajmi chegaradan oshdi.')
     depth=0
     events=0
@@ -119,10 +184,12 @@ def _parse_yaml(text):
             depth+=1
         if isinstance(event,(yaml.MappingEndEvent,yaml.SequenceEndEvent)):
             depth-=1
-        if depth>50 or events>60000:
+        if depth>50 or events>MAX_YAML_EVENTS:
             raise ValueError('YAML murakkabligi chegaradan oshdi.')
-        if isinstance(event, yaml.AliasEvent):
-            raise ValueError('YAML alias/merge hozir qo‘llanmaydi; oldindan normalizatsiya qiling.')
+        # Anchors and merge keys are how large Compose files share settings
+        # (`x-defaults: &defaults` ... `<<: *defaults`), so they are read. An
+        # alias cannot be used as a bomb here: every expanded node is counted
+        # below and construction shares one object per anchor.
     loader = StrictLoader(text)
     try:
         node = loader.get_single_node()
@@ -133,7 +200,7 @@ def _parse_yaml(text):
         def visit(current, path=(), depth=0):
             nonlocal count
             count += 1
-            if depth > 50 or count > 30000:
+            if depth > 50 or count > MAX_YAML_NODES:
                 raise ValueError('YAML murakkabligi chegaradan oshdi.')
             locations[path] = current.start_mark.line + 1
             if isinstance(current, yaml.MappingNode):
@@ -211,16 +278,18 @@ def port_mapping(value):
         match = re.fullmatch(r'(?:\[([^]]+)\]:|([^:]+):)?([^:]+):([^:]+)',raw)
         if match:
             host, published, target = match[1] or match[2], match[3], match[4]
-        elif re.fullmatch(r'\d+',raw):
+        elif re.fullmatch(r'\d+(-\d+)?',raw):
             host,published,target = None,'dynamic',raw
         else:
             raise ValueError('Port formati yoki diapazoni qo‘llanmaydi.')
     else:
         raise ValueError('Port formati noto‘g‘ri.')
-    if not str(target).isdigit() or not 1 <= int(target) <= 65535:
-        raise ValueError('Target port noto‘g‘ri.')
-    if published != 'dynamic' and (not str(published).isdigit() or not 1 <= int(published) <= 65535):
-        raise ValueError('Host port diapazoni qo‘llanmaydi.')
+    # `8000-8010:8000-8010` publishes eleven ports. It was refused as a format
+    # error, so a service exposing a whole range produced no finding at all.
+    target, target_end = port_span(target, 'Target port noto‘g‘ri.')
+    if published != 'dynamic':
+        first, last = port_span(published, 'Host port diapazoni qo‘llanmaydi.')
+        published = str(first) if first == last else f'{first}-{last}'
     if protocol not in {'tcp','udp'}:
         raise ValueError('Protokol qo‘llanmaydi.')
     if host is None:
@@ -228,7 +297,19 @@ def port_mapping(value):
     else:
         address = ipaddress.ip_address(str(host))
         scope = 'loopback' if address.is_loopback else 'all_interfaces' if address.is_unspecified else 'specific_interface'
-    return {'host_ip':host,'published':str(published),'target':int(target),'protocol':protocol,'scope':scope}
+    return {'host_ip':host,'published':str(published),'target':int(target),'protocol':protocol,'scope':scope,
+            **({'target_end':target_end} if target_end != target else {})}
+
+
+def port_span(value, message):
+    """(first, last) of `8080` or `8000-8010`; raises ValueError(message) otherwise."""
+    match = re.fullmatch(r'(\d+)(?:-(\d+))?', str(value))
+    if not match:
+        raise ValueError(message)
+    first, last = int(match[1]), int(match[2] or match[1])
+    if not 1 <= first <= last <= 65535:
+        raise ValueError(message)
+    return first, last
 
 
 TOKEN = re.compile(r'#[^\n]*|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|[{};]|[^\s{};]+')
@@ -282,6 +363,38 @@ CLIENT_VARIABLE = re.compile(r'\$(http_[a-z0-9_]+|arg_[a-z0-9_]+|uri|document_ur
 NGINX_CHECK_RULES = ('RP-009', 'RP-010', 'RP-011')
 
 
+def upstream_authority(value):
+    """The host[:port] part of a proxy_pass value.
+
+    `proxy_pass http://backend:8080$request_uri;` forwards the caller's path to
+    a fixed host, which is how most reverse proxies are written and is not SSRF.
+    Only a client-controlled variable in the authority lets the caller pick the
+    upstream, so that is the only part RP-010 looks at.
+    """
+    rest = value.split('://', 1)[1] if '://' in value else value
+    # $uri, $request_uri and $document_uri always begin with "/", so they start
+    # the path when written straight after a host (`http://api$uri`). With no
+    # host before it (`http://$request_uri/x`) the variable *is* the authority.
+    return re.split(r'[/?]|(?<=.)\$(?:request_uri|document_uri|uri)\b', rest, maxsplit=1)[0]
+
+
+def identity_header(directive):
+    """True when a proxy_set_header makes the gateway vouch for the caller.
+
+    Relaying what the client sent (`Authorization $http_authorization`) or
+    clearing the header (`X-User ""`) asserts nothing: the backend receives
+    exactly what it would have received on its own port, so a direct path adds
+    no forgery. Only a value the gateway computes (`$remote_user`, an
+    auth_request variable, a literal) is an identity the backend has to trust.
+    """
+    args = directive['args']
+    if not args or not TRUST_HEADER.fullmatch(args[0]):
+        return False
+    value = args[1] if len(args) > 1 else ''
+    relayed = '$http_' + args[0].lower().replace('-', '_')
+    return bool(value) and value.lower() != relayed
+
+
 def nginx_checks(root):
     """Config weaknesses that need no Compose context: RP-009, RP-010, RP-011.
 
@@ -319,7 +432,7 @@ def nginx_checks(root):
         for proxy in directives(block, 'proxy_pass'):
             if not proxy['args']:
                 continue
-            match = CLIENT_VARIABLE.search(proxy['args'][0])
+            match = CLIENT_VARIABLE.search(upstream_authority(proxy['args'][0]))
             if match:
                 issues.append({'rule': 'RP-010', 'line': proxy['line'],
                                'location': ' '.join(block['args']) if block['name'] == 'location' else block['name'],
@@ -373,7 +486,7 @@ def nginx_routes(text, values):
                     port=parsed.port or (443 if parsed.scheme=='https' else 80)
                 except ValueError:
                     target,port=None,None
-                trust_headers=sorted({d['args'][0] for d in directives if d['name']=='proxy_set_header' and d['args'] and TRUST_HEADER.fullmatch(d['args'][0])})
+                trust_headers=sorted({d['args'][0] for d in directives if d['name']=='proxy_set_header' and identity_header(d)})
                 result.append({'location':location,'url':url,'target':target,'target_port':port,'scheme':url.split(':',1)[0],
                                'line':child['line'],'listen':local_listen,'verify':local_verify['args'][0] if local_verify and local_verify['args'] else None,
                                'verify_line':local_verify['line'] if local_verify else None,'trust_headers':trust_headers})
@@ -383,10 +496,156 @@ def nginx_routes(text, values):
     return result,includes
 
 
+# Keys Compose appends when a service extends another; every other sequence is
+# replaced by the extending service's own value.
+APPENDED_KEYS = frozenset({'ports', 'expose', 'volumes', 'cap_add', 'cap_drop', 'devices', 'dns', 'env_file',
+                           'security_opt', 'tmpfs', 'external_links'})
+MAX_EXTENDS_DEPTH = 8
+
+
+def _as_mapping(value):
+    """`environment` and `labels` may be a list of KEY=VALUE; merge them as mappings."""
+    if isinstance(value, list):
+        return dict(item.split('=', 1) if isinstance(item, str) and '=' in item else (str(item), None) for item in value)
+    return value
+
+
+OVERRIDE_NAMES = {'docker-compose.yml': 'docker-compose.override.yml', 'docker-compose.yaml': 'docker-compose.override.yaml',
+                  'compose.yml': 'compose.override.yml', 'compose.yaml': 'compose.override.yaml'}
+
+
+def override_path(compose):
+    """The override file Compose reads by itself beside a default-named file.
+
+    `docker compose up` merges `docker-compose.override.yml` over
+    `docker-compose.yml` without being asked, and that file is where a team
+    usually publishes ports and turns debugging on. Reading only the main file
+    described a stack nobody runs. A file given under any other name has no
+    implicit override, so none is looked for.
+    """
+    name = posixpath.basename(str(compose).replace('\\', '/'))
+    other = OVERRIDE_NAMES.get(name)
+    return rebase(compose, other) if other else None
+
+
+def merge_service(base, own, keep_all=False):
+    """A service as Compose builds it from `extends` (or, with `keep_all`, from
+    an override file): mappings are merged, the listed sequences are appended,
+    everything else is the later definition's."""
+    merged = dict(base)
+    for key, value in own.items():
+        if key == 'extends':
+            continue
+        inherited = merged.get(key)
+        if key in ('environment', 'labels') and inherited is not None:
+            inherited, value = _as_mapping(inherited), _as_mapping(value)
+        if isinstance(inherited, dict) and isinstance(value, dict):
+            merged[key] = {**inherited, **value}
+        elif isinstance(inherited, list) and isinstance(value, list) and key in APPENDED_KEYS:
+            merged[key] = inherited + [item for item in value if item not in inherited]
+        else:
+            merged[key] = value
+    # Compose does not carry these two across an `extends`; an override file
+    # keeps everything the main file said.
+    for key in () if keep_all else ('depends_on', 'volumes_from'):
+        if key in base and key not in own:
+            merged.pop(key, None)
+    return merged
+
+
+def resolve_extends(services, origins, read, unknowns):
+    """Replace every `extends:` with the service it produces, in place.
+
+    A service that extends a base inherits the base's ports, capabilities and
+    volumes, and those are exactly what the rules below look at: left
+    unresolved, an exposed privileged service looked like a harmless one with an
+    "extends is present" note beside it. What cannot be resolved -- a missing
+    file or service, a cycle -- stays as it was and is named in `unknowns`.
+    """
+    files = {}
+
+    def load(path):
+        if path not in files:
+            parsed, _ = parse_yaml(read(path))
+            files[path] = parsed.get('services') if isinstance(parsed, dict) and isinstance(parsed.get('services'), dict) else {}
+        return files[path]
+
+    def build(sid, service, origin, trail):
+        target = service.get('extends')
+        if target is None:
+            return service
+        if len(trail) >= MAX_EXTENDS_DEPTH:
+            raise ValueError('extends zanjiri juda chuqur yoki aylanma')
+        name, other = (target, None) if isinstance(target, str) else \
+            (target.get('service'), target.get('file')) if isinstance(target, dict) else (None, None)
+        if not isinstance(name, str) or (other is not None and not isinstance(other, str)):
+            raise ValueError('extends formati noma’lum')
+        source = rebase(origin, other) if other else origin
+        # A base named without a file lives beside the service that names it:
+        # in the external file we are already in, or among the project's own.
+        pool = load(source) if other else (files[origin] if origin in files else services)
+        base = pool.get(name)
+        if not isinstance(base, dict) or (source, name) in trail:
+            raise ValueError(f'asos xizmat topilmadi yoki aylanma: {name}')
+        return merge_service(build(name, base, source, trail + [(source, name)]), service)
+
+    for sid in list(services):
+        service = services[sid]
+        if not isinstance(service, dict) or 'extends' not in service:
+            continue
+        origin = origins[sid][0]
+        try:
+            services[sid] = build(sid, service, origin, [(origin, sid)])
+        except (ValueError, OSError) as error:
+            note_gap(unknowns, f'{sid}: extends yechilmadi — {error}; shu xizmat uchun qamrov to‘liq emas.')
+
+
+def include_paths(value, compose, unknowns):
+    """Repository-relative paths named by a top-level `include:`, in order."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        note_gap(unknowns, 'Compose include ro‘yxat emas; yechilmadi.')
+        return []
+    paths = []
+    for entry in value:
+        named = entry.get('path') if isinstance(entry, dict) else entry
+        for one in (named if isinstance(named, list) else [named]):
+            if not isinstance(one, str) or not one or '$' in one or '://' in one or one.startswith(('/', '\\')):
+                note_gap(unknowns, f'Compose include yozuvi yechilmadi ({str(one)[:80]}); qamrov to‘liq emas.')
+                continue
+            paths.append(rebase(compose, one) or one)
+    if len(paths) > MAX_INCLUDES:
+        note_gap(unknowns, f'{len(paths)} ta include; faqat birinchi {MAX_INCLUDES} tasi o‘qildi.', not_reached=len(paths) - MAX_INCLUDES)
+    return list(dict.fromkeys(paths))[:MAX_INCLUDES]
+
+
+def rebase(origin, relative):
+    """`relative` (as written in the file `origin`) expressed from the repository root.
+
+    Returns '.' for the root itself. A path that climbs out of the repository is
+    returned as written: it cannot match anything inside, and safe_read() refuses
+    it if it is ever opened.
+    """
+    base = posixpath.dirname(str(origin).replace('\\', '/'))
+    joined = posixpath.normpath(posixpath.join(base, str(relative).replace('\\', '/')))
+    if joined.startswith('../') or joined == '..' or joined.startswith('/'):
+        return str(relative)
+    return joined
+
+
 def scan_repository(root, compose, env_file=None, bindings=None, provenance=None):
+    # A folder of manifests (or one manifest file) in the `compose` field is a
+    # Kubernetes deployment: the same questions, answered from another format,
+    # and reported in the same shape so every chain rule applies to it.
+    from . import kubernetes
+    if isinstance(compose,str) and kubernetes.applies(root,compose):
+        if env_file or bindings:
+            raise ValueError('Kubernetes manifestlari uchun .env va proxy binding qo‘llanmaydi.')
+        return kubernetes.scan(root,compose,provenance)
     started=time.perf_counter()
     root=Path(root).resolve()
-    evidence,files,unknowns,findings,edges=[],[],[],[],[]
+    evidence,files,unknowns,findings,edges=[],[],Notes(),[],[]
     bindings=bindings or []
     if not isinstance(bindings,list) or len(bindings)>50:
         raise ValueError('Proxy binding ro‘yxati noto‘g‘ri yoki juda katta.')
@@ -399,9 +658,10 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
         eid=f'R{len(evidence)+1:03}'
         evidence.append({'id':eid,'path':path,'line':line,'label':label,'value':value})
         return eid
+    by_fingerprint={}   # a scan through `findings` per new finding was O(F^2) on a large Compose file
     def finding(rule,service,key,detail,eids,severity='warning'):
         fingerprint=digest(canonical([rule,service,key]))[:24]
-        existing=next((f for f in findings if f['fingerprint']==fingerprint),None)
+        existing=by_fingerprint.get(fingerprint)
         if existing:
             existing['evidence_ids']=list(dict.fromkeys(existing['evidence_ids']+eids))
             return
@@ -411,23 +671,65 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
                          'remediation':RULES[rule][1],'runtime_verified':False,'verified':False,
                          'cwe_ids':tags['cwe_ids'],'owasp_top10_2025':tags['owasp_top10_2025'],
                          'verification_note':'Compose/Nginx konfiguratsiyasidan statik o‘qilgan deklaratsiya; runtime, firewall va autentifikatsiya tekshirilmagan. Mutaxassis qo‘lda ko‘rib chiqishi shart.'})
+        by_fingerprint[fingerprint]=findings[-1]
     compose_text=read(compose)
     document,locations=parse_yaml(compose_text)
     if not isinstance(document,dict) or not isinstance(document.get('services'),dict):
         raise ValueError('Compose services mapping topilmadi.')
-    if len(document['services'])>200:
-        raise ValueError('200 tadan ko‘p xizmat qo‘llanmaydi.')
-    for key in ['include','extends']:
-        if key in document:
-            unknowns.append(f'Compose {key} qo‘llanmaydi; qamrov to‘liq emas.')
+    # Which file each service was read from, and that file's line index.
+    origins={sid:(compose,locations) for sid in document['services']}
+    for included in include_paths(document.get('include'),compose,unknowns):
+        # `include:` is how a large stack is split into files. The named files are
+        # read like the main one; a service the main file also defines keeps the
+        # main file's definition.
+        try:
+            other,other_locations=parse_yaml(read(included))
+            if not isinstance(other,dict) or not isinstance(other.get('services') or {},dict):
+                raise ValueError('services mapping yo‘q')
+            if 'include' in other:
+                note_gap(unknowns, f'{included}: ichki include yechilmadi; qamrov to‘liq emas.')
+            for sid,service in (other.get('services') or {}).items():
+                if sid not in document['services']:
+                    document['services'][sid]=service
+                    origins[sid]=(included,other_locations)
+        except (ValueError,OSError) as error:
+            note_gap(unknowns, f'include {included}: o‘qilmadi — {error}')
+    overrides=[]
+    override=override_path(compose)
+    if override and (root/override).is_file():
+        try:
+            other,other_locations=parse_yaml(read(override))
+            layered=other.get('services') if isinstance(other,dict) else None
+            if not isinstance(layered,dict):
+                raise ValueError('services mapping yo‘q')
+            for sid,service in layered.items():
+                if isinstance(document['services'].get(sid),dict) and isinstance(service,dict):
+                    document['services'][sid]=merge_service(document['services'][sid],service,keep_all=True)
+                else:
+                    document['services'][sid]=service
+                    origins[sid]=(override,other_locations)
+            overrides.append(override)
+        except (ValueError,OSError) as error:
+            note_gap(unknowns, f'{override}: override fayli o‘qilmadi — {error}; qamrov to‘liq emas.')
+    if len(document['services'])>MAX_SERVICES:
+        # A bound, not a failure: the first MAX_SERVICES are analysed and the rest
+        # are reported as never reached (it used to fail the repository stage).
+        excess=len(document['services'])-MAX_SERVICES
+        document['services']=dict(list(document['services'].items())[:MAX_SERVICES])
+        note_gap(unknowns, f'{MAX_SERVICES+excess} ta xizmat; faqat birinchi {MAX_SERVICES} tasi tahlil qilindi.',
+                 not_reached=excess)
+    if 'extends' in document:
+        note_gap(unknowns, 'Compose extends qo‘llanmaydi; qamrov to‘liq emas.')
     env=dotenv(read(env_file)) if env_file else {}
     inventory=[]
     service_environments={}
+    resolve_extends(document['services'],origins,read,unknowns)
     for sid,service in document['services'].items():
         if not isinstance(sid,str) or not isinstance(service,dict):
             raise ValueError('Xizmat formati noto‘g‘ri.')
-        line=locations.get(('services',sid),1)
-        service_id=fact(compose,line,'Xizmat',sid)
+        origin,where=origins[sid]
+        line=where.get(('services',sid),1)
+        service_id=fact(origin,line,'Xizmat',sid)
         nets=service.get('networks',{'default':None})
         if isinstance(nets,(dict,list)):
             nets=list(nets)
@@ -437,7 +739,7 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
         if 'network_mode' in service:
             nets=[]
             unknowns.append(f'{sid}: network_mode uchun reachability hisoblanmadi.')
-        for key in ['extends','profiles','env_file']:
+        for key in ['profiles','env_file']:
             if key in service:
                 unknowns.append(f'{sid}: {key} mavjud; ishga tushirish shartlari/qamrov to‘liq yechilmagan.')
         ports=[]
@@ -449,7 +751,7 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
             try:
                 normalized={k:interpolate(v,env,unknowns,sid) for k,v in value.items()} if isinstance(value,dict) else interpolate(value,env,unknowns,sid)
                 port=port_mapping(normalized)
-                eid=fact(compose,locations.get(('services',sid,'ports',str(index)),line),'Host port mapping',port)
+                eid=fact(origin,where.get(('services',sid,'ports',str(index)),line),'Host port mapping',port)
                 port['evidence_id']=eid
                 ports.append(port)
                 if port['scope']!='loopback':
@@ -466,7 +768,7 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
         debug_hits={k:v for k,v in values.items() if k.lower() in DEBUG_ENV_TRUE and str(v).strip().lower() in DEBUG_ENV_TRUE[k.lower()]}
         exposed_ports=[p for p in ports if p['scope']!='loopback']
         if debug_hits and exposed_ports:
-            env_eid=fact(compose,line,'Debug muhit o‘zgaruvchisi',debug_hits)
+            env_eid=fact(origin,line,'Debug muhit o‘zgaruvchisi',debug_hits)
             finding('RP-006',sid,','.join(sorted(debug_hits)),
                     f"{sid} xizmatida debug/dev muhiti yoqilgan ({', '.join(f'{k}={v}' for k,v in debug_hits.items())}) va shu xizmat host portidan ham to‘g‘ridan-to‘g‘ri ochiq. Ikkalasi alohida to‘g‘ri: debug rejimi lokal ishlab chiqish uchun odatiy, portni ochish ham alohida qaror. Ammo birgalikda: debug rejimi ko‘pincha batafsil xato sahifalari, interaktiv konsol yoki qo‘shimcha ichki yo‘llarni yoqadi — bular endi tashqi tarmoqdan ham yetkazilishi mumkin.",
                     [env_eid]+[p['evidence_id'] for p in exposed_ports])
@@ -484,7 +786,7 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
             if DOCKER_SOCKET.search(source):
                 socket_sources.append(source)
         if socket_sources and exposed_ports:
-            vol_eid=fact(compose,line,'Docker socket mount',{'volumes':socket_sources})
+            vol_eid=fact(origin,line,'Docker socket mount',{'volumes':socket_sources})
             finding('RP-007',sid,'docker.sock',
                     f"{sid} xizmati Docker socketni ({socket_sources[0]}) konteyner ichiga ulagan va shu bilan birga host portidan ham to‘g‘ridan-to‘g‘ri ochiq. Ikkalasi alohida to‘g‘ri: ba’zi vositalarga (masalan CI runner, monitoring) Docker socket kerak, portni ochish ham alohida qaror. Ammo birgalikda: bu xizmat buzilsa, tashqi tarmoqdan Docker API’ga to‘liq — odatda daemon/root darajasidagi — nazorat qo‘lga kiritiladi.",
                     [vol_eid]+[p['evidence_id'] for p in exposed_ports],'error')
@@ -494,7 +796,7 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
             raw_caps=[]
         dangerous_caps=sorted({c.upper() for c in raw_caps if isinstance(c,str) and c.upper() in DANGEROUS_CAPS})
         if (privileged or dangerous_caps) and exposed_ports:
-            cap_eid=fact(compose,line,'Konteyner imtiyozlari',{'privileged':privileged,'cap_add':dangerous_caps})
+            cap_eid=fact(origin,line,'Konteyner imtiyozlari',{'privileged':privileged,'cap_add':dangerous_caps})
             detail_bits='privileged: true'+(f", cap_add: {', '.join(dangerous_caps)}" if dangerous_caps else '') if privileged else f"cap_add: {', '.join(dangerous_caps)}"
             finding('RP-008',sid,'privileged' if privileged else ','.join(dangerous_caps),
                     f"{sid} xizmati kengaytirilgan yadro imtiyozlari bilan ishlaydi ({detail_bits}) va host portidan ham to‘g‘ridan-to‘g‘ri ochiq. Ikkalasi alohida to‘g‘ri: ba’zi ish yuklamalariga bu imtiyoz kerak, portni ochish ham alohida qaror. Ammo birgalikda: bu xizmat buzilsa, standart konteyner izolyatsiyasidan tashqariga chiqib, xost yadrosiga ta’sir qilish imkoniyati tashqi tarmoqdan ham ochiladi.",
@@ -512,6 +814,11 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
             if build_context.startswith('./'):
                 build_context=build_context[2:]
             build_context=build_context.rstrip('/') or None
+        # A build context is relative to the file that declares it. Chains match
+        # it against repository paths, so it is rebased onto the repository root
+        # (`deploy/compose.yml` + `build: ../api` is `api`).
+        if build_context:
+            build_context=rebase(origin,build_context)
         inventory.append({'id':sid,'ports':ports,'networks':nets,'image':str(service.get('image','')),
                           'build_context':build_context,
                           'evidence_id':service_id,'auth_status':'unknown','runtime_verified':False})
@@ -535,7 +842,10 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
             continue
         names=', '.join(e['id'] for e,_ in reaching)
         networks=sorted({n for _,shared in reaching for n in shared})
-        finding('RP-005',target['id'],f"{'+'.join(e['id'] for e,_ in reaching)}:{','.join(networks)}",
+        # The key is the data store alone. It used to list every reaching service,
+        # so exposing one more service changed the identity: the old finding
+        # "disappeared", a "new" one failed the gate, and its triage was lost.
+        finding('RP-005',target['id'],'datastore',
                 f"Host portidan ochiq {len(reaching)} ta xizmat ({names}) {target['id']} (image: {target['image']}) bilan bir xil Docker tarmog‘ida ({', '.join(networks)}) ishlaydi. Har biri alohida to‘g‘ri: xizmatni tashqariga ochish va standart Compose tarmog‘idan foydalanish odatiy holat. Ammo birgalikda: shu xizmatlardan biri buzilsa, gateway yoki ilova darajasidagi autentifikatsiyasiz, to‘g‘ridan-to‘g‘ri Docker ichki DNS orqali {target['id']} portiga yetish mumkin. Tuzatish bitta: {target['id']}ni faqat kerakli xizmatlar ulangan ichki (internal) tarmoqqa o‘tkazing.",
                 [e['evidence_id'] for e,_ in reaching]+[target['evidence_id']],'warning')
     for binding in bindings:
@@ -597,7 +907,7 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
                     verify_eid=fact(path,route['verify_line'],'proxy_ssl_verify','off')
                     finding('RP-002',sid,f'{target}:{route["target_port"]}:{route["location"]}',
                             f"{sid} → {target}, {route['location']}: HTTPS tanlangan, lekin upstream sertifikatini tekshirish off. Source mapping qo‘lda berilgan; deployed image mosligi va amaliy ta’sir tekshirilmagan.",[bind_eid,eid,verify_eid])
-                parallel=[p for p in by_id[target]['ports'] if p['target']==route['target_port'] and p['protocol']=='tcp']
+                parallel=[p for p in by_id[target]['ports'] if route['target_port'] is not None and p['target']<=route['target_port']<=p.get('target_end',p['target']) and p['protocol']=='tcp']
                 if parallel:
                     scopes=', '.join(sorted(set(p['scope'] for p in parallel)))
                     finding('RP-003',target,f'{sid}:{route["target_port"]}',
@@ -612,9 +922,9 @@ def scan_repository(root, compose, env_file=None, bindings=None, provenance=None
     now=datetime.datetime.now(datetime.timezone.utc)
     report={'schema_version':2,'kind':'repository','id':now.strftime('%Y%m%dT%H%M%S')+'-'+uuid.uuid4().hex[:8],
             'created_at':now.isoformat(),'engine_version':VERSION,'duration_ms':round((time.perf_counter()-started)*1000,2),
-            'repository':provenance or {'repository':root.name,'commit':None}, 'profile':{'compose':compose,'env_file':env_file,'bindings':bindings},
+            'repository':provenance or {'repository':root.name,'commit':None}, 'profile':{'compose':compose,'env_file':env_file,'bindings':bindings,**({'overrides':overrides} if overrides else {})},
             'input_sha256':digest(canonical({'files':files,'bindings':bindings,'compose':compose,'env_file':env_file})), 'files':files,'services':inventory,'edges':edges,
-            'evidence':evidence,'findings':findings,'unknowns':list(dict.fromkeys(unknowns)),
+            'evidence':evidence,'findings':findings,'unknowns':list(dict.fromkeys(unknowns)),'coverage_gaps':unknowns.coverage(),
             'summary':{'services':len(inventory),'published_ports':sum(len(s['ports']) for s in inventory),
                        'loopback_ports':sum(p['scope']=='loopback' for s in inventory for p in s['ports']),
                        'proxy_routes':len(edges),'findings':len(findings),'runtime_confirmed':0},

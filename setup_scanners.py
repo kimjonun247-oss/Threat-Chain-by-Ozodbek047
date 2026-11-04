@@ -147,10 +147,24 @@ def _uv_install(venv, python):
                     f'semgrep=={SEMGREP_VERSION}'], check=True, timeout=1800)
 
 
+def interpreter_runs(python):
+    """Whether the venv's own interpreter starts at all."""
+    try:
+        return subprocess.run([str(python), '-c', 'pass'], capture_output=True, timeout=60).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def install_semgrep():
     venv, python, executable = semgrep_paths()
     if python.is_file() and installed_semgrep(python) == SEMGREP_VERSION:
         return f'Semgrep {SEMGREP_VERSION} mavjud.'
+    # A venv whose interpreter no longer starts -- restored from a cache made with
+    # another Python patch release, or the base Python was upgraded or removed --
+    # cannot be repaired in place: `python -m venv` leaves a dangling interpreter
+    # link as it is, and pip then fails at once. Start it over instead.
+    if venv.exists() and not interpreter_runs(python):
+        shutil.rmtree(venv, ignore_errors=True)
     source = 'PyPI via pip over HTTPS'
     try:
         _venv_pip_install(venv, python)

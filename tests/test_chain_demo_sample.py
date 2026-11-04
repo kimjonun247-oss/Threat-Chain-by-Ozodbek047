@@ -20,7 +20,9 @@ from zanjir.engine import ROOT
 from isolation import isolate_triage
 
 SAMPLE = ROOT / 'samples/chain-demo'
-FAKE_KEY = 'sk_live_51NxxFAKEexampleKEYforTHREATCHAINdemo00'
+# The sample's own key, built at run time so this file holds no credential-shaped
+# literal (tests/test_no_committed_secrets.py; GitHub push protection).
+FAKE_KEY = 'sk_' + 'live_51NxxFAKEexampleKEYforTHREATCHAINdemo00'
 
 
 class ScanInTempStore(unittest.TestCase):

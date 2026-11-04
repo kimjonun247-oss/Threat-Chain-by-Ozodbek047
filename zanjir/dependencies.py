@@ -4,15 +4,21 @@ import datetime
 import json
 from pathlib import Path
 import threading
+import time
 import uuid
 from .engine import ROOT, DATA
 from . import inventory, advisories, scanners, repo_store, run_index, triage, fixes
 from . import verification as verification_mod
 
 RUNS=DATA/'dependency-runs'
-LOCK=threading.Lock()
+PROGRESS_INTERVAL=1.0   # seconds between progress writes of report.json
+# One scan per project, several projects side by side up to max_parallel_scans
+# (default 1) -- the same slots the code scanner uses. The work is manifest
+# parsing and public feed lookups, so two projects do not get in each other's way.
+LOCK=scanners.ScanSlots()
 REVIEW_LOCK=threading.Lock()
 CANCEL={}
+_TARGETS={}
 
 
 def now():return datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -33,9 +39,20 @@ def history(target=None,limit=30):
 def execute(rid):
     report=None;folder=RUNS/rid
     def save():repo_store.write_json(folder/'report.json',report)
+    last_write=[float('-inf')]
     def progress(message):
+        # Cancellation is checked on every call. The report is written at most once
+        # per PROGRESS_INTERVAL: advisories call this once per advisory, and 20 000
+        # advisories were 20 000 full rewrites of report.json (plus its index,
+        # status, view and compare files). A progress line that cannot be written
+        # (an antivirus or OneDrive lock) is skipped -- it used to fail the stage.
         if CANCEL[rid].is_set():raise InterruptedError('Tekshiruv bekor qilindi.')
-        report['progress']=message;save()
+        report['progress']=message
+        moment=time.monotonic()
+        if moment-last_write[0]<PROGRESS_INTERVAL:return
+        last_write[0]=moment
+        try:save()
+        except OSError:pass
     try:
         report=read(rid)
         report['state']='running';progress('Kutubxona ro‘yxati yig‘ilmoqda')
@@ -43,7 +60,8 @@ def execute(rid):
         # inventory is read; the manifests are copied into inventory.json first.
         with scanners.source_for(report['target']) as (root,provenance):
             collected=inventory.collect(root)
-            manifest_texts=fixes.read_manifests(root)
+            # Only the manifests the inventory found: no second walk, no 200-file cut.
+            manifest_texts=fixes.read_manifests(root,paths=[m['path'] for m in collected['manifests']]+collected.get('project_files',[]))
         report['source']=provenance
         repo_store.write_json(folder/'inventory.json',collected)
         report.update(inventory_sha256=collected['sha256'],coverage={k:v for k,v in collected.items() if k!='packages'})
@@ -57,7 +75,10 @@ def execute(rid):
             findings=advisories.normalize(collected['packages'],matches,details,kev,kev_meta['state']=='available')
             advisories.enrich(findings,progress=progress)
             progress('Tuzatish rejasi: maqsad versiyalar OSV’da qayta tekshirilmoqda')
-            report['fix_plan']=fixes.dependency_plan(findings,manifest_texts,advisories.query_packages)
+            # The re-check of proposed versions goes through progress(), so it reports
+            # where it is and a cancelled scan stops there instead of waiting it out.
+            report['fix_plan']=fixes.dependency_plan(findings,manifest_texts,
+                lambda packages:advisories.query_packages(packages,progress=lambda message:progress('Tuzatish versiyalari: '+message)))
             report.update(findings=findings,count=len(findings),query_errors=errors,
                           feeds={'osv':{'checked_packages':len(matches),'requested_packages':collected['unique_packages'],
                                         'responses':len(provenance),'oldest_retrieved_at':min((p['retrieved_at'] for p in provenance),default=None),
@@ -77,21 +98,22 @@ def execute(rid):
         try:
             if report is not None:
                 report['finished_at']=now();save();triage.record_scan('dependencies',report)
-        finally:CANCEL.pop(rid,None);LOCK.release()
+        finally:CANCEL.pop(rid,None);LOCK.release(_TARGETS.pop(rid,'*'))
     return report
 
 
 def start(target,background=True):
     scanners.check_target(target)
-    if not LOCK.acquire(blocking=False):raise ValueError('Boshqa kutubxona tekshiruvi davom etmoqda.')
+    if not LOCK.acquire(target):
+        raise ValueError('Bu loyihaning kutubxonalari hozir tekshirilmoqda.' if LOCK.locked(target) else 'Boshqa kutubxona tekshiruvi davom etmoqda.')
     rid=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S')+'-'+uuid.uuid4().hex[:8]
-    CANCEL[rid]=threading.Event()
+    CANCEL[rid]=threading.Event();_TARGETS[rid]=target
     try:
         repo_store.write_json(RUNS/rid/'report.json',{'schema_version':1,'id':rid,'target':target,'created_at':now(),
                              'state':'queued','count':0,'findings':[],
                              'limits':'OSV/NVD/CISA KEV paket/versiya mosligi amaliy hujum tasdig‘i emas. Qamrov, conditional/dev paketlar va ishlayotgan tizimga moslik qo‘lda tekshiriladi.',
                              'data_policy':'OSV, NVD va EPSS ga faqat paket nomi, ecosystem, versiya yoki CVE ID yuboriladi. Kod, fayl yo‘li, token yuborilmaydi. Bu tekshiruv doim internetga ulangan holda ishlaydi; offline/faqat-inventar rejim mavjud emas.'})
-    except Exception:CANCEL.pop(rid,None);LOCK.release();raise
+    except Exception:CANCEL.pop(rid,None);LOCK.release(_TARGETS.pop(rid,target));raise
     if background:
         threading.Thread(target=execute,args=(rid,),daemon=True).start()
         return {'id':rid,'state':'queued'}

@@ -25,9 +25,12 @@ collector's own budget/window/deadline, evidence-based (every reported endpoint
 was actually reached), and no combined score.
 """
 import json
+import os
 from pathlib import Path
 
 from vendor import yaml
+
+from .engine import skip_directory
 
 # Live spec URLs to try, beyond the three the Nuclei template already covers.
 # Each is a conventional publication path for an OpenAPI/Swagger document.
@@ -90,40 +93,49 @@ def spec_get_paths(spec):
     return result
 
 
-def discover_repo(source_root):
+def discover_repo(source_root, notes=None):
     """Parse every API-description file found under the registered source root.
 
     Returns a list of (relative_path, spec). The walk is bounded, each file is
     size-capped, and only files whose name looks like a spec are opened -- this
-    never reads arbitrary repository content.
+    never reads arbitrary repository content. node_modules, .git, vendor and the
+    like are not entered (engine.skip_directory): on a large monorepo the walk
+    cap used to be spent inside node_modules before any real spec was reached.
+    What the bounds left out is appended to `notes` when one is given.
     """
     root = Path(source_root)
     found, seen = [], 0
+    notes = notes if notes is not None else []
     try:
         if not root.is_dir():
             return found
-        for path in root.rglob('*'):
-            seen += 1
-            if seen > MAX_REPO_WALK_ENTRIES or len(found) >= MAX_REPO_SPEC_FILES:
-                break
-            if not path.is_file():
-                continue
-            if path.suffix.lower() not in SPEC_SUFFIXES:
-                continue
-            if not any(stem in path.stem.lower() for stem in SPEC_STEMS):
-                continue
-            try:
-                if path.stat().st_size > MAX_SPEC_FILE_BYTES:
+        for current, dirs, files in os.walk(root, followlinks=False):
+            dirs[:] = sorted(d for d in dirs if not skip_directory(current, d)
+                             and not os.path.islink(os.path.join(current, d)))
+            for name in sorted(files):
+                seen += 1
+                if seen > MAX_REPO_WALK_ENTRIES or len(found) >= MAX_REPO_SPEC_FILES:
+                    notes.append(f'qidiruv chegarasi ({MAX_REPO_WALK_ENTRIES} fayl / {MAX_REPO_SPEC_FILES} spec) '
+                                 'yetdi; qolgan fayllar ko‘rilmadi')
+                    return found
+                path = Path(current) / name
+                if path.suffix.lower() not in SPEC_SUFFIXES or os.path.islink(path):
                     continue
-                spec = parse_spec(path.read_text(encoding='utf-8', errors='replace'))
-            except OSError:
-                continue
-            if spec is not None:
+                if not any(stem in path.stem.lower() for stem in SPEC_STEMS):
+                    continue
                 try:
-                    label = str(path.relative_to(root))
-                except ValueError:
-                    label = path.name
-                found.append((label, spec))
+                    if path.stat().st_size > MAX_SPEC_FILE_BYTES:
+                        notes.append(f'{path.relative_to(root).as_posix()}: {MAX_SPEC_FILE_BYTES} baytdan katta, o‘qilmadi')
+                        continue
+                    spec = parse_spec(path.read_text(encoding='utf-8', errors='replace'))
+                except OSError:
+                    continue
+                if spec is not None:
+                    try:
+                        label = str(path.relative_to(root))
+                    except ValueError:
+                        label = path.name
+                    found.append((label, spec))
     except OSError:
         return found
     return found
@@ -141,14 +153,28 @@ def _probe(collector, path):
         return None
 
 
-def inventory_findings(collector, finding, source_root=None, authenticated=False):
+def inventory_findings(collector, finding, source_root=None, authenticated=False, budget=None):
     """Build the API inventory and the findings it supports.
 
     Returns (findings, inventory) where inventory is a transparency record for
     the report. `finding` is webscan.finding, injected to avoid a circular import.
+
+    `budget` is how many requests this supplementary pass may make; the caller
+    reserves the rest for the core checks. What the budget left out is recorded,
+    never silently dropped.
     """
+    start = collector.requests
+
+    def spent():
+        return budget is not None and collector.requests - start >= budget
+
     specs = []  # (origin, label, spec)
-    for live_path in NUCLEI_SPEC_PATHS + EXTRA_SPEC_PATHS:
+    unparsed, not_tried = [], 0
+    spec_paths = NUCLEI_SPEC_PATHS + EXTRA_SPEC_PATHS
+    for index, live_path in enumerate(spec_paths):
+        if spent():
+            not_tried = len(spec_paths) - index
+            break
         status = None
         body = None
         try:
@@ -160,8 +186,13 @@ def inventory_findings(collector, finding, source_root=None, authenticated=False
             spec = parse_spec(body.decode('utf-8', 'replace'))
             if spec is not None:
                 specs.append(('live', live_path, spec))
+            else:
+                # A spec over the response size cap arrives truncated and does not
+                # parse; it is named here instead of passing as "no spec".
+                unparsed.append(live_path)
+    repo_notes = []
     if source_root:
-        for label, spec in discover_repo(source_root):
+        for label, spec in discover_repo(source_root, repo_notes):
             specs.append(('repo', label, spec))
 
     documented = {}  # endpoint path -> set("origin:label")
@@ -175,6 +206,14 @@ def inventory_findings(collector, finding, source_root=None, authenticated=False
         'documented_endpoints': len(documented),
         'authenticated_scan': bool(authenticated),
     }
+    if budget is not None:
+        inventory['request_budget'] = budget
+    if not_tried:
+        inventory['spec_paths_not_tried'] = not_tried
+    if unparsed:
+        inventory['unparsed_live_specs'] = unparsed
+    if repo_notes:
+        inventory['repository_walk'] = repo_notes
     findings = []
     if not specs:
         return findings, inventory
@@ -198,7 +237,7 @@ def inventory_findings(collector, finding, source_root=None, authenticated=False
     parameterised = sorted(p for p in documented if '{' in p or '}' in p)
     reached, probed = [], 0
     for endpoint in static:
-        if probed >= MAX_PROBE:
+        if probed >= MAX_PROBE or spent():
             break
         status = _probe(collector, endpoint)
         probed += 1
@@ -209,6 +248,10 @@ def inventory_findings(collector, finding, source_root=None, authenticated=False
 
     inventory['probed_count'] = probed
     inventory['parameterised_skipped'] = len(parameterised)
+    if len(static) > probed:
+        # Documented static endpoints never reached: MAX_PROBE or the request
+        # budget stopped the pass. They are not "unreachable", just unchecked.
+        inventory['endpoints_not_probed'] = len(static) - probed
 
     # The cross-reference the operator asked for: documented endpoints that an
     # UNAUTHENTICATED client reaches. When the scan carries credentials this

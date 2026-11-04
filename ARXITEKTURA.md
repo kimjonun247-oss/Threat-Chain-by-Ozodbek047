@@ -37,12 +37,12 @@ flowchart TB
 
     subgraph SCAN["3 · Yettita skaner bosqichi"]
         CODE["code<br/>Semgrep · Gitleaks · PMD<br/>(+ ixtiyoriy CodeQL)"]
-        REPO["repository<br/>Compose/env/nginx<br/>RP-001…008"]
+        REPO["repository<br/>Compose/env/nginx<br/>RP-001…011"]
         DEP["dependencies<br/>OSV · KEV · NVD · EPSS"]
         IMG["images<br/>Trivy"]
         IAC["iac<br/>Trivy config"]
         WSCAN["web<br/>Nuclei · HTTP GET"]
-        CHAIN["chain<br/>cross-skaner SX-001…003"]
+        CHAIN["chain<br/>cross-skaner SX-001…007"]
     end
 
     subgraph INTEL["4 · Tahlil va birlashtirish"]
@@ -63,8 +63,9 @@ flowchart TB
         TRIVYDB[("Trivy DB")]
     end
 
-    subgraph DATA["6 · Ma'lumot (disk, JSON)"]
+    subgraph DATA["6 · Ma'lumot (disk: JSON + qayta quriladigan SQLite)"]
         RUNS[("*-runs/<br/>report.json")]
+        BOARD[("findings-board/, scan-cache/<br/>SQLite")]
         PROF[("profiles/<br/>triage, settings")]
         RULES[("scanner-rules/<br/>work/repositories/")]
     end
@@ -96,12 +97,12 @@ Har bir bosqich mustaqil: o'z nishoni, o'z asbobi, o'z `*-runs/` papkasi bor. Ul
 | Bosqich | Modul | Asbob / manba | Nima tekshiradi |
 |---|---|---|---|
 | **code** | `scanners.py` | Semgrep, Gitleaks, PMD (Apex), ixtiyoriy `deep_analysis.py` (CodeQL) | Koddagi xavfli naqshlar, maxfiy qiymatlar, taint oqimi |
-| **repository** | `repository.py` | O'z statik tahlilchisi (RP-001…008) | Compose/env/nginx: ochiq portlar, debug rejim, docker.sock, privileged |
+| **repository** | `repository.py` | O'z statik tahlilchisi (RP-001…011) | Compose/env/nginx: ochiq portlar, debug rejim, docker.sock, privileged |
 | **dependencies** | `dependencies.py` + `advisories.py` + `threatfeeds.py` | OSV, CISA KEV, NVD, EPSS | Kutubxona CVE'lari, ekspluatatsiya holati, EPSS ehtimoli |
 | **images** | `images.py` | Trivy | Docker image qatlamlaridagi paket zaifliklari |
 | **iac** | `iac.py` | Trivy config | Terraform/K8s/Docker konfiguratsiya xatolari |
 | **web** | `webscan.py` | Nuclei + o'z HTTP tekshiruvlari | Ishlayotgan sayt/API: sarlavhalar, TLS, ma'lum zaifliklar (cheklangan GET) |
-| **chain** | `chains.py` | Cross-skaner korrelyatsiya (SX-001…003) | Bir necha bosqich birga tashkil qilgan real xavf (ochiq port + zaif paket) |
+| **chain** | `chains.py` | Cross-skaner korrelyatsiya (SX-001…007) | Bir necha bosqich birga tashkil qilgan real xavf (ochiq port + zaif paket) |
 
 Har bir topilma bir xil shaklga keltiriladi: `fingerprint`, `severity`, `cwe_ids`, `owasp_top10_2025`, `verification_note`. Og'irlik ajratish tamoyillari uchun README va `triage.py:SEVERITY_SCALE` ga qarang.
 
@@ -143,10 +144,17 @@ Muhim: `findings_index` **avtomatik yopilgan** (masalan web tasdiqidan o'tmagan)
 - `auth.py` — kim foydalana oladi va nima qildi (audit)
 - `settings.py`, `notify.py` — lokal sozlamalar, xabar kanallari (webhook/Slack/email)
 
-**Skanerlar (3-bo'limga qarang):** `scanners.py`, `repository.py`, `dependencies.py`, `images.py`, `iac.py`, `webscan.py`, `chains.py`
+**Skanerlar (3-bo'limga qarang):** `scanners.py`, `repository.py`, `kubernetes.py` (Compose bilan bir xil shakldagi manifest tahlili), `dependencies.py`, `images.py`, `iac.py`, `webscan.py`, `chains.py`
+
+**Katta loyihalar uchun**
+- `scan_cache.py` — inkremental kesh (SQLite): o'zgarmagan fayl qayta o'qilmaydi va skanerlanmaydi
+- `pathclass.py` — topilma joyini prod / test / vendored / generated deb belgilaydi (`--prod-only`, zanjirlar)
+- `recovery.py` — o'lgan jarayon "running" holatida qoldirgan hisobotlarni tiklaydi
+- `readiness.py` — `/api/health` uchun lokal tizim holati (vositalar, kod versiyasi)
 
 **Tahlil va birlashtirish**
 - `findings_index.py` — barcha bosqich topilmalarini bitta jadvalga jamlaydi, qamrovni hisoblaydi
+- `findings_store.py` — o'sha jadvalning SQLite ko'rinishi: qidiruv, filtr, fasetlar, ustuvorlik tartibi
 - `run_index.py` — run papkalari uchun tez xulosa qatorlari (qayta parse qilmasdan)
 - `triage.py` — yagona og'irlik shkalasi, SLA muddatlari, qaror holatlari
 - `baseline.py` — inson yopgan topilmalarni suppress qilish, skanlar orasidagi farq
@@ -176,7 +184,15 @@ Muhim: `findings_index` **avtomatik yopilgan** (masalan web tasdiqidan o'tmagan)
 
 ## 6. Ma'lumot modeli (disk)
 
-Hech qanday ma'lumotlar bazasi yo'q — hammasi disk'dagi JSON fayllar:
+Manba haqiqati — disk'dagi JSON hisobotlar. Ulardan qayta quriladigan ikkita SQLite fayl bor (o'chirilsa
+yoki formati eskirsa avtomatik qayta quriladi; hisobotlarga ta'sir qilmaydi):
+
+| Papka | Nima saqlaydi |
+|---|---|
+| `findings-board/` | Topilmalar jadvali (`findings_store.py`): qidiruv, filtr, fasetlar SQL so'rovi |
+| `scan-cache/<nishon>.sqlite3` | Inkremental kesh (`scan_cache.py`): o'zgarmagan fayl qayta o'qilmaydi va skanerlanmaydi |
+
+Qolganlari JSON fayllar:
 
 | Papka | Nima saqlaydi |
 |---|---|
@@ -195,7 +211,8 @@ Hech qanday ma'lumotlar bazasi yo'q — hammasi disk'dagi JSON fayllar:
 - **`nettrust.py`** — barcha tashqi ulanishlar faqat ruxsat berilgan manbalarga (OSV/KEV/NVD/EPSS), TLS tekshiruvi bilan.
 - **`webscan.py`** — faqat ro'yxatga olingan, ruxsatli nishonlarga; ruxsat oynasi va kunlik so'rov limiti; lokal/intranet manzillar uchun alohida ruxsat.
 - **Redaksiya** — `fixes.py` va topilma dalillari maxfiy qiymatlarni (parol, token) `***` bilan yashiradi; faqat xatoning joyi ko'rsatiladi.
-- **`auth.py`** — 127.0.0.1 da tinglaydi, kim nima qilganini audit qiladi.
+- **`auth.py`** — standart holatda server 127.0.0.1 da tinglaydi; tarmoqqa faqat TLS va login bilan ochiladi
+  (rollar: viewer / operator / admin); kim nima qilganini audit qiladi.
 - **CSP** — dashboard `style-src 'self'` ostida; grafik kutubxona yo'q, inline SVG bilan chiziladi.
 
 ---

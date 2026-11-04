@@ -106,12 +106,42 @@ def _label(run, stage):
     run['automationDetails'] = {'id': f'threatchain/{stage}/'}
     driver = run['tool']['driver']
     driver.setdefault('version', repository_mod.VERSION)
-    driver['informationUri'] = 'https://github.com/kimjonun247-oss/Kim-Jon-Un'
+    driver['informationUri'] = 'https://github.com/kimjonun247-oss/Threat-Chain-by-Ozodbek047'
     run['properties'] = {**run.get('properties', {}), 'stage': stage, 'scanner': STAGE_TOOLS.get(stage, stage)}
     return run
 
 
-def build(report):
+LEVEL_ORDER = {'error': 0, 'warning': 1, 'note': 2, 'none': 3}
+
+
+def limit_results(runs, max_results):
+    """Keep at most `max_results` results across the runs, the most severe first.
+
+    Code-scanning services refuse or cut an upload beyond a result count (GitHub
+    documents 25 000 per run and shows the top 5 000). A file that is silently
+    cut by the receiver hides which findings were dropped; cutting it here keeps
+    the worst ones and writes the true total into each run.
+    """
+    total = sum(len(run.get('results') or []) for run in runs)
+    if not max_results or total <= max_results:
+        return runs
+    ranked = sorted(((LEVEL_ORDER.get(result.get('level'), 3), index, position)
+                     for index, run in enumerate(runs) for position, result in enumerate(run.get('results') or [])))
+    keep = {}
+    for _, index, position in ranked[:max_results]:
+        keep.setdefault(index, set()).add(position)
+    limited = []
+    for index, run in enumerate(runs):
+        results = run.get('results') or []
+        kept = [result for position, result in enumerate(results) if position in keep.get(index, ())]
+        limited.append({**run, 'results': kept,
+                        'properties': {**run.get('properties', {}),
+                                       'threatchain:results_total': len(results), 'threatchain:results_shown': len(kept),
+                                       'threatchain:truncated': len(kept) < len(results)}})
+    return limited
+
+
+def build(report, max_results=None):
     """report: a completed pipeline (assessment) report, as returned by pipeline.read()."""
     runs = []
     for stage in report.get('stages', []):
@@ -129,4 +159,5 @@ def build(report):
         runs.append(_run(_chain_entries(chain_findings), 'chain'))
     if not runs:
         runs.append(_run([], 'empty'))
+    runs = limit_results(runs, max_results)
     return {'$schema': 'https://json.schemastore.org/sarif-2.1.0.json', 'version': '2.1.0', 'runs': runs}

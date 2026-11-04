@@ -39,6 +39,38 @@ STAGES = ('code', 'dependencies', 'images', 'web', 'repository', 'iac')
 BASELINE_STATES = ('completed',)
 
 
+def gap_only(report, stage=None):
+    """True for a `partial` scan whose only shortfall is input it could not read.
+
+    On a large repository some file always fails to parse: 6 of 26 499 in the
+    measured run. That made every scan `partial`, a `partial` scan could never
+    be a baseline, and so `--baseline last-green` never found one. The CI gate
+    already separates such a coverage gap from a check that did not happen
+    (ci_gate.classify_stage); the same line is drawn here. A scan where a tool
+    failed, a feed was unreachable or a target went unrequested is still not
+    usable.
+    """
+    if state_of(report) != 'partial':
+        return False
+    from . import ci_gate        # imported here: ci_gate imports this module
+    if isinstance(report.get('stages'), list):
+        selected = [s for s in report['stages'] if isinstance(s, dict) and s.get('target')]
+        return bool(selected) and all(ci_gate.classify_stage(s)[0] in ('finished', 'gap') for s in selected)
+    kind = stage or ('code' if isinstance(report.get('tools'), dict) else None)
+    if kind is None:
+        return False
+    return ci_gate.classify_stage({'kind': kind, 'state': 'partial', 'report': report})[0] == 'gap'
+
+
+def usable(report, stage=None):
+    """Whether a report may serve as the thing a later scan is measured against."""
+    return state_of(report) in BASELINE_STATES or gap_only(report, stage)
+
+
+GAP_WARNING = ('Asos skanda ayrim fayllar o‘qilmagan (qamrov bo‘shlig‘i). O‘sha fayllar keyin o‘qilgan bo‘lsa, '
+               'ulardagi eski topilmalar "yangi" bo‘lib ko‘rinishi mumkin.')
+
+
 def modules():
     """stage -> (read one report, list history rows). Imported lazily: these
     modules import triage, which imports this one's callers."""
@@ -111,7 +143,9 @@ def diff(before, after):
     added = sorted(set(new) - set(old))
     gone = sorted(set(old) - set(new))
     warnings = []
-    if state_of(before) not in BASELINE_STATES:
+    if gap_only(before):
+        warnings.append(GAP_WARNING)
+    elif state_of(before) not in BASELINE_STATES:
         warnings.append(f'Asos skan holati "{state_of(before) or "noma’lum"}" — u to‘liq qamrovni isbotlamaydi, '
                         'shuning uchun "yangi" ro‘yxati ishonchli emas.')
     if state_of(after) not in BASELINE_STATES and state_of(before) in BASELINE_STATES:
@@ -159,6 +193,18 @@ def read_report(stage, report_id):
     return entry[0](report_id)
 
 
+def read_for_diff(stage, report_id):
+    """A report as a comparison needs it: the small comparison view when the
+    report is large enough to have one, the report itself otherwise."""
+    from . import dependencies, iac, images, run_index, scanners, webscan
+    module = {'code': scanners, 'dependencies': dependencies, 'iac': iac, 'images': images, 'web': webscan}.get(stage)
+    if module is not None:
+        view = run_index.compare_view(module.RUNS, report_id)
+        if view is not None:
+            return view
+    return read_report(stage, report_id)
+
+
 def target_of(row, stage):
     return row.get('profile_id') if stage == 'repository' else row.get('target')
 
@@ -179,6 +225,12 @@ def since_last_green(stage, target, before_id=None):
             continue
         if str(row.get('state') or '') in BASELINE_STATES:
             return row.get('id')
+        if str(row.get('state') or '') == 'partial':
+            try:
+                if gap_only(read_report(stage, row.get('id')), stage):
+                    return row.get('id')
+            except (OSError, ValueError):
+                continue
     return None
 
 
@@ -192,8 +244,16 @@ def last_green_assessment(selection, before_id=None):
             continue
         if row.get('id') == before_id:
             continue
-        if row.get('state') in BASELINE_STATES and (row.get('selection') or {}) == dict(selection or {}):
+        if (row.get('selection') or {}) != dict(selection or {}):
+            continue
+        if row.get('state') in BASELINE_STATES:
             return row.get('id')
+        if row.get('state') == 'partial':
+            try:
+                if gap_only(pipeline.read(row.get('id'))):
+                    return row.get('id')
+            except (OSError, ValueError):
+                continue
     return None
 
 
@@ -216,14 +276,14 @@ def compare(stage, report_id, baseline_id=None):
         if (before.get('selection') or {}) != (current.get('selection') or {}):
             raise ValueError('Asos skan boshqa tanlov bilan bajarilgan; solishtirib bo‘lmaydi.')
         return {'stage': stage, 'target': '', **diff(before, current)}
-    current = read_report(stage, report_id)
+    current = read_for_diff(stage, report_id)
     target = target_of(current, stage)
     resolved = baseline_id if baseline_id and baseline_id != 'last-green' else \
         since_last_green(stage, target, report_id)
     if not resolved:
         raise NoBaseline(f'{target} uchun tugagan (completed) oldingi skan topilmadi. '
                          'Birinchi skanning solishtiradigan asosi bo‘lmaydi.')
-    before = read_report(stage, resolved)
+    before = read_for_diff(stage, resolved)
     if target_of(before, stage) != target:
         raise ValueError('Asos skan boshqa nishonga tegishli.')
     return {'stage': stage, 'target': target, **diff(before, current)}
@@ -260,7 +320,21 @@ def link_duplicates(findings):
             groups.setdefault((finding['path'], finding['line']), []).append(finding)
     linked = 0
     for members in groups.values():
-        if len(members) < 2 or len({f.get('tool') for f in members}) < 2:
+        if len(members) < 2:
+            continue
+        if len({f.get('tool') for f in members}) < 2:
+            # One scanner, two rules on one line: linked only when they name the
+            # same weakness. This project's own `eval` rule and the registry's
+            # both fire on one call and both say CWE-95 -- one issue read twice.
+            # Two rules about different weaknesses stay two findings.
+            order = sorted(members, key=lambda f: str(f.get('rule_id')))
+            primary = order[0]
+            for member in order[1:]:
+                if set(member.get('cwe_ids') or []) & set(primary.get('cwe_ids') or []) \
+                        and member.get('fingerprint') and primary.get('fingerprint') \
+                        and member.get('rule_id') != primary.get('rule_id'):
+                    member['duplicate_of'] = primary['fingerprint']
+                    linked += 1
             continue
         order = sorted(members, key=lambda f: (DUPLICATE_ORDER.index(f['tool']) if f.get('tool') in DUPLICATE_ORDER
                                                else len(DUPLICATE_ORDER), str(f.get('rule_id'))))

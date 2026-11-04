@@ -122,9 +122,12 @@ def fake_secrets(folder):
     """Realistic-format fake secrets, generated -- never stored in the repository."""
     r = random.Random(7)
     alnum = string.ascii_letters + string.digits
+    planted = []
 
     def s(chars, n):
-        return ''.join(r.choice(chars) for _ in range(n))
+        value = ''.join(r.choice(chars) for _ in range(n))
+        planted.append(value)                       # exactly what was planted, for the leak check
+        return value
     files = {
         'aws.py': f'AWS_ACCESS_KEY_ID = "{"AKIA"}{s("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567", 16)}"\n'
                   f'AWS_SECRET_ACCESS_KEY = "{s(alnum + "/+", 40)}"\n',
@@ -145,15 +148,27 @@ def fake_secrets(folder):
     key = subprocess.run(['openssl', 'genrsa', '2048'], capture_output=True, text=True) if shutil.which('openssl') else None
     if key and key.returncode == 0:
         (folder / 'id_rsa').write_text(key.stdout, encoding='utf-8')
+        planted.extend(line for line in key.stdout.splitlines() if len(line) >= 40 and 'PRIVATE KEY' not in line)
     history_token = 'ghp_' + s(alnum, 36)
-    return history_token
+    return history_token, planted
+
+
+def secret_values(planted):
+    """The secret values to look for: exactly the random parts fake_secrets planted.
+
+    It used to harvest every 16+ character token from the corpus files, so a token
+    that is not a secret but also appears in a report (a rule id, a path segment)
+    could fail the leak check with no leak. Parts under 12 characters are left out
+    -- too short to tell from chance.
+    """
+    return {value for value in planted if len(value) >= 12}
 
 
 def bench_secrets():
     need(scanners.gitleaks_exe().is_file() and shutil.which('git'), 'Gitleaks yoki git yo‘q')
     root = WORK / 'secrets'
     root.mkdir()
-    history_token = fake_secrets(root)
+    history_token, planted = fake_secrets(root)
     git = ['git', '-C', str(root), '-c', 'user.email=bench@threatchain.invalid', '-c', 'user.name=bench',
            '-c', 'commit.gpgsign=false']
     subprocess.run(['git', 'init', '-q', str(root)], check=True)
@@ -169,13 +184,33 @@ def bench_secrets():
     leaks = {f['path'] for f in report['findings'] if f['tool'] == 'gitleaks'}
     spec = EXPECTED['secrets']
     must = set(spec['must_find']) - ({'id_rsa'} if not (root / 'id_rsa').exists() else set())
-    raw = json.dumps(report)
-    leaked_value = any(marker in raw for marker in ('ghp_', 'sk_' + 'live_', 'BEGIN RSA', history_token))
+    # Not only the report: every place a value could travel to -- the SARIF and
+    # Markdown exports, the finding detail panel, and every file the scan left in
+    # the data directory (the run folder, the incremental cache, the board).
+    values = secret_values(planted)
+    from zanjir import findings_index, pipeline
+    assessment = {'id': 'bench', 'state': report['state'], 'created_at': report.get('created_at'),
+                  'stages': [{'kind': 'code', 'target': 'bench-secrets', 'state': report['state'], 'report': report}],
+                  'findings': [], 'chains': []}
+    places = {'report': json.dumps(report), 'sarif': json.dumps(pipeline.sarif(assessment))}
+    try:
+        places['markdown'] = pipeline.markdown(assessment)
+    except (KeyError, TypeError, ValueError) as error:
+        places['markdown'] = f'(markdown yaratilmadi: {type(error).__name__})'
+    places['detail'] = json.dumps([findings_index.detail(f['fingerprint']) for f in report['findings']], default=str)
+    for path in DATA.rglob('*'):
+        if path.is_file():
+            places['data/' + path.relative_to(DATA).as_posix()] = path.read_bytes().decode('utf-8', 'replace')
+    exposed = sorted({place for place, text in places.items()
+                      for value in values | {'BEGIN RSA'} if value in text})
+    leaked_value = bool(exposed)
     missed, noise = sorted(must - leaks), sorted(set(spec['must_not_find']) & leaks)
     record('secrets', not missed and not noise and not leaked_value,
            f'topildi {len(must & leaks)}/{len(must)} (git tarixi bilan), noto‘g‘ri signal {len(noise)}, '
-           f'qiymat hisobotda: {"HA" if leaked_value else "yo‘q"}',
-           {'missed': missed, 'false_positives': noise, 'value_in_report': leaked_value})
+           f'qiymat hisobot/SARIF/Markdown/panel/ma’lumotlar papkasida ({len(places)} joy, {len(values)} qiymat): '
+           f'{"HA " + str(exposed[:5]) if leaked_value else "yo‘q"}',
+           {'missed': missed, 'false_positives': noise, 'value_in_report': leaked_value, 'exposed_in': exposed,
+            'places_checked': len(places), 'values_checked': len(values)})
 
 
 def bench_apex():
@@ -429,6 +464,14 @@ def main():
     parser.add_argument('--keep', action='store_true', help='vaqtinchalik papkalarni o‘chirmaslik')
     parser.add_argument('--summary', help='Markdown jadvalni shu faylga qo‘shish (CI: $GITHUB_STEP_SUMMARY)')
     args = parser.parse_args()
+    # Redirected to a file on Windows, stdout is cp1252: a '→' in a result line raised
+    # UnicodeEncodeError and turned a passing check into FAIL. Unencodable characters
+    # are replaced instead; the JSON output is written as UTF-8 regardless.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors='replace')
+        except (AttributeError, ValueError):
+            pass
     names = args.only or ({'offline': OFFLINE, 'online': ONLINE, 'all': OFFLINE + ONLINE}[args.group])
     print(f'Ma’lumotlar papkasi (vaqtinchalik): {DATA}', flush=True)
     started = time.monotonic()

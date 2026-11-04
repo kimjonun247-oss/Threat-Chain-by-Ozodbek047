@@ -104,12 +104,20 @@ def entropy(value):
 NORMALISE = {'context': context, 'entropy': entropy}
 
 
-def fingerprint(tool, values):
+def fingerprint(tool, values, occurrence=1):
     """24 hex characters identifying one finding of one scanner.
 
     `values` must carry exactly the fields FIELDS_PER_TOOL declares for `tool` --
     no more, no fewer. See the module docstring for why a missing field raises
     instead of defaulting.
+
+    `occurrence` separates findings whose fields are identical: the same rule on
+    two lines with the same text in one file (two `cursor.execute(query)` calls),
+    or one IaC check failing for several resources of one manifest. Without it
+    they shared one identity, so a second vulnerable line added later was "not
+    new" to the baseline and one triage decision silently closed both. The first
+    occurrence hashes exactly as before -- no existing identity changes -- and
+    only the second and later ones carry their position among the equals.
     """
     if tool in REUSED:
         raise ValueError(f'{tool} o‘z fingerprint’ini hisoblaydi; uni qayta hisoblash mumkin emas.')
@@ -124,7 +132,32 @@ def fingerprint(tool, values):
     # to collapse whitespace would produce a different identity for an unchanged
     # finding, and nothing would report it.
     payload = [VERSION, tool] + [NORMALISE.get(field, str)(values[field]) for field in fields]
+    if int(occurrence) > 1:
+        payload.append(f'occurrence:{int(occurrence)}')
     return hashlib.sha256(json.dumps(payload, ensure_ascii=False).encode('utf-8')).hexdigest()[:24]
+
+
+def separate(findings, tool_of, values_of):
+    """Give findings that share a fingerprint their own, in file order.
+
+    `findings` is one scan's rows; `tool_of(row)` names the scanner and
+    `values_of(row)` returns the identity fields the row was hashed from. Rows
+    are numbered by line within each group of equals, so an unchanged file gives
+    every row the same identity on every scan. Returns how many were separated.
+    """
+    groups = {}
+    for row in findings:
+        if row.get('fingerprint'):
+            groups.setdefault(row['fingerprint'], []).append(row)
+    changed = 0
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        members.sort(key=lambda row: (row.get('line') or 0, str(row.get('resource') or '')))
+        for position, row in enumerate(members[1:], 2):
+            row['fingerprint'] = fingerprint(tool_of(row), values_of(row), occurrence=position)
+            changed += 1
+    return changed
 
 
 def derived(rule_id, parts):

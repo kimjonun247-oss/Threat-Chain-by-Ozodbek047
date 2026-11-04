@@ -21,10 +21,8 @@ Four rules keep the flattening honest:
      clean result.
 """
 import re
-import threading
-import time
 
-from . import triage
+from . import pathclass, triage
 
 # CWE numbers whose whole point is a secret sitting in the source: a hard-coded
 # credential, password, key or token. A snippet of such a line would re-expose
@@ -57,13 +55,11 @@ USABLE = ('completed', 'partial')
 # scanned would be the same false statement the portfolio view exists to
 # prevent, only in the other direction: it turns a real result into a gap.
 CONCLUDED = ('no_supported_packages',)
-# One request reads at most this many findings from one report. An image report
-# can carry seven thousand rows; the table pages through them and the cap keeps
-# a single dashboard load from parsing everything ever scanned.
-PER_REPORT = 5000
+# Kept for callers that read it: the board no longer cuts a report short. Rows
+# live in a table on disk (zanjir/findings_store.py), so a report of any size
+# is read once when it appears and paged by the database afterwards.
+PER_REPORT = 10 ** 9
 CACHE_TTL = 4.0
-_CACHE = {'at': 0.0, 'value': None}
-_LOCK = threading.Lock()
 
 
 def sources():
@@ -105,6 +101,11 @@ def title_of(stage, finding):
             or finding.get('detail') or finding.get('advisory_id') or finding.get('rule_id') or '')
 
 
+# Stages whose findings are reachable from outside by construction: a web finding
+# was answered over HTTP, a chain links its weakness to an exposed port.
+REACHABLE_STAGES = ('chain', 'web')
+
+
 def row(stage, report, finding, project):
     view = finding.get('triage') or {}
     epss = finding.get('epss') or {}
@@ -123,6 +124,8 @@ def row(stage, report, finding, project):
         'epss': epss.get('epss'), 'epss_percentile': epss.get('percentile'),
         'advisory_id': finding.get('advisory_id') or '',
         'fixed_version': finding.get('fixed_version') or '',
+        'path_class': finding.get('path_class') or (pathclass.classify(finding.get('path')) if finding.get('path') else pathclass.PROD),
+        'reachable': stage in REACHABLE_STAGES,
         'verified': bool(finding.get('verified')),
         'tool': finding.get('tool') or '',
         'duplicate_of': finding.get('duplicate_of'),
@@ -137,59 +140,18 @@ def row(stage, report, finding, project):
 
 
 def collect():
-    """Newest usable report per (stage, target), flattened. Cached briefly."""
-    with _LOCK:
-        if _CACHE['value'] is not None and time.monotonic() - _CACHE['at'] < CACHE_TTL:
-            return _CACHE['value']
-    rows, coverage, truncated = [], [], []
-    for stage, (read, history, field) in sources().items():
-        try:
-            listed = history(10 ** 6)
-        except (OSError, ValueError):
-            listed = []
-        newest = {}
-        last_attempt = {}
-        for entry in listed:                      # newest first
-            target = entry.get(field) or entry.get('target')
-            state = entry.get('state', 'completed' if stage == 'repository' else None)
-            if not target:
-                continue
-            if target not in last_attempt:
-                last_attempt[target] = {**entry, 'state': state}
-            if target not in newest and state in USABLE:
-                newest[target] = entry
-        for target in sorted(registered(stage)):
-            entry = newest.get(target)
-            if entry is None:
-                last = last_attempt.get(target)
-                # A scan that ran and concluded is not an unscanned target, and a
-                # scan that failed is not one either -- each gets its own word.
-                concluded = last is not None and last.get('state') in CONCLUDED
-                coverage.append({'stage': stage, 'target': target, 'scanned': concluded,
-                                 'state': (last or {}).get('state'),
-                                 'report_id': (last or {}).get('id'),
-                                 'outcome': ('concluded_no_findings' if concluded else
-                                             'incomplete' if last is not None else 'never_scanned'),
-                                 'findings': 0})
-                continue
-            try:
-                report = read(entry['id'])
-            except (OSError, ValueError):
-                continue
-            project = project_of(stage, target)
-            found = report.get('findings') or []
-            if len(found) > PER_REPORT:
-                truncated.append({'stage': stage, 'target': target, 'total': len(found), 'shown': PER_REPORT})
-                found = found[:PER_REPORT]
-            rows += [row(stage, report, finding, project) for finding in found]
-            coverage.append({'stage': stage, 'target': target, 'scanned': True,
-                             'state': report.get('state', 'completed'), 'report_id': report.get('id'),
-                             'created_at': report.get('created_at'), 'findings': len(report.get('findings') or [])})
-        rows += chain_rows(stage)
-    value = {'rows': rows, 'coverage': coverage, 'truncated': truncated}
-    with _LOCK:
-        _CACHE.update(at=time.monotonic(), value=value)
-    return value
+    """Every row of the board plus its coverage list.
+
+    The board itself is searched through search(); this returns the whole list
+    for the few callers that want it, and reads it from the same table.
+    """
+    from . import findings_store
+    return findings_store.everything(_self())
+
+
+def _self():
+    import sys
+    return sys.modules[__name__]
 
 
 def chain_rows(stage):
@@ -225,100 +187,38 @@ def registered(stage):
         return set()
 
 
-def matches(item, query):
-    if not query:
-        return True
-    haystack = ' '.join(str(item.get(key) or '') for key in
-                        ('rule_id', 'title', 'subject', 'target', 'project', 'advisory_id', 'tool')).lower()
-    return all(word in haystack for word in query.lower().split())
-
-
-FILTERS = {
-    'stage': lambda item, value: item['stage'] == value,
-    'project': lambda item, value: item['project'] == value,
-    'target': lambda item, value: item['target'] == value,
-    'severity': lambda item, value: (item['severity_scale'] or 'UNRATED') == value,
-    'owasp': lambda item, value: value in item['owasp'],
-    'status': lambda item, value: (item['status'] or 'untriaged') == value,
-    'state': lambda item, value: {'open': item['open'], 'closed': not item['open'],
-                                  'overdue': item['overdue'], 'kev': item['known_exploited'] is True,
-                                  'verified': item['verified'],
-                                  'duplicate': bool(item['duplicate_of'])}.get(value, True),
-}
-# Sorted worst-first by default: severity, then whether it is overdue, then how
-# long it has been open. No weighting, no composite number -- just an order.
-RANK = {'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3, None: 4}
-
-
-def sort_key(item):
-    return (RANK.get(item['severity_scale'], 4), 0 if item['overdue'] else 1,
-            0 if item['known_exploited'] else 1, str(item.get('first_seen') or '9999'),
-            item['stage'], item['rule_id'])
-
-
-FACET_KEYS = {
-    'severity': lambda i: i['severity_scale'] or 'UNRATED',
-    'stage': lambda i: i['stage'],
-    'project': lambda i: i['project'] or '—',
-    'owasp': lambda i: i['owasp'] or ['—'],
-    'status': lambda i: i['status'] or 'untriaged',
-}
-
-
-def apply_filters(rows, filters, skip=None):
-    for key, value in (filters or {}).items():
-        if not value or key == skip:
-            continue
-        rule = FILTERS.get(key)
-        if rule:
-            rows = [item for item in rows if rule(item, value)]
-    return rows
-
-
-def facets(rows, filters=None):
-    """Counts the table offers as filters. Never added together.
-
-    Each facet is counted over the rows left by every *other* filter, which is
-    what makes the chips still usable after a filter narrows the table to
-    nothing -- counting them over the final result set would erase the very
-    chip you need to click to get back.
-    """
-    def tally(key, source):
-        counts = {}
-        for item in source:
-            value = key(item)
-            for one in (value if isinstance(value, list) else [value]):
-                counts[one] = counts.get(one, 0) + 1
-        return dict(sorted(counts.items(), key=lambda pair: (-pair[1], str(pair[0]))))
-    result = {name: tally(key, apply_filters(rows, filters, skip=name))
-              for name, key in FACET_KEYS.items()}
-    # An active value must always have a chip, even when it now counts zero.
-    for name in FACET_KEYS:
-        chosen = (filters or {}).get(name)
-        if chosen and chosen not in result[name]:
-            result[name][chosen] = 0
-    result['note'] = ('Bu sonlar filtr uchun; ular qo‘shilib umumiy ball chiqarilmaydi. Turli skanerlarning '
-                      'topilmalari turli narsani o‘lchaydi.')
-    return result
+# The filters the board accepts and the facets it counts. The filtering,
+# ordering and counting themselves are SQL now (zanjir/findings_store.py): one
+# definition, so the table and its chips cannot disagree. Sorted worst-first:
+# severity, then overdue, then known-exploited, then how long a finding has
+# been open -- an order, never a composite number.
+FILTERS = ('stage', 'project', 'target', 'severity', 'owasp', 'status', 'state')
+FACET_KEYS = ('severity', 'stage', 'project', 'owasp', 'status')
 
 
 def search(query='', filters=None, offset=0, limit=50):
-    data = collect()
-    searched = [item for item in data['rows'] if matches(item, query)]
-    rows = apply_filters(searched, filters)
-    rows.sort(key=sort_key)
+    from . import findings_store
     offset = max(0, int(offset))
     limit = max(1, min(int(limit), 200))
+    data = findings_store.search(_self(), query, filters, offset, limit)
+    facets = data['facets']
+    # An active value must always have a chip, even when it now counts zero.
+    for name in FACET_KEYS:
+        chosen = (filters or {}).get(name)
+        if chosen and chosen not in facets[name]:
+            facets[name][chosen] = 0
+    facets['note'] = ('Bu sonlar filtr uchun; ular qo‘shilib umumiy ball chiqarilmaydi. Turli skanerlarning '
+                      'topilmalari turli narsani o‘lchaydi.')
     unscanned = [c for c in data['coverage'] if c.get('outcome') == 'never_scanned']
     incomplete = [c for c in data['coverage'] if c.get('outcome') == 'incomplete']
     return {
-        'total': len(rows), 'offset': offset, 'limit': limit,
-        'rows': rows[offset:offset + limit],
-        'facets': facets(searched, filters),
+        'total': data['total'], 'offset': offset, 'limit': limit,
+        'rows': data['rows'],
+        'facets': facets,
         'coverage': {'scanned': [c for c in data['coverage'] if c['scanned']],
                      'unscanned': unscanned,
                      'incomplete': incomplete,
-                     'truncated': data['truncated'],
+                     'truncated': [],
                      'note': ('Tekshirilmagan nishon toza degani emas. Quyidagi nishonlar uchun hech qanday '
                               'natija yo‘q va ular bu jadvalda umuman ko‘rinmaydi.') if unscanned else None,
                      'incomplete_note': ('Bu nishonlarda skan boshlangan, lekin natija bermadi '
@@ -327,31 +227,23 @@ def search(query='', filters=None, offset=0, limit=50):
     }
 
 
-def detail(fingerprint):
-    """One finding with its full original record, for the side panel."""
-    data = collect()
-    item = next((i for i in data['rows'] if i['fingerprint'] == fingerprint), None)
-    if item is None:
+def detail(fingerprint, project=None):
+    """One finding with its full original record, for the side panel.
+
+    `project` disambiguates a fingerprint shared across projects (a dependency
+    CVE on a common package); without it the lowest-id row wins, as before.
+    """
+    from . import findings_store
+    found = findings_store.detail(_self(), fingerprint, project)
+    if found is None:
         raise ValueError('Bunday topilma joriy hisobotlarda yo‘q.')
-    read = sources().get(item['stage'], (None,))[0]
-    original, events = None, []
-    try:
-        if read and item['report_id']:
-            report = read(item['report_id'])
-            original = next((f for f in report.get('findings') or []
-                             if f.get('fingerprint') == fingerprint), None)
-    except (OSError, ValueError):
-        original = None
+    item, original, related = found
+    events = []
     try:
         if item['project']:
             events = [e for e in triage.events(item['project']) if e.get('fingerprint') == fingerprint]
     except (OSError, ValueError):
         events = []
-    related = [i for i in data['rows']
-               if i['fingerprint'] != fingerprint and
-               (i.get('duplicate_of') == fingerprint or i.get('escalates') == fingerprint
-                or (item.get('duplicate_of') and i['fingerprint'] == item['duplicate_of'])
-                or (item.get('escalates') and i['fingerprint'] == item['escalates']))]
     # The exact source lines the code scanners flagged, read from the live source
     # so the operator sees what was found without leaving the panel. Only code
     # findings, and never a secret finding -- gitleaks, or any rule (semgrep
@@ -377,6 +269,13 @@ def detail(fingerprint):
             'snippet': snippet, 'snippet_state': snippet_state}
 
 
+def triage_changed(scope, fingerprints):
+    """A decision was stored: bring its rows up to date without rebuilding."""
+    from . import findings_store
+    findings_store.decided(scope, fingerprints)
+
+
 def invalidate():
-    with _LOCK:
-        _CACHE.update(at=0.0, value=None)
+    """Forget the board; the next search rebuilds it from the reports."""
+    from . import findings_store
+    findings_store.forget()

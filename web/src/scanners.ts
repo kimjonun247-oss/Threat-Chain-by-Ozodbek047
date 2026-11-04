@@ -1,7 +1,7 @@
 'use strict';
 (() => {
   let running=false;
-  const labels: Record<string, string>={queued:'Navbatda',running:'Tekshirilmoqda',completed:'Tekshiruv tugadi',partial:'Qisman bajarildi',failed:'Tekshiruv tugallanmadi'};
+  const labels: Record<string, string>={queued:'Navbatda',running:'Tekshirilmoqda',completed:'Tekshiruv tugadi',partial:'Qisman bajarildi',failed:'Tekshiruv tugallanmadi',cancelled:'Bekor qilingan'};
   const e=escapeHTML;
   const owaspBadges=(tags: ApiData)=>(tags||[]).map((o: ApiData)=>`<span class="badge neutral" title="${e(o.name)}">${e(o.code)}</span>`).join(' ');
   const severityBadge=(s: ApiData)=>s?`<span class="badge ${s==='ERROR'?'red':s==='WARNING'?'amber':'neutral'}">${e(s)}</span>`:'';
@@ -73,16 +73,24 @@
     $('code-history').querySelectorAll('[data-scan-id]').forEach(button=>button.addEventListener('click',async()=>{try{render(await api('/api/scanners/reports/'+button.dataset.scanId));}catch(error){showError(error);}}));
     return rows;
   }
+  // The id of the scan this page is following, so "Bekor qilish" knows what to stop.
+  let job: string|null=null;
   async function follow(id: string){
-    running=true;$('code-scan').disabled=true;$('code-target').disabled=true;
+    running=true;job=id;$('code-scan').disabled=true;$('code-target').disabled=true;$('code-cancel').hidden=false;
     try{
-      const report=await pollReport('/api/scanners/reports/'+id,(s: ApiData)=>{$('code-progress').textContent=labels[s.state]||s.state;});
+      // A large project spends minutes reading files before any scanner starts;
+      // the server says what it is doing and the page repeats it.
+      const report=await pollReport('/api/scanners/reports/'+id,(s: ApiData)=>{$('code-progress').textContent=(labels[s.state]||s.state)+(s.progress?' · '+s.progress:'');});
       render(report);
       $('code-progress').textContent=labels[report.state]||report.state;
       await loadHistory();
-    }finally{running=false;$('code-scan').disabled=false;$('code-target').disabled=false;}
+    }finally{running=false;job=null;$('code-scan').disabled=false;$('code-target').disabled=false;$('code-cancel').hidden=true;}
   }
   async function initCode(){
+    $('code-cancel').addEventListener('click',async()=>{
+      if(!job)return;
+      try{await api('/api/scanners/cancel',{report_id:job});$('code-progress').textContent='Bekor qilish so‘raldi…';}catch(error){showError(error);}
+    });
     $('code-scan').addEventListener('click',async()=>{
       if(running)return;
       try{const job=await api('/api/scanners/scan',{target:$('code-target').value});await follow(job.id);}catch(error){showError(error);}

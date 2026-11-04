@@ -109,7 +109,7 @@
       return `<tr data-fp="${e(row.fingerprint)}" class="${state.selected.has(row.fingerprint) ? 'selected' : ''}">
         <td><input type="checkbox" data-select="${e(row.fingerprint)}" ${state.selected.has(row.fingerprint) ? 'checked' : ''} aria-label="Tanlash"></td>
         <td><span class="sev sev-${e(severity)}">${e(severity === 'UNRATED' ? 'INFO' : severity)}</span></td>
-        <td><button class="cell-title" data-open="${e(row.fingerprint)}">${e(row.title || row.rule_id)}</button>
+        <td><button class="cell-title" data-open="${e(row.fingerprint)}" data-project="${e(row.project || '')}">${e(row.title || row.rule_id)}</button>
             <span class="cell-sub">${e(row.rule_id)} · ${e(row.subject)}</span>
             <span class="cell-sub">${tags(row)}</span></td>
         <td>${e(STAGE_NAMES[row.stage] || row.stage)}<span class="cell-sub">${e(row.target)}</span></td>
@@ -138,7 +138,7 @@
     $('findings-facets').querySelectorAll('[data-facet]').forEach(chip =>
       chip.addEventListener('click', () => toggle(chip.dataset.facet ?? '', chip.dataset.value ?? '')));
     $('findings-table').querySelectorAll('[data-open]').forEach(button =>
-      button.addEventListener('click', () => drawer(button.dataset.open ?? '')));
+      button.addEventListener('click', () => drawer(button.dataset.open ?? '', button.dataset.project ?? '')));
     $('findings-table').querySelectorAll('[data-select]').forEach(box =>
       box.addEventListener('change', () => {
         if (box.checked) state.selected.add(box.dataset.select ?? ''); else state.selected.delete(box.dataset.select ?? '');
@@ -183,11 +183,14 @@
     return `<table class="kv"><tbody>${rows}</tbody></table>${nested}`;
   }
 
-  async function drawer(fingerprint: string) {
+  async function drawer(fingerprint: string, project = '') {
     $('drawer').hidden = false;
     $('drawer-body').innerHTML = '<p>Yuklanmoqda…</p>';
     try {
-      const detail = await api('/api/findings/' + encodeURIComponent(fingerprint));
+      // Carry the row's project so a fingerprint shared across projects (a
+      // dependency CVE on a common package) resolves to the one clicked.
+      const detail = await api('/api/findings/' + encodeURIComponent(fingerprint)
+        + (project ? '?project=' + encodeURIComponent(project) : ''));
       const row = detail.row;
       $('drawer-title').textContent = row.title || row.rule_id;
       const sla = row.sla ? `${row.sla.days} kunlik muddat · ${row.sla.overdue ? 'muddati o‘tgan' : row.sla.days_remaining + ' kun qoldi'}` : 'Muddat berilmagan (og‘irlik baholanmagan yoki topilma yopilgan)';
@@ -211,7 +214,7 @@
               : detail.snippet_state === 'unavailable'
                 ? '<p class="cell-sub">Kod satri ko‘rsatilmadi: manba papka o‘zgargan yoki o‘qib bo‘lmadi.</p>'
                 : '')}
-        ${detail.related.length ? `<h3>Bog‘liq topilmalar</h3>${detail.related.map((r: ApiData) => `<p><button class="cell-title" data-open="${e(r.fingerprint)}">${e(r.rule_id)} — ${e(r.title)}</button><span class="cell-sub">${r.escalates === row.fingerprint ? 'Bu topilmani kuchaytiradi' : r.duplicate_of === row.fingerprint ? 'Shu topilmaning takrori' : 'Bog‘liq'}</span></p>`).join('')}` : ''}
+        ${detail.related.length ? `<h3>Bog‘liq topilmalar</h3>${detail.related.map((r: ApiData) => `<p><button class="cell-title" data-open="${e(r.fingerprint)}" data-project="${e(r.project || row.project || '')}">${e(r.rule_id)} — ${e(r.title)}</button><span class="cell-sub">${r.escalates === row.fingerprint ? 'Bu topilmani kuchaytiradi' : r.duplicate_of === row.fingerprint ? 'Shu topilmaning takrori' : 'Bog‘liq'}</span></p>`).join('')}` : ''}
         <h3>Qaror</h3>
         <form id="drawer-triage">
           <label>Holat<select name="status">${Object.entries<ApiData>(STATUS_NAMES).filter(([v]) => v !== 'untriaged').map(([value, label]) => `<option value="${value}" ${row.status === value ? 'selected' : ''}>${e(label)}</option>`).join('')}</select></label>
@@ -222,7 +225,7 @@
         </form>
         ${detail.events.length ? `<h3>Qaror tarixi</h3>${detail.events.slice().reverse().map((ev: ApiData) => `<p><strong>${e(STATUS_NAMES[ev.status] || ev.status)}</strong> · ${e(ev.owner)} · ${e(time(ev.updated_at))}<span class="cell-sub">${e(ev.note)}</span></p>`).join('')}` : ''}
         <h3>Asl dalil</h3>${evidence(detail.finding)}`;
-      $('drawer-body').querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => drawer(b.dataset.open ?? '')));
+      $('drawer-body').querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => drawer(b.dataset.open ?? '', b.dataset.project ?? '')));
       $('drawer-body').querySelector('#drawer-triage').addEventListener('submit', async event => {
         event.preventDefault();
         const form = formData((event.target as Field));

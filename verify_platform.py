@@ -59,6 +59,12 @@ def tool_versions():
         # Same no-phone-home settings the scans use: a version probe must not
         # become the one call that reaches a vendor server.
         env = {**os.environ, 'SEMGREP_ENABLE_VERSION_CHECK': '0', 'SEMGREP_SEND_METRICS': 'off'}
+        if name == 'semgrep':
+            # Semgrep's launcher starts `pysemgrep` from PATH. A scan puts this
+            # project's copy first; without the same here, a machine that also
+            # has a global Semgrep reported *that* version (1.174.0 for an
+            # installed 1.177.0) -- a check that named the wrong binary.
+            env['PATH'] = str(scanners.semgrep_bin_dir()) + os.pathsep + env.get('PATH', '')
         # Trivy's --disable-telemetry belongs to its scan commands, not to --version.
         args = [str(path), flag] + (['-duc', '-nc'] if name == 'nuclei' else [])
         done = subprocess.run(args, capture_output=True, text=True, encoding='utf-8',
