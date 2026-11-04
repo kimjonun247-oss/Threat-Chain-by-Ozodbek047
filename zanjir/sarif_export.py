@@ -106,7 +106,7 @@ def _label(run, stage):
     run['automationDetails'] = {'id': f'threatchain/{stage}/'}
     driver = run['tool']['driver']
     driver.setdefault('version', repository_mod.VERSION)
-    driver['informationUri'] = 'https://github.com/kimjonun247-oss/Kim-Jon-Un'
+    driver['informationUri'] = 'https://github.com/kimjonun247-oss/Threat-Chain-by-Ozodbek047'
     run['properties'] = {**run.get('properties', {}), 'stage': stage, 'scanner': STAGE_TOOLS.get(stage, stage)}
     return run
 
