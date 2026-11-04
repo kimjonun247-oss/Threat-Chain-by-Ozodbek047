@@ -4,9 +4,9 @@
   const e = escapeHTML;
   const jobs = { web: null, assessment: null };
   const prefixes = { web: "/api/web", assessment: "/api/assessments" };
-  const names = { code: "Semgrep + Gitleaks", repository: "Repository (Compose)", dependencies: "OSV + CISA KEV", web: "Nuclei + HTTP", images: "Trivy", iac: "Trivy config (IaC)" };
-  const labels = { completed: "Tugagan", partial: "Qisman — qamrovni tekshiring", failed: "Tugallanmagan", cancelled: "Bekor qilingan", running: "Tekshirilmoqda", queued: "Navbatda", not_selected: "Tanlanmagan", no_supported_packages: "Qo‘llanadigan paket topilmadi", interrupted: "Boshqa jarayon yoki uzilgan skan" };
-  const link = (prefix, id, sarif) => `<a href="${prefix}/reports/${encodeURIComponent(id)}/download">JSON hisobot ↓</a> · <a href="${prefix}/reports/${encodeURIComponent(id)}/markdown">O‘qiladigan hisobot ↓</a>${sarif ? ` · <a href="${prefix}/reports/${encodeURIComponent(id)}/sarif">SARIF (CI/CD) ↓</a>` : ""}`;
+  const names = { code: "Semgrep + Gitleaks", repository: "Compose va Nginx qoidalari", dependencies: "OSV + CISA KEV", web: "Nuclei + HTTP", images: "Trivy", iac: "Trivy config (IaC)" };
+  const labels = RUN_STATE;
+  const link = (prefix, id, sarif) => `<a href="${prefix}/reports/${encodeURIComponent(id)}/download">JSON hisobot ↓</a> · <a href="${prefix}/reports/${encodeURIComponent(id)}/markdown">Hisobot (Markdown) ↓</a>${sarif ? ` · <a href="${prefix}/reports/${encodeURIComponent(id)}/sarif">SARIF (CI/CD) ↓</a>` : ""}`;
   const owaspBadges = (tags) => (tags || []).map((o) => `<span class="badge neutral" title="${e(o.name)}">${e(o.code)}</span>`).join(" ");
   const verifiedBadge = (f) => f.verified ? '<span class="badge green">Dalil bilan tasdiqlangan</span>' : '<span class="badge amber">Qo‘lda tekshirish kerak</span>';
   const CONFIRM = {
@@ -32,9 +32,9 @@
     if (kind === "assessment") {
       const v = r.verification_summary;
       const chainFindings = r.chain_findings || [];
-      target.innerHTML = start + (v ? `<p class="baseline-note">Tasdiqlash: ${e(v.confirmed_by_evidence)} dalil bilan tasdiqlangan / ${e(v.manual_review_required)} qo‘lda tekshirish (jami ${e(v.total)}).</p>` : "") + `<div class="scanner-cards">${r.stages.map((s) => `<article class="scanner-card"><h3>${e(names[s.kind])}</h3><p>${e(s.target || "Tanlanmagan")}</p><strong>${e(labels[s.state] || s.state)}</strong>${s.count !== void 0 ? `<p>${e(s.count)} kuzatuv / moslik</p>` : ""}${s.report_id ? `<a href="/api/${s.kind === "code" ? "scanners" : s.kind}/reports/${encodeURIComponent(s.report_id)}/download">Bosqich dalili ↓</a>` : ""}<p>${e(s.message || "")}</p>${s.report?.tools ? Object.entries(s.report.tools).map(([name, t]) => `<p>${e(name)}: ${e(labels[t.state] || t.state)}${t.message ? " · " + e(t.message) : ""}</p>`).join("") : ""}</article>`).join("")}</div><p class="cell-sub">Tanlanmagan bosqich tekshirilmagan.</p>${chainSection(chainFindings, r.chain_gaps || [])}`;
+      target.innerHTML = start + (v ? `<p class="baseline-note">Tasdiqlash: ${e(v.confirmed_by_evidence)} dalil bilan tasdiqlangan / ${e(v.manual_review_required)} qo‘lda tekshirish (jami ${e(v.total)}).</p>` : "") + `<div class="scanner-cards">${r.stages.map((s) => `<article class="scanner-card"><h3>${e(names[s.kind])}</h3><p>${e(s.target || "Tanlanmagan")}</p><strong>${e(labels[s.state] || s.state)}</strong>${s.count !== void 0 ? `<p>${e(s.count)} ta topilma</p>` : ""}${s.report_id ? `<a href="/api/${s.kind === "code" ? "scanners" : s.kind}/reports/${encodeURIComponent(s.report_id)}/download">Qatlam hisoboti (JSON) ↓</a>` : ""}<p>${e(s.message || "")}</p>${s.report?.tools ? Object.entries(s.report.tools).map(([name, t]) => `<p>${e(name)}: ${e(labels[t.state] || t.state)}${t.message ? " · " + e(t.message) : ""}</p>`).join("") : ""}</article>`).join("")}</div><p class="cell-sub">Tanlanmagan bosqich tekshirilmagan.</p>${chainSection(chainFindings, r.chain_gaps || [])}`;
     } else {
-      target.innerHTML = start + `<p>${e(r.url)} · ${e(r.requests ?? 0)} so‘rov · ${e(r.count)} kuzatuv</p><p>${e(r.message || "")}</p><details class="pilot-help"><summary>Qamrov va bajarilgan yo‘llar</summary><p>Nuclei: ${e(r.tool?.version || "Bajarilishi tasdiqlanmagan")} · ${e(r.tool?.templates ?? 0)} qoida</p><p>Bir manbadagi bosib chiqilgan sahifalar: ${e((r.crawled_pages || []).length)} (${e((r.crawled_pages || []).join(", ") || "—")})</p><p>Redirect: ${e(r.coverage?.redirects ?? 0)} · kirish cheklangan: ${e(r.coverage?.restricted_responses ?? 0)} · javob chegaralangan: ${e(r.coverage?.truncated_responses ?? 0)}</p><p>Tekshirilmagan yo‘llar: ${e((r.coverage?.unvisited_paths || []).join(", ") || "Yo‘q / jarayon hali tugamagan")}</p>${(r.evidence || []).map((row) => `<p><code>${e(row.path)}</code> · HTTP ${e(row.status)} · ${e(row.bytes_read)} bayt${row.truncated ? " · cheklangan javob" : ""}</p>`).join("")}</details>${(r.findings || []).map((f) => `<details class="repo-finding"><summary><span class="badge ${f.severity === "HIGH" ? "red" : f.severity === "MEDIUM" ? "amber" : "neutral"}">${e(f.severity)}</span><strong>${e(f.title)}</strong><span>${e(f.path)}</span></summary><div class="finding-body"><p>${e(f.tool)} ${verifiedBadge(f)} ${confirmBadge(f)}</p><p>${e((f.cwe_ids || []).join(", ") || "CWE aniqlanmagan")} ${owaspBadges(f.owasp_top10_2025)}</p><p>${e(typeof f.evidence === "string" ? f.evidence : "HTTP " + f.evidence.status + " · " + f.evidence.bytes_read + " bayt")}</p><p>${e(f.remediation)}</p><p class="muted">${e(f.verification_note || "")}</p>${f.evidence?.body_sha256 ? `<p class="hash">Javob xeshi: ${e(f.evidence.body_sha256)}</p>` : ""}</div></details>`).join("") || '<p class="empty">Topilma yo‘q. Yakuniy holat va qamrovni tekshiring.</p>'}${(r.dismissed_findings || []).length ? `<details class="pilot-help"><summary>Ikkinchi tekshiruvda rad etilgan kuzatuvlar (${e(r.dismissed_findings.length)})</summary>${r.dismissed_findings.map((f) => `<p><strong>${e(f.title)}</strong> — ${e(f.confirmation.method)}</p>`).join("")}</details>` : ""}`;
+      target.innerHTML = start + `<p>${e(r.url)} · ${e(r.requests ?? 0)} so‘rov · ${e(r.count)} ta topilma</p><p>${e(r.message || "")}</p><details class="pilot-help"><summary>Qamrov va bajarilgan yo‘llar</summary><p>Nuclei: ${e(r.tool?.version || "Bajarilishi tasdiqlanmagan")} · ${e(r.tool?.templates ?? 0)} qoida</p><p>Bir manbadagi bosib chiqilgan sahifalar: ${e((r.crawled_pages || []).length)} (${e((r.crawled_pages || []).join(", ") || "—")})</p><p>Redirect: ${e(r.coverage?.redirects ?? 0)} · kirish cheklangan: ${e(r.coverage?.restricted_responses ?? 0)} · javob chegaralangan: ${e(r.coverage?.truncated_responses ?? 0)}</p><p>Tekshirilmagan yo‘llar: ${e((r.coverage?.unvisited_paths || []).join(", ") || "Yo‘q / jarayon hali tugamagan")}</p>${(r.evidence || []).map((row) => `<p><code>${e(row.path)}</code> · HTTP ${e(row.status)} · ${e(row.bytes_read)} bayt${row.truncated ? " · cheklangan javob" : ""}</p>`).join("")}</details>${(r.findings || []).map((f) => `<details class="repo-finding"><summary><span class="badge ${severityTone(f.severity)}">${e(severityLabel(f.severity))}</span><strong>${e(f.title)}</strong><span>${e(f.path)}</span></summary><div class="finding-body"><p>${e(f.tool)} ${verifiedBadge(f)} ${confirmBadge(f)}</p><p>${e((f.cwe_ids || []).join(", ") || "CWE aniqlanmagan")} ${owaspBadges(f.owasp_top10_2025)}</p><p>${e(typeof f.evidence === "string" ? f.evidence : "HTTP " + f.evidence.status + " · " + f.evidence.bytes_read + " bayt")}</p><p>${e(f.remediation)}</p><p class="muted">${e(f.verification_note || "")}</p>${f.evidence?.body_sha256 ? `<p class="hash">Javob xeshi: ${e(f.evidence.body_sha256)}</p>` : ""}</div></details>`).join("") || '<p class="empty">Topilma yo‘q. Yakuniy holat va qamrovni tekshiring.</p>'}${(r.dismissed_findings || []).length ? `<details class="pilot-help"><summary>Ikkinchi tekshiruvda rad etilgan topilmalar (${e(r.dismissed_findings.length)})</summary>${r.dismissed_findings.map((f) => `<p><strong>${e(f.title)}</strong> — ${e(f.confirmation.method)}</p>`).join("")}</details>` : ""}`;
     }
     if (!["queued", "running"].includes(r.state)) fillBaseline(kind === "assessment" ? "assessment" : "web", r.id, kind + "-baseline");
   }
@@ -71,8 +71,8 @@
   function chainSection(items, gaps) {
     if (!items.length && !gaps.length) return "";
     const gapList = gaps.length ? `<div class="pilot-help"><h3>Tekshirilmagan qismlar</h3><ul class="muted">${gaps.map((g) => `<li>${e(g.detail)}</li>`).join("")}</ul></div>` : "";
-    if (!items.length) return `<div class="section-heading"><h2>Cross-skaner zanjirlari</h2></div><p class="muted">Zanjir topilmadi — xavfsizlik xulosasi emas.</p>${gapList}`;
-    return `<div class="section-heading"><h2>Cross-skaner zanjirlari — ${e(items.length)} ta</h2></div><p class="muted">Ikki mustaqil skaner natijasi birlashtirildi; hech biri amalda tasdiqlanmagan.</p>${items.map((f) => `<details class="repo-finding"><summary><span class="badge ${f.level === "error" ? "red" : "amber"}">${e(f.rule_id)}</span><strong>${e(f.title)}</strong><span>${e(f.service_id)}</span></summary><div class="finding-body"><p class="muted">Manba: ${e(chainSources[f.rule_id] || "Ikki bosqich")}</p><p>${e(f.detail)}</p><p>${e((f.cwe_ids || []).join(", "))} ${owaspBadges(f.owasp_top10_2025)} ${verifiedBadge(f)}</p>${chainEvidence(f)}<p class="muted">${e(f.verification_note || "")}</p><p class="remediation"><strong>Tavsiya:</strong> ${e(f.remediation)}</p></div></details>`).join("")}${gapList}`;
+    if (!items.length) return `<div class="section-heading"><h2>Skanerlararo zanjirlar</h2></div><p class="muted">Zanjir topilmadi — xavfsizlik xulosasi emas.</p>${gapList}`;
+    return `<div class="section-heading"><h2>Skanerlararo zanjirlar — ${e(items.length)} ta</h2></div><p class="muted">Ikki mustaqil skaner natijasi birlashtirildi; hech biri amalda tasdiqlanmagan.</p>${items.map((f) => `<details class="repo-finding"><summary><span class="badge ${f.level === "error" ? "red" : "amber"}">${e(f.rule_id)}</span><strong>${e(f.title)}</strong><span>${e(f.service_id)}</span></summary><div class="finding-body"><p class="muted">Manba: ${e(chainSources[f.rule_id] || "Ikki bosqich")}</p><p>${e(f.detail)}</p><p>${e((f.cwe_ids || []).join(", "))} ${owaspBadges(f.owasp_top10_2025)} ${verifiedBadge(f)}</p>${chainEvidence(f)}<p class="muted">${e(f.verification_note || "")}</p><p class="remediation"><strong>Tavsiya:</strong> ${e(f.remediation)}</p></div></details>`).join("")}${gapList}`;
   }
   async function history(kind) {
     const rows = await api(prefixes[kind] + "/reports");
@@ -182,12 +182,14 @@
       showError(error);
     }
   });
+  let started = false;
+  onRegistryChange(async () => {
+    if (started) await loadAssessmentTargets();
+  });
   async function init() {
+    started = true;
     try {
       await loadAssessmentTargets();
-      const control = await api("/api/web/control-evidence");
-      const controlNames = { vulnerable: "Zaif sun’iy misol", fixed: "Tuzatilgan sun’iy misol", soft404: "Har bir yo‘lga bir xil javob", "full-range": "Bo‘lak so‘ralganda to‘liq kelgan javob" };
-      $("web-control").innerHTML = `<p>${control.passed ? "Nazorat sinovi o‘tgan." : "Nazorat sinovi tasdiqlanmagan."} Bu real kompaniya skani emas.</p>${(control.results || []).map((r) => `<p>${e(controlNames[r.mode] || r.mode)}: ${e(r.nuclei_matches)} Nuclei mosligi · ${e(r.requests)} so‘rov · ${e(labels[r.state] || r.state)}</p>`).join("")}<p>Fallback javobdagi sezgir mazmun alohida tekshiriladi; bir xil javob ma’lumot sizib chiqishini inkor qilmaydi.</p>`;
       for (const kind of ["web", "assessment"]) {
         const rows = await history(kind);
         if (rows.length) {
@@ -200,4 +202,14 @@
     }
   }
   whenShown(["web", "assessments"], init);
+  async function loadControl() {
+    try {
+      const control = await api("/api/web/control-evidence");
+      const controlNames = { vulnerable: "Zaif sun’iy misol", fixed: "Tuzatilgan sun’iy misol", soft404: "Har bir yo‘lga bir xil javob", "full-range": "Bo‘lak so‘ralganda to‘liq kelgan javob" };
+      $("web-control").innerHTML = `<p>${control.passed ? "Nazorat sinovi o‘tgan." : "Nazorat sinovi tasdiqlanmagan."} Bu real kompaniya skani emas.</p>${(control.results || []).map((r) => `<p>${e(controlNames[r.mode] || r.mode)}: ${e(r.nuclei_matches)} Nuclei mosligi · ${e(r.requests)} so‘rov · ${e(labels[r.state] || r.state)}</p>`).join("")}<p>Fallback javobdagi sezgir mazmun alohida tekshiriladi; bir xil javob ma’lumot sizib chiqishini inkor qilmaydi.</p>`;
+    } catch (error) {
+      showError(error);
+    }
+  }
+  whenShown(["samples"], loadControl);
 })();

@@ -43,8 +43,13 @@ def timezone(name):
                          '(IANA nomi faqat zona bazasi bor tizimda ishlaydi).') from None
 
 
+# Uzbek short and full names are accepted too: the form is in Uzbek, and a user
+# had to know to type English day codes (UI review 2026-11-04).
+UZ_SHORT = ('du', 'se', 'ch', 'pa', 'ju', 'sh', 'ya')
+UZ_FULL = ('dushanba', 'seshanba', 'chorshanba', 'payshanba', 'juma', 'shanba', 'yakshanba')
 NAMES = {**{day: day for day in DAYS},
-         **{name: day for name, day in zip(('monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'), DAYS)}}
+         **{name: day for name, day in zip(('monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'), DAYS)},
+         **dict(zip(UZ_SHORT, DAYS)), **dict(zip(UZ_FULL, DAYS))}
 
 
 def parse_days(value):
@@ -56,7 +61,7 @@ def parse_days(value):
     """
     tokens = [part.strip().lower() for part in value.split(',')] if isinstance(value, str) else value
     if not isinstance(tokens, list) or not tokens:
-        raise ValueError('scan_window.days: mon, tue, wed, thu, fri, sat, sun (yoki mon-fri) dan tanlang.')
+        raise ValueError('Kunlar: du, se, ch, pa, ju, sh, ya (yoki du-ju) dan tanlang.')
     chosen = set()
     for token in tokens:
         token = str(token).strip().lower()
@@ -71,7 +76,7 @@ def parse_days(value):
         elif token in NAMES:
             chosen.add(NAMES[token])
         else:
-            raise ValueError(f'scan_window.days: “{token}” kun nomi emas (mon, tue, wed, thu, fri, sat, sun yoki mon-fri).')
+            raise ValueError(f'Kunlar: “{token}” kun nomi emas (du, se, ch, pa, ju, sh, ya yoki du-ju).')
     return [day for day in DAYS if day in chosen]
 
 

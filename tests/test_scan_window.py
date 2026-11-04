@@ -39,6 +39,14 @@ class WindowTests(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 sw.parse_days(bad)
 
+    def test_uzbek_day_names_are_accepted(self):
+        # The form is in Uzbek; typing English day codes was the only way (UI review 2026-11-04).
+        self.assertEqual(sw.parse_days('du-ju'), ['mon', 'tue', 'wed', 'thu', 'fri'])
+        self.assertEqual(sw.parse_days('Shanba, yakshanba'), ['sat', 'sun'])
+        self.assertEqual(sw.parse_days(['ch', 'mon']), ['mon', 'wed'])
+        with self.assertRaisesRegex(ValueError, 'du, se, ch'):
+            sw.parse_days('dush')
+
     def test_bad_windows_are_refused_with_the_reason(self):
         for bad in ({'start': '25:00', 'end': '01:00'}, {'start': '10:00', 'end': '10:00'},
                     {'days': ['xyz'], 'start': '01:00', 'end': '02:00'}, {'start': '01:00', 'end': '02:00', 'extra': 1},

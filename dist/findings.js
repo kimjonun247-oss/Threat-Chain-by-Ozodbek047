@@ -4,42 +4,26 @@
   const e = escapeHTML;
   const KEYS = ["q", "stage", "project", "severity", "status", "state", "target"];
   const FACET_TITLES = { severity: "Og‘irlik", stage: "Skaner", project: "Loyiha", status: "Holat" };
-  const STAGE_NAMES = {
-    code: "Kod",
-    dependencies: "CVE",
-    images: "Image",
-    web: "Sayt",
-    iac: "IaC",
-    repository: "Compose",
-    chain: "Zanjir"
-  };
+  const STAGE_NAMES = STAGE_SHORT;
   const ROLE_BY_STAGE = {
-    code: "Developer",
-    dependencies: "Developer",
+    code: "Dasturchi",
+    dependencies: "Dasturchi",
     repository: "DevOps",
     iac: "DevOps",
     images: "DevOps",
     web: "Tarmoq"
   };
   const ROLE_BY_CHAIN = {
-    "SX-001": "Developer + DevOps",
+    "SX-001": "Dasturchi + DevOps",
     "SX-002": "DevOps",
     "SX-003": "DevOps",
-    "SX-004": "Developer",
+    "SX-004": "Dasturchi",
     "SX-005": "DevOps",
-    "SX-006": "Developer",
-    "SX-007": "DevOps + Developer"
+    "SX-006": "Dasturchi",
+    "SX-007": "DevOps + Dasturchi"
   };
-  const responsibleOf = (row) => row.stage === "chain" ? ROLE_BY_CHAIN[row.rule_id] || "Developer + DevOps" : ROLE_BY_STAGE[row.stage] || "—";
-  const STATUS_NAMES = {
-    untriaged: "Ko‘rilmagan",
-    investigating: "Tekshirilmoqda",
-    confirmed: "Tasdiqlangan",
-    fix_planned: "Tuzatish rejalashtirilgan",
-    false_positive: "Noto‘g‘ri signal",
-    accepted_risk: "Xavf qabul qilingan",
-    fixed: "Tuzatilgan"
-  };
+  const responsibleOf = (row) => row.stage === "chain" ? ROLE_BY_CHAIN[row.rule_id] || "Dasturchi + DevOps" : ROLE_BY_STAGE[row.stage] || "—";
+  const STATUS_NAMES = TRIAGE_STATUS;
   const icon = (name) => `<svg class="ic"><use href="#${name}"/></svg>`;
   const state = { filters: {}, offset: 0, limit: 50, data: null, selected: /* @__PURE__ */ new Set() };
   function readUrl() {
@@ -58,7 +42,11 @@
     });
     if (state.offset) params.set("offset", String(state.offset));
     const query = params.toString();
-    history.replaceState(null, "", "#/findings" + (query ? "?" + query : ""));
+    LAST_ADDRESS.findings = "#/findings" + (query ? "?" + query : "");
+    const csv = new URLSearchParams(params);
+    csv.delete("offset");
+    $("findings-csv").href = "/api/findings/export.csv" + (csv.toString() ? "?" + csv : "");
+    history.replaceState(null, "", LAST_ADDRESS.findings);
   }
   function toggle(key, value) {
     if (state.filters[key] === value) delete state.filters[key];
@@ -70,7 +58,7 @@
     const blocks = Object.entries(FACET_TITLES).map(([key, title]) => {
       const counts = data.facets[key] || {};
       const chips = Object.entries(counts).slice(0, 8).map(([value, count]) => {
-        const label = key === "stage" ? STAGE_NAMES[value] || value : key === "status" ? STATUS_NAMES[value] || value : key === "severity" && value === "UNRATED" ? "INFO" : value;
+        const label = key === "stage" ? STAGE_NAMES[value] || value : key === "status" ? STATUS_NAMES[value] || value : key === "severity" ? SEVERITY_LABEL[value] || value : value;
         return `<button class="chip" data-facet="${e(key)}" data-value="${e(value)}" aria-pressed="${state.filters[key] === value}">${e(label)}<small>${e(count)}</small></button>`;
       }).join("");
       return chips ? `<div class="facet-group"><b>${e(title)}</b>${chips}</div>` : "";
@@ -103,9 +91,9 @@
     if (row.epss != null) out.push(`<span class="tag">EPSS ${(row.epss * 100).toFixed(1)}%</span>`);
     if (row.verified) out.push('<span class="tag tag-open">Dalil bilan</span>');
     if (row.duplicate_of) out.push('<span class="tag">Takroriy</span>');
-    if (row.escalates) out.push('<span class="tag">Kuchaytirilgan</span>');
+    if (row.escalates) out.push('<span class="tag" title="Bu topilma zanjir xavfini oshiradi">Zanjirni kuchaytiradi</span>');
     if (row.report_state === "partial") out.push('<span class="tag tag-overdue">Qisman qamrov</span>');
-    if (row.stale) out.push('<span class="tag tag-overdue">Qaror eskirgan</span>');
+    if (row.stale) out.push('<span class="tag tag-overdue" title="Qaror manbaning oldingi holatiga berilgan; qayta ko‘rib chiqing">Qarorni yangilang</span>');
     return out.join("");
   }
   function table(data) {
@@ -116,14 +104,14 @@
       const severity = row.severity_scale || "UNRATED";
       return `<tr data-fp="${e(row.fingerprint)}" class="${state.selected.has(row.fingerprint) ? "selected" : ""}">
         <td><input type="checkbox" data-select="${e(row.fingerprint)}" ${state.selected.has(row.fingerprint) ? "checked" : ""} aria-label="Tanlash"></td>
-        <td><span class="sev sev-${e(severity)}">${e(severity === "UNRATED" ? "INFO" : severity)}</span></td>
+        <td><span class="sev sev-${e(severity)}">${e(SEVERITY_LABEL[severity] || severity)}</span></td>
         <td><button class="cell-title" data-open="${e(row.fingerprint)}" data-project="${e(row.project || "")}">${e(row.title || row.rule_id)}</button>
             <span class="cell-sub">${e(row.rule_id)} · ${e(row.subject)}</span>
             <span class="cell-sub">${tags(row)}</span></td>
         <td>${e(STAGE_NAMES[row.stage] || row.stage)}<span class="cell-sub">${e(row.target)}</span></td>
         <td>${e((row.cwe_ids || []).join(", ") || "CWE yo‘q")}</td>
         <td>${e(STATUS_NAMES[row.status || "untriaged"])}<span class="cell-sub">${row.owner ? e(row.owner) : ""}</span></td>
-        <td><span class="cell-sub">${row.first_seen ? e(time(row.first_seen)) : "noma’lum"}</span></td>
+        <td><span class="cell-sub">${row.first_seen ? e(time(row.first_seen)) : row.stage === "chain" ? "har tekshiruvda hisoblanadi" : "—"}</span></td>
       </tr>`;
     }).join("");
     return `<table class="findings-table"><thead><tr>
@@ -176,15 +164,55 @@
       showError(error);
     }
   }
+  function fixOf(finding) {
+    if (!finding) return "";
+    const what = finding.detail || finding.summary || finding.message || finding.description || "";
+    const fix = finding.remediation || finding.recommendation || finding.resolution || (finding.fixed_versions?.length ? "Tuzatilgan versiyaga yangilang: " + finding.fixed_versions.join(", ") : "") || (finding.fixed_version ? "Tuzatilgan versiyaga yangilang: " + finding.fixed_version : "");
+    if (!what && !fix) return "";
+    return `${what ? `<h3>Bu nima?</h3><p>${e(what)}</p>` : ""}${fix ? `<h3>Qanday tuzatiladi</h3><p class="remediation">${e(fix)}</p>` : ""}`;
+  }
   function evidence(finding) {
     if (!finding) return '<p class="cell-sub">Asl yozuv topilmadi (hisobot o‘chirilgan bo‘lishi mumkin).</p>';
     const skip = /* @__PURE__ */ new Set(["triage", "owasp_top10_2025", "cwe_ids", "verification_note"]);
-    const rows = Object.entries(finding).filter(([key, value]) => !skip.has(key) && value !== null && value !== "" && !(Array.isArray(value) && !value.length) && typeof value !== "object").map(([key, value]) => `<tr><td>${e(key)}</td><td>${e(value)}</td></tr>`).join("");
-    const nested = Object.entries(finding).filter(([key, value]) => !skip.has(key) && value && typeof value === "object").map(([key, value]) => `<h3>${e(key)}</h3><pre>${e(JSON.stringify(value, null, 1))}</pre>`).join("");
-    return `<table class="kv"><tbody>${rows}</tbody></table>${nested}`;
+    const NAMES = {
+      tool: "Vosita",
+      rule_id: "Qoida",
+      path: "Fayl",
+      line: "Qator",
+      path_class: "Fayl turi",
+      message: "Skaner xabari",
+      severity: "Skaner bahosi",
+      state: "Dalil holati",
+      title: "Sarlavha",
+      service_id: "Xizmat",
+      level: "Skaner darajasi",
+      fingerprint: "Identifikator",
+      verified: "Dalil bilan tasdiqlangan",
+      advisory_id: "Zaiflik",
+      priority: "Ustuvorlik",
+      remediation: "Tavsiya",
+      detail: "Tafsilot",
+      secret_value: "Sir qiymati",
+      evidence: "Dalil tafsiloti",
+      runtime_verified: "Ish vaqtida tasdiqlangan",
+      rule_meta: "Qoida ma’lumoti",
+      package: "Paket"
+    };
+    const VALUES = {
+      unverified_static: "Statik — tasdiqlanmagan",
+      prod: "Ishchi kod",
+      test: "Test kodi",
+      hidden: "Yashirilgan",
+      true: "Ha",
+      false: "Yo‘q"
+    };
+    const rows = Object.entries(finding).filter(([key, value]) => !skip.has(key) && value !== null && value !== "" && !(Array.isArray(value) && !value.length) && typeof value !== "object").map(([key, value]) => `<tr><td>${e(NAMES[key] || key)}</td><td>${e(VALUES[String(value)] || value)}</td></tr>`).join("");
+    const nested = Object.entries(finding).filter(([key, value]) => !skip.has(key) && value && typeof value === "object").map(([key, value]) => `<h3>${e(NAMES[key] || key)}</h3><pre>${e(JSON.stringify(value, null, 1))}</pre>`).join("");
+    return `<details class="raw-evidence"><summary>Skanerning asl yozuvi (texnik)</summary><table class="kv"><tbody>${rows}</tbody></table>${nested}</details>`;
   }
   async function drawer(fingerprint, project = "") {
     $("drawer").hidden = false;
+    $("drawer").focus();
     $("drawer-body").innerHTML = "<p>Yuklanmoqda…</p>";
     try {
       const detail = await api("/api/findings/" + encodeURIComponent(fingerprint) + (project ? "?project=" + encodeURIComponent(project) : ""));
@@ -192,7 +220,8 @@
       $("drawer-title").textContent = row.title || row.rule_id;
       const sla = row.sla ? `${row.sla.days} kunlik muddat · ${row.sla.overdue ? "muddati o‘tgan" : row.sla.days_remaining + " kun qoldi"}` : "Muddat berilmagan (og‘irlik baholanmagan yoki topilma yopilgan)";
       $("drawer-body").innerHTML = `
-        <p><span class="sev sev-${e(row.severity_scale || "UNRATED")}">${e(row.severity_scale || "INFO")}</span> ${tags(row)}</p>
+        ${fixOf(detail.finding)}
+        <p><span class="sev sev-${e(row.severity_scale || "UNRATED")}">${e(SEVERITY_LABEL[row.severity_scale || "UNRATED"])}</span> ${tags(row)}</p>
         <table class="kv"><tbody>
           <tr><td>Skaner</td><td>${e(STAGE_NAMES[row.stage] || row.stage)} · ${e(row.tool || "—")}</td></tr>
           <tr><td>Nishon</td><td>${e(row.target)}</td></tr>
@@ -201,14 +230,14 @@
           <tr><td>CWE</td><td>${e((row.cwe_ids || []).join(", ") || "—")}</td></tr>
           <tr><td>SLA</td><td>${e(sla)}</td></tr>
           <tr><td>Birinchi / oxirgi ko‘rilgan</td><td>${row.first_seen ? e(time(row.first_seen)) : "—"} / ${row.last_seen ? e(time(row.last_seen)) : "—"}</td></tr>
-          <tr><td>Hisobot</td><td>${e(row.report_id)} · ${e(row.report_state)}</td></tr>
+          <tr><td>Hisobot</td><td>${e(row.report_id)} · ${e(RUN_STATE[row.report_state] || row.report_state)}</td></tr>
           <tr><td>Identifikator</td><td class="hash">${e(row.fingerprint)}</td></tr>
         </tbody></table>
         ${detail.snippet ? `<h3>Kod — aynan shu yerda</h3><pre class="snippet">${detail.snippet.map((l) => `<span class="snippet-line ${l.hit ? "snippet-hit" : ""}"><span class="snippet-n">${e(l.n)}</span><span class="snippet-code">${e(l.text) || " "}</span></span>`).join("")}</pre>` : detail.snippet_state === "secret" ? '<p class="cell-sub">Kod satri ataylab ko‘rsatilmaydi: bu qatorda sir qiymat bor va u himoyalanadi.</p>' : detail.snippet_state === "unavailable" ? '<p class="cell-sub">Kod satri ko‘rsatilmadi: manba papka o‘zgargan yoki o‘qib bo‘lmadi.</p>' : ""}
-        ${detail.related.length ? `<h3>Bog‘liq topilmalar</h3>${detail.related.map((r) => `<p><button class="cell-title" data-open="${e(r.fingerprint)}" data-project="${e(r.project || row.project || "")}">${e(r.rule_id)} — ${e(r.title)}</button><span class="cell-sub">${r.escalates === row.fingerprint ? "Bu topilmani kuchaytiradi" : r.duplicate_of === row.fingerprint ? "Shu topilmaning takrori" : "Bog‘liq"}</span></p>`).join("")}` : ""}
+        ${detail.related.length ? `<h3>Bog‘liq topilmalar</h3>${detail.related.map((r) => `<p><button class="cell-title" data-open="${e(r.fingerprint)}" data-project="${e(r.project || row.project || "")}">${e(r.rule_id)} — ${e(r.title)}</button><span class="cell-sub">${r.escalates === row.fingerprint ? "Bu topilmani kuchaytiradi" : r.duplicate_of === row.fingerprint ? "Shu topilmaning takrori" : row.duplicate_of === r.fingerprint ? "Asl topilma (bu uning takrori)" : "Bog‘liq"}</span></p>`).join("")}` : ""}
         <h3>Qaror</h3>
         <form id="drawer-triage">
-          <label>Holat<select name="status">${Object.entries(STATUS_NAMES).filter(([v]) => v !== "untriaged").map(([value, label]) => `<option value="${value}" ${row.status === value ? "selected" : ""}>${e(label)}</option>`).join("")}</select></label>
+          <label>Holat<select name="status" required><option value="" ${row.status ? "" : "selected"} disabled>— tanlang —</option>${Object.entries(STATUS_NAMES).filter(([v]) => v !== "untriaged").map(([value, label]) => `<option value="${value}" ${row.status === value ? "selected" : ""}>${e(label)}</option>`).join("")}</select></label>
           <label>Mas’ul<input name="owner" maxlength="120" value="${e(row.owner || "")}" required></label>
           <label>Asos<textarea name="note" maxlength="1000" required>${e(detail.events.length ? detail.events[detail.events.length - 1].note : "")}</textarea></label>
           <div class="modal-actions"><button class="primary" data-submit>Qarorni saqlash</button></div>
@@ -223,7 +252,7 @@
         const line = event.target.querySelector(".modal-feedback");
         try {
           await api("/api/triage", {
-            stage: row.stage === "chain" ? "repository" : row.stage,
+            stage: row.stage,
             report_id: row.report_id,
             fingerprint: row.fingerprint,
             status: form.get("status"),
@@ -251,23 +280,47 @@
     chosen.forEach((fp) => {
       const row = state.data.rows.find((r) => r.fingerprint === fp);
       if (!row) return;
-      const key = (row.stage === "chain" ? "repository" : row.stage) + "|" + row.report_id;
+      const key = row.stage + "|" + row.report_id;
       (byReport[key] = byReport[key] || []).push(fp);
     });
-    const owner = prompt("Qaror uchun mas’ul:");
-    if (!owner) return;
-    const note = prompt("Qaror asosi:");
-    if (!note) return;
-    try {
-      for (const [key, fingerprints] of Object.entries(byReport)) {
-        const [stage, reportId] = key.split("|");
-        await api("/api/triage/bulk", { stage, report_id: reportId, fingerprints, status, owner, note });
-      }
-      state.selected.clear();
-      await load();
-    } catch (error) {
-      showError(error);
-    }
+    window.openModal("Ommaviy qaror", `
+      <form id="bulk-decision">
+        <p><strong>${e(chosen.length)} ta topilma</strong> uchun holat: <strong>${e(STATUS_NAMES[status] || status)}</strong></p>
+        <label>Mas’ul<input name="owner" required maxlength="120" placeholder="Jamoa yoki mas’ul"></label>
+        <label>Qaror asosi<textarea name="note" required maxlength="1000" rows="3" placeholder="Nega bu qaror qabul qilindi"></textarea></label>
+        <div class="modal-actions"><button type="button" class="secondary" data-close>Bekor qilish</button><button class="primary" data-submit>Qarorni saqlash</button></div>
+        <p class="modal-feedback"></p>
+      </form>`, (box) => {
+      box.querySelector("[data-close]").addEventListener("click", () => window.closeModal());
+      box.querySelector("#bulk-decision").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const form = formData(event.target);
+        const button = box.querySelector("[data-submit]");
+        const line = box.querySelector(".modal-feedback");
+        button.disabled = true;
+        try {
+          for (const [key, fingerprints] of Object.entries(byReport)) {
+            const [stage, reportId] = key.split("|");
+            await api("/api/triage/bulk", {
+              stage,
+              report_id: reportId,
+              fingerprints,
+              status,
+              owner: form.get("owner").trim(),
+              note: form.get("note").trim()
+            });
+          }
+          state.selected.clear();
+          window.closeModal();
+          await load();
+        } catch (error) {
+          line.textContent = messageOf(error);
+          line.className = "modal-feedback bad";
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
   }
   $("findings-bulk").querySelectorAll("[data-bulk]").forEach((button) => button.addEventListener("click", () => bulkDecide(button.dataset.bulk ?? "")));
   $("findings-clear-selection").addEventListener("click", () => {
@@ -303,7 +356,7 @@
   });
   document.addEventListener("view-shown", (event) => {
     if (event.detail !== "findings") return;
-    if (!state.data) readUrl();
+    if (location.hash.startsWith("#/findings")) readUrl();
     load();
   });
 })();

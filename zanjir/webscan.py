@@ -25,7 +25,7 @@ import uuid
 from urllib.parse import urlsplit, urljoin
 
 from .engine import ROOT, DATA
-from . import priority, repo_store, scanners, taxonomy, run_index, findings as findings_mod, triage
+from . import priority, repo_store, scanners, taxonomy, run_index, findings as findings_mod, triage, report_text
 from . import api_inventory
 from . import verification as verification_mod
 from . import scan_window as scan_window_mod
@@ -1286,21 +1286,25 @@ def cancel(rid):
 
 
 def markdown(report):
-    def cell(value):
-        return str(value).replace('|', '\\|').replace('\n', ' ').replace('\r', ' ')
+    cell = report_text.cell
     verification = verification_mod.summarize(report.get('findings', []))
-    lines = ['# Zanjir — web tekshiruvi', '', 'Nishon: ' + report['url'], 'Holat: ' + report['state'],
-             'Hisobot: ' + report['id'], '', report['limits'], '',
+    lines = [f'# {report_text.PRODUCT} — sayt va API tekshiruvi', '', 'Nishon: ' + report['url'],
+             'Holat: ' + report_text.state(report['state']), 'Hisobot: ' + report['id'],
+             *(['Vaqt: ' + report_text.when(report['created_at'])] if report.get('created_at') else []),
+             'Og‘irlik bo‘yicha: ' + report_text.severity_counts(report.get('findings') or []),
+             '', report['limits'], '',
              f"Tasdiqlash: {verification['confirmed_by_evidence']} dalil bilan tasdiqlangan / "
              f"{verification['manual_review_required']} qo‘lda tekshirish talab qiladi (jami {verification['total']}).",
              *([f"Ikkinchi GET bilan qayta tekshirildi: {c['checked']} · tasdiqlandi {c['confirmed']} · takrorlanmadi "
                 f"{c['not_reproduced']} · rad etildi {c['dismissed']} · noaniq {c['inconclusive']} ({c['requests']} so‘rov)."]
                if (c := report.get('confirmation_summary')) else []), '',
-             '| Vosita | Og‘irlik | Yo‘l | Topilma | CWE | OWASP Top 10 | Tasdiqlangan | Tuzatish |',
+             '| Og‘irlik | Vosita | Yo‘l | Topilma | CWE | OWASP Top 10 | Tasdiqlangan | Tuzatish |',
              '|---|---|---|---|---|---|---|---|']
-    for f in report['findings']:
+    if not report['findings']:
+        lines.extend(['', 'Bu hisobotda topilma yo‘q. Bu xavfsizlik xulosasi emas: qamrov va holatni yuqorida tekshiring.'])
+    for f in report_text.by_severity(report['findings']):
         owasp = ', '.join(o['code'] for o in f.get('owasp_top10_2025') or []) or '\u2014'
-        lines.append('| ' + ' | '.join(cell(v) for v in (f['tool'], f['severity'], f['path'], f['title'],
+        lines.append('| ' + ' | '.join(cell(v) for v in (report_text.severity(f), f['tool'], f['path'], f['title'],
                      ', '.join(f.get('cwe_ids') or []) or '\u2014', owasp,
                      ('Ha' if f.get('verified') else 'Yo\u2018q, qo\u2018lda tekshirish kerak') +
                      (f" ({f['confirmation']['state']}: {f['confirmation']['method']})" if f.get('confirmation') else ''),

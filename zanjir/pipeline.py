@@ -5,7 +5,7 @@ import json
 import threading
 import uuid
 from .engine import ROOT, DATA
-from . import scanners, dependencies, iac, images, webscan, repo_store, chains, portfolio, sarif_export, run_index, triage
+from . import scanners, dependencies, iac, images, webscan, repo_store, chains, portfolio, sarif_export, run_index, triage, report_text
 from . import verification as verification_mod
 
 RUNS = DATA / 'assessment-runs'
@@ -98,11 +98,11 @@ def attach_triage(report):
         stages.append(stage)
     chain = report.get('chain_findings')
     if isinstance(chain, list) and chain:
-        # A chain finding belongs to the project, not to one stage; the code
-        # stage's target is what names that project.
-        target = next((s.get('target') for s in report['stages'] if s.get('kind') == 'code' and s.get('target')), None)
+        # A chain finding belongs to the project, not to one stage; the same
+        # rule the decision endpoint and the findings board use names it.
+        kind, target = triage.chain_subject(report)
         if target:
-            chain = triage.attach('code', target, {'findings': chain})['findings']
+            chain = triage.attach(kind, target, {'findings': chain})['findings']
         report = {**report, 'chain_findings': chain}
     return {**report, 'stages': stages}
 
@@ -419,7 +419,7 @@ def cancel(rid):
     return {'id': rid, 'state': 'cancellation_requested', 'message': 'Joriy kod bosqichi tugashi kutilishi mumkin; keyingi bosqichlar boshlanmaydi.'}
 
 
-STAGE_TITLES = {'code': 'Kod va sirlar (Semgrep + Gitleaks)', 'repository': 'Repository (Compose/Nginx)',
+STAGE_TITLES = {'code': 'Kod va sirlar (Semgrep + Gitleaks)', 'repository': 'Compose va tarmoq (Compose/Nginx)',
                 'dependencies': 'CVE va kutubxonalar (OSV + CISA KEV)',
                 'iac': 'Konfiguratsiya / IaC (Trivy config)',
                 'web': 'Sayt va API (Nuclei + HTTP)', 'images': 'Docker image (Trivy)'}
@@ -427,24 +427,31 @@ STAGE_LIMIT = 40
 
 
 def stage_rows(kind, findings):
+    """(headers, rows) of one stage's table: worst first, severity in words.
+
+    Every table now has the same "Og‘irlik" column on the one scale; the code
+    table had none, and the Compose table showed the raw SARIF level.
+    """
+    sev = report_text.severity
+    findings = report_text.by_severity(findings)
     if kind == 'code':
-        return ('Vosita', 'Qoida', 'Fayl:Qator', 'Xabar'), [
-            (f['tool'], f['rule_id'], f['path'] + ':' + str(f['line']), f['message']) for f in findings]
+        return ('Og‘irlik', 'Vosita', 'Qoida', 'Fayl:Qator', 'Xabar'), [
+            (sev(f), f['tool'], f['rule_id'], f['path'] + ':' + str(f['line']), f['message']) for f in findings]
     if kind == 'repository':
-        return ('Qoida', 'Xizmat', 'Sarlavha', 'Daraja'), [
-            (f['rule_id'], f['service_id'], f['title'], f['level']) for f in findings]
+        return ('Og‘irlik', 'Qoida', 'Xizmat', 'Sarlavha'), [
+            (sev(f), f['rule_id'], f['service_id'], f['title']) for f in findings]
     if kind == 'dependencies':
-        return ('Ustuvorlik', 'Paket', 'Versiya', 'Zaiflik', 'Og‘irlik'), [
-            (f['priority'], f['package']['name'], f['package']['version'], f['advisory_id'], f['severity']) for f in findings]
+        return ('Og‘irlik', 'Ustuvorlik', 'Paket', 'Versiya', 'Zaiflik'), [
+            (sev(f), f['priority'], f['package']['name'], f['package']['version'], f['advisory_id']) for f in findings]
     if kind == 'web':
-        return ('Vosita', 'Og‘irlik', 'Yo‘l', 'Topilma'), [
-            (f['tool'], f['severity'], f['path'], f['title']) for f in findings]
+        return ('Og‘irlik', 'Vosita', 'Yo‘l', 'Topilma'), [
+            (sev(f), f['tool'], f['path'], f['title']) for f in findings]
     if kind == 'images':
-        return ('Paket', 'Versiya', 'Zaiflik', 'Og‘irlik'), [
-            (f['package'], f['version'], f['advisory_id'], f['severity']) for f in findings]
+        return ('Og‘irlik', 'Paket', 'Versiya', 'Zaiflik'), [
+            (sev(f), f['package'], f['version'], f['advisory_id']) for f in findings]
     if kind == 'iac':
-        return ('Tekshiruv', 'Og‘irlik', 'Fayl', 'Sarlavha'), [
-            (f['rule_id'], f['severity'],
+        return ('Og‘irlik', 'Tekshiruv', 'Fayl', 'Sarlavha'), [
+            (sev(f), f['rule_id'],
              f['path'] + (':' + str(f['line']) if f.get('line') else ''), f['title']) for f in findings]
     return (), []
 
@@ -472,14 +479,41 @@ def chain_evidence(finding):
     return str(finding.get('title') or '')[:200]
 
 
+def project_name(report):
+    """The project an assessment ran for, by name when a grouping names it."""
+    kind, target = triage.chain_subject(report)
+    target = target or (report.get('selection') or {}).get('target') or ''
+    if not target:
+        return '—'
+    try:
+        scope = triage.scope_for(kind or 'code', target)
+        meta = triage.groups().get(scope) or {}
+    except (OSError, ValueError):
+        return target
+    return meta.get('name') or (target if scope.startswith('_') else scope)
+
+
 def markdown(report):
-    def cell(value):
-        return str(value).replace('|', '\\|').replace('\n', ' ').replace('\r', ' ')
-    lines = ['# Zanjir — umumiy pilot hisoboti', '', 'Hisobot: ' + report['id'], 'Holat: ' + report['state'],
-             'Boshlangan: ' + report['created_at'], '', report['limits'], '', '| Bosqich | Nishon | Holat | Topilma / moslik | Dalil ID |',
+    cell = report_text.cell
+    stages = report.get('stages') or []
+    every = [f for s in stages for f in ((s.get('report') or {}).get('findings') or [])] + list(report.get('chain_findings') or [])
+    lines = [f'# {report_text.PRODUCT} — to‘liq tekshiruv hisoboti', '',
+             'Loyiha: ' + cell(project_name(report)), 'Hisobot: ' + report['id'],
+             'Holat: ' + report_text.state(report.get('state')),
+             'Boshlangan: ' + report_text.when(report.get('created_at')),
+             *(['Tugagan: ' + report_text.when(report['finished_at'])] if report.get('finished_at') else []),
+             'Og‘irlik bo‘yicha: ' + report_text.severity_counts(every) + ' (sonlar qo‘shib ball chiqarilmaydi)',
+             '', report.get('limits', ''), '', '| Qatlam | Nishon | Holat | Topilma | Dalil ID |',
              '|---|---|---|---|---|']
-    for s in report['stages']:
-        lines.append('| ' + ' | '.join(cell(s.get(k, '—')) for k in ('kind', 'target', 'state', 'count', 'report_id')) + ' |')
+    for s in stages:
+        lines.append('| ' + ' | '.join(cell(v) for v in (
+            report_text.stage(s.get('kind')), s.get('target') or '—', report_text.state(s.get('state')),
+            s.get('count', '—'), s.get('report_id') or '—')) + ' |')
+    gaps = report.get('chain_gaps') or []
+    if gaps:
+        # The page lists these as "Tekshirilmagan qismlar"; the export said nothing,
+        # so a reader could not tell "no chain found" from "chain rule never ran".
+        lines += ['', '## Tekshirilmagan qismlar', *('- ' + cell(g.get('detail') or g) for g in gaps)]
     for s in report['stages']:
         findings = (s.get('report') or {}).get('findings') or []
         if not findings:
@@ -487,7 +521,7 @@ def markdown(report):
         headers, rows = stage_rows(s['kind'], findings)
         if not rows:
             continue
-        lines += ['', '## ' + STAGE_TITLES.get(s['kind'], s['kind']) + ' — ' + s['target'],
+        lines += ['', '## ' + STAGE_TITLES.get(s['kind'], s['kind']) + ' — ' + str(s.get('target') or '—'),
                   '| ' + ' | '.join(headers) + ' |', '|' + '---|' * len(headers)]
         for row in rows[:STAGE_LIMIT]:
             lines.append('| ' + ' | '.join(cell(v) for v in row) + ' |')
@@ -499,10 +533,10 @@ def markdown(report):
         # One table for every chain rule. It used to read SX-001's evidence keys
         # from each row, so an assessment holding any other chain (SX-002..007)
         # raised KeyError and the export could not be downloaded at all.
-        lines += ['', '## Cross-skaner zanjirlari', '| Qoida | Xizmat | Daraja | Dalil |', '|---|---|---|---|']
-        for f in chain_findings:
+        lines += ['', '## Skanerlararo zanjirlar', '| Og‘irlik | Qoida | Xizmat | Dalil |', '|---|---|---|---|']
+        for f in report_text.by_severity(chain_findings):
             lines.append('| ' + ' | '.join(cell(v) for v in (
-                f.get('rule_id', '—'), f.get('service_id', '—'), f.get('level', '—'), chain_evidence(f))) + ' |')
+                report_text.severity(f), f.get('rule_id', '—'), f.get('service_id', '—'), chain_evidence(f))) + ' |')
     lines += ['', 'To‘liq redaktlangan dalillar JSON eksportidagi stages/report bo‘limlarida.',
               'Bu sonlarni qo‘shib xavfsizlik foizi yoki tasdiqlangan hujumlar soni chiqarilmaydi.']
     return '\n'.join(lines) + '\n'

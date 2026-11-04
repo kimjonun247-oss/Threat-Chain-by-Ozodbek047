@@ -372,6 +372,35 @@ def readers():
             'iac': (iac.read, 'target'), 'repository': (store.get_report, 'profile_id')}
 
 
+def chain_subject(report):
+    """(stage, target) whose project a chain finding of this assessment belongs to.
+
+    A chain finding (SX-00X) lives on the assessment, not on one stage. The
+    findings board, the assessment view and the decision endpoint have to agree
+    on which project's store holds its decision. Before this they did not: the
+    board grouped chains by the Compose target, the assessment read decisions by
+    the code target, and the decision endpoint looked for a Compose report with
+    the assessment's id, so every decision on a chain failed. One rule now: the
+    Compose stage's target, else the code stage's.
+    """
+    stages = (report or {}).get('stages') or []
+    for kind in ('repository', 'code'):
+        target = next((s.get('target') for s in stages if s.get('kind') == kind and s.get('target')), None)
+        if target:
+            return kind, target
+    return None, None
+
+
+def _locate_chain(report_id):
+    from . import pipeline
+    assessment = pipeline.read(report_id)
+    stage, target = chain_subject(assessment)
+    if not target:
+        raise ValueError('Bu tekshiruvda zanjir topilmasi bog‘lanadigan Compose yoki kod bosqichi yo‘q.')
+    report = {'id': assessment.get('id'), 'findings': assessment.get('chain_findings') or []}
+    return report, scope_for(stage, target), target
+
+
 def locate(stage, report_id):
     """The report a decision is being made against, plus its scope.
 
@@ -380,9 +409,11 @@ def locate(stage, report_id):
     exists before storing an opinion about it, so a typo becomes an error
     instead of a decision nobody can ever see again.
     """
+    if stage == 'chain':
+        return _locate_chain(report_id)
     entry = readers().get(str(stage or ''))
     if entry is None:
-        raise ValueError('Bosqich noto‘g‘ri: ' + ', '.join(sorted(readers())))
+        raise ValueError('Bosqich noto‘g‘ri: ' + ', '.join(sorted([*readers(), 'chain'])))
     reader, field = entry
     report = reader(report_id)
     target = report.get(field)
@@ -444,6 +475,33 @@ def overview(scope, at=None):
 # imported, so running the migration twice imports nothing twice and removing
 # the marker re-runs it. An existing decision is never overwritten: the triage
 # store is the newer opinion by definition.
+
+def from_legacy(stage, payload):
+    """A decision sent to one of the old per-report review endpoints.
+
+    The Compose and CVE pages used to keep their own review files, which the
+    findings board, the dashboard and the project page never read: a risk
+    accepted on the Compose page still counted as "not reviewed" everywhere
+    else. The endpoints stay for existing clients, but what they receive is now
+    stored here, in the one store everything reads.
+    """
+    fields = {'repository': {'report_id', 'fingerprint', 'status', 'owner', 'note'},
+              'dependencies': {'report_id', 'finding_id', 'status', 'owner', 'note'}}[stage]
+    if not isinstance(payload, dict) or set(payload) != fields or not all(isinstance(v, str) for v in payload.values()):
+        raise ValueError('Qaror maydonlari noto‘g‘ri: ' + ', '.join(sorted(fields)) + '.')
+    status = OLD_STATUS.get(payload['status'])
+    if not status:
+        raise ValueError('Bu holat qaror emas. Holatlar: ' + ', '.join(OLD_STATUS) + '.')
+    fingerprint = payload.get('fingerprint')
+    if stage == 'dependencies':
+        report, _, _ = locate('dependencies', payload['report_id'])
+        fingerprint = next((f.get('fingerprint') for f in report.get('findings') or []
+                            if f.get('id') == payload['finding_id']), None)
+        if not fingerprint:
+            raise ValueError('Topilma ushbu hisobotga tegishli emas.')
+    return apply({'stage': stage, 'report_id': payload['report_id'], 'fingerprint': fingerprint,
+                  'status': status, 'owner': payload['owner'], 'note': payload['note']})
+
 
 MARKER = 'reviews.migrated.json'
 # 'new' in the old repository store meant "not yet reviewed"; it has no

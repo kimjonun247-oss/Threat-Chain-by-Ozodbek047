@@ -7,7 +7,7 @@ import threading
 import time
 import uuid
 from .engine import ROOT, DATA
-from . import inventory, advisories, scanners, repo_store, run_index, triage, fixes
+from . import inventory, advisories, scanners, repo_store, run_index, triage, fixes, report_text
 from . import verification as verification_mod
 
 RUNS=DATA/'dependency-runs'
@@ -175,21 +175,26 @@ def compare(before,after):
 
 
 def markdown(report):
-    def cell(value):return str(value).replace('|','\\|').replace('\n',' ').replace('\r',' ')
+    cell=report_text.cell
     verification=verification_mod.summarize(report.get('findings',[]))
-    lines=['# Zanjir — kutubxonalar tekshiruvi','',f"Loyiha: {cell(report['target'])}",f"Hisobot: {report['id']}",
-           f"Vaqt: {report['created_at']}",f"Holat: {report['state']}",'',report['limits'],'',
+    lines=[f'# {report_text.PRODUCT} — kutubxonalar (CVE) tekshiruvi','',f"Loyiha: {cell(report['target'])}",f"Hisobot: {report['id']}",
+           f"Vaqt: {report_text.when(report['created_at'])}",f"Holat: {report_text.state(report['state'])}",
+           *([f"Sabab: {cell(report['progress'])}"] if report.get('state') in ('failed','partial','cancelled') and report.get('progress') else []),
+           f"Og‘irlik bo‘yicha: {report_text.severity_counts(report.get('findings') or [])}",'',report['limits'],'',
            f"Tasdiqlash: {verification['confirmed_by_evidence']} dalil bilan tasdiqlangan / "
            f"{verification['manual_review_required']} qo‘lda tekshirish talab qiladi (jami {verification['total']}).",'',
-           '| Ustuvorlik | Paket | Versiya | Zaiflik | Og‘irlik | CWE | OWASP Top 10 | EPSS | Tuzatilgan versiyalar |',
+           '| Og‘irlik | Ustuvorlik | Paket | Versiya | Zaiflik | CWE | OWASP Top 10 | EPSS | Tuzatilgan versiyalar |',
            '|---|---|---|---|---|---|---|---|---|']
-    for row in report['findings']:
+    if not report['findings']:lines.extend(['', 'Bu hisobotda topilma yo‘q. Bu xavfsizlik xulosasi emas: qamrov va holatni yuqorida tekshiring.'])
+    for row in report_text.by_severity(report['findings']):
         owasp=', '.join(o['code'] for o in row.get('owasp_top10_2025') or []) or '—'
         epss=f"{row['epss']['epss']*100:.1f}%" if row.get('epss') else '—'
-        lines.append('| '+' | '.join(cell(v) for v in (row['priority'],row['package']['name'],row['package']['version'],row['advisory_id'],row['severity'],
+        lines.append('| '+' | '.join(cell(v) for v in (report_text.severity(row),row['priority'],row['package']['name'],row['package']['version'],row['advisory_id'],
                      ', '.join(row.get('cwe_ids') or []) or '—',owasp,epss,', '.join(row['fixed_versions']) or 'Manbada yo‘q'))+' |')
     lines+=['','Qamrov: '+cell(report.get('coverage',{}).get('scope','Inventar tayyor emas')),
             'Qamrov bo‘shliqlari: '+str(len(report.get('coverage',{}).get('gaps',[]))),
+            *('- '+cell(g.get('path','?'))+(':'+str(g['line']) if g.get('line') else '')+' — '+cell(g.get('reason','')) for g in report.get('coverage',{}).get('gaps',[])[:100]),
+            *(['- ... va yana '+str(len(report.get('coverage',{}).get('gaps',[]))-100)+' ta (JSON eksportida)'] if len(report.get('coverage',{}).get('gaps',[]))>100 else []),
             'So‘rov xatolari: '+str(len(report.get('query_errors',[]))),
             'KEV holati: '+str(report.get('feeds',{}).get('kev',{}).get('state','Tekshirilmagan'))]
     return '\n'.join(lines)+'\n'

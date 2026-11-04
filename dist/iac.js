@@ -2,12 +2,12 @@
 "use strict";
 (() => {
   const e = escapeHTML;
-  const labels = { completed: "Tugagan", partial: "Qisman qamrov", failed: "Tugallanmagan", cancelled: "Bekor qilingan", running: "Tekshirilmoqda", queued: "Navbatda", external_or_interrupted: "Boshqa jarayon yoki uzilgan skan" };
-  const badge = (severity2) => severity2 === "CRITICAL" ? "red" : severity2 === "HIGH" ? "red" : severity2 === "MEDIUM" ? "amber" : "neutral";
+  const labels = RUN_STATE;
+  const badge = severityTone;
   let job = null, report = null, filter = "", severity = "all";
   function rows() {
     const all = (report.findings || []).filter((f) => (severity === "all" || f.severity === severity) && JSON.stringify([f.rule_id, f.path, f.title, f.message]).toLowerCase().includes(filter));
-    $("iac-findings").innerHTML = all.map((f) => `<details class="repo-finding"><summary><span class="badge ${badge(f.severity)}">${e(f.severity)}</span><strong>${e(f.rule_id)}</strong><span>${e(f.path)}${f.line ? ":" + e(f.line) : ""}</span></summary><div class="finding-body"><p><strong>${e(f.title)}</strong></p><p>${e(f.message)}</p><p>${e((f.cwe_ids || []).join(", ") || "CWE xaritada yo‘q")} ${owaspBadges(f.owasp_top10_2025)} ${verifiedBadge(f)}</p><p class="muted">${e(f.check_type)} · ${e(f.provider)}${f.service ? " / " + e(f.service) : ""}</p><p class="remediation"><strong>Tavsiya:</strong> ${e(f.remediation)}</p>${f.reference ? `<p class="muted">${e(f.reference)}</p>` : ""}</div></details>`).join("") || '<p class="empty">Topilma yo‘q — xavfsizlik xulosasi emas.</p>';
+    $("iac-findings").innerHTML = all.map((f) => `<details class="repo-finding"><summary><span class="badge ${badge(f.severity)}">${e(severityLabel(f.severity))}</span><strong>${e(f.rule_id)}</strong><span>${e(f.path)}${f.line ? ":" + e(f.line) : ""}</span></summary><div class="finding-body"><p><strong>${e(f.title)}</strong></p><p>${e(f.message)}</p><p>${e((f.cwe_ids || []).join(", ") || "CWE xaritada yo‘q")} ${owaspBadges(f.owasp_top10_2025)} ${verifiedBadge(f)}</p><p class="muted">${e(f.check_type)} · ${e(f.provider)}${f.service ? " / " + e(f.service) : ""}</p><p class="remediation"><strong>Tavsiya:</strong> ${e(f.remediation)}</p>${f.reference ? `<p class="muted">${e(f.reference)}</p>` : ""}</div></details>`).join("") || '<p class="empty">Topilma yo‘q — xavfsizlik xulosasi emas.</p>';
     $("iac-count").textContent = `${all.length} ta topilma ko‘rsatilmoqda (jami ${(report.findings || []).length})`;
   }
   function render(row) {
@@ -16,7 +16,7 @@
     $("iac-result").className = "";
     const counts = row.severity_counts || {};
     const coverage = (row.coverage || []).map((c) => `<p>${e(c.path)} · ${e(c.type)} · ${e(c.checks)} tekshiruv</p>`).join("") || "<p>Qamrov ma’lumoti yo‘q.</p>";
-    $("iac-result").innerHTML = `<div class="scanner-summary"><strong>${e(labels[row.state] || row.state)}</strong><span>${e(row.target)} · ${e(time(row.created_at))}</span><a href="/api/iac/reports/${encodeURIComponent(row.id)}/download">JSON ↓</a><a href="/api/iac/reports/${encodeURIComponent(row.id)}/markdown">O‘qiladigan hisobot ↓</a></div><div class="scanner-cards"><article class="scanner-card"><h3>Topilmalar</h3><strong>${e(row.count || 0)}</strong><p>${e(row.files || 0)} ta fayl nusxasi</p></article><article class="scanner-card"><h3>Kritik / yuqori</h3><strong>${e(counts.CRITICAL || 0)} / ${e(counts.HIGH || 0)}</strong></article><article class="scanner-card"><h3>Trivy config</h3><strong>${e(row.tool?.version || "—")}</strong></article><article class="scanner-card"><h3>Tasdiqlash</h3><strong>${row.verification_summary ? e(row.verification_summary.confirmed_by_evidence) + " / " + e(row.verification_summary.total) : "—"}</strong><p>Qo‘lda tekshiriladi</p></article></div><p id="iac-baseline" class="muted"></p>` + (row.untagged_checks?.length ? `<p class="muted gap-note">CWE xaritasida yo‘q tekshiruvlar: ${e(row.untagged_checks.join(", "))} — ${e(row.untagged_note || "")}</p>` : "") + `<details class="pilot-help"><summary>Qamrov</summary><p>${e(row.coverage_scope || "")}</p>${coverage}<p class="hash">Snapshot SHA-256: ${e(row.snapshot_sha256 || "—")}</p></details><div class="dep-filters"><label>Qidirish<input id="iac-search" type="search" value="${e(filter)}" placeholder="Tekshiruv, fayl yoki matn"></label><label>Og‘irlik<select id="iac-severity">${["all", "CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"].map((s) => `<option value="${s}" ${severity === s ? "selected" : ""}>${s === "all" ? "Barchasi" : s}</option>`).join("")}</select></label></div><p id="iac-count" class="muted"></p><div id="iac-findings"></div>`;
+    $("iac-result").innerHTML = `<div class="scanner-summary"><strong>${e(labels[row.state] || row.state)}</strong><span>${e(row.target)} · ${e(time(row.created_at))}</span><a href="/api/iac/reports/${encodeURIComponent(row.id)}/download">JSON ↓</a><a href="/api/iac/reports/${encodeURIComponent(row.id)}/markdown">Hisobot (Markdown) ↓</a></div><div class="scanner-cards"><article class="scanner-card"><h3>Topilmalar</h3><strong>${e(row.count || 0)}</strong><p>${e(row.files || 0)} ta fayl nusxasi</p></article><article class="scanner-card"><h3>Kritik / yuqori</h3><strong>${e(counts.CRITICAL || 0)} / ${e(counts.HIGH || 0)}</strong></article><article class="scanner-card"><h3>Trivy config</h3><strong>${e(row.tool?.version || "—")}</strong></article><article class="scanner-card"><h3>Tasdiqlash</h3><strong>${row.verification_summary ? e(row.verification_summary.confirmed_by_evidence) + " / " + e(row.verification_summary.total) : "—"}</strong><p>Qo‘lda tekshiriladi</p></article></div><p id="iac-baseline" class="muted"></p>` + (row.untagged_checks?.length ? `<p class="muted gap-note">CWE xaritasida yo‘q tekshiruvlar: ${e(row.untagged_checks.join(", "))} — ${e(row.untagged_note || "")}</p>` : "") + `<details class="pilot-help"><summary>Qamrov</summary><p>${e(row.coverage_scope || "")}</p>${coverage}<p class="hash">Snapshot SHA-256: ${e(row.snapshot_sha256 || "—")}</p></details><div class="dep-filters"><label>Qidirish<input id="iac-search" type="search" value="${e(filter)}" placeholder="Tekshiruv, fayl yoki matn"></label><label>Og‘irlik<select id="iac-severity">${["all", "CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"].map((s) => `<option value="${s}" ${severity === s ? "selected" : ""}>${s === "all" ? "Barchasi" : e(severityLabel(s))}</option>`).join("")}</select></label></div><p id="iac-count" class="muted"></p><div id="iac-findings"></div>`;
     if (!["queued", "running"].includes(row.state)) {
       fillBaseline("iac", row.id, "iac-baseline");
       showFixPlan(row.fix_plan, "iac-baseline");
@@ -83,10 +83,14 @@
     }
   });
   document.addEventListener("view-shown", async (event) => {
-    if (event.detail !== "iac" || $("iac-target").options.length) return;
+    if (event.detail !== "iac" || $("iac-target").dataset.refill) return;
     try {
-      const targets = await api("/api/iac/targets");
-      $("iac-target").innerHTML = targets.filter((t) => t.available).map((t) => `<option value="${e(t.id)}">${e(t.name)}</option>`).join("");
+      await fillTargetSelect(
+        "iac-target",
+        "/api/iac/targets",
+        (t) => t.name + (t.available ? "" : " · manba yo‘q"),
+        { button: "iac-scan", usable: (t) => t.available, empty: "Ro‘yxatda konfiguratsiya manbasi yo‘q — chapdan «Nishon qo‘shish»" }
+      );
       const listed = await history();
       if (listed.length) {
         if (["queued", "running"].includes(listed[0].state)) follow(listed[0].id).catch(showError);

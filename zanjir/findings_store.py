@@ -312,7 +312,9 @@ def _sync_chains(db, index, force, stored, wanted):
     wanted.add(CHAIN_PAIR)
     try:
         from . import pipeline
-        version = json.dumps([[row.get('id'), row.get('state')] for row in pipeline.history(limit=30)])
+        # 'with-original': chain rows now keep their original finding; a board
+        # stored before that is rebuilt once.
+        version = json.dumps(['with-original'] + [[row.get('id'), row.get('state')] for row in pipeline.history(limit=30)])
     except (OSError, ValueError):
         version = '[]'
     old = stored.get(CHAIN_PAIR)
@@ -320,7 +322,7 @@ def _sync_chains(db, index, force, stored, wanted):
         return
     remove(db, 'stage=?', ('chain',))
     rows = index.chain_rows('repository')
-    insert(db, (record(item, None, None) for item in rows))
+    insert(db, (record(item, item.pop('_finding', None), None) for item in rows))
     _remember(db, CHAIN_PAIR, version, '', '', None)
 
 

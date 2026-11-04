@@ -47,6 +47,15 @@
   window.openModal = openModal;
   window.closeModal = closeModal;
   $('modal-close').addEventListener('click', closeModal);
+  $('modal').addEventListener('keydown', event => {
+    if (event.key !== 'Tab') return;
+    const focusable = [...$('modal').querySelectorAll<HTMLElement>('button,input,select,textarea,a[href],[tabindex]:not([tabindex="-1"])')]
+      .filter(el => !el.hasAttribute('disabled') && el.offsetParent !== null);
+    if (!focusable.length) return;
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  });
   $('modal').addEventListener('mousedown', event => { if ((event.target as Field) === $('modal')) closeModal(); });
 
   function feedback(box: Field, message: string, ok: ApiData) {
@@ -70,15 +79,38 @@
     }
   }
 
+  /* What was typed into the project wizard while the user went to register a
+     target. Restored when the wizard opens again. */
+  let wizardDraft: Record<string, string | string[] | boolean> | null = null;
+  function draftOf(form: Field): Record<string, string | string[] | boolean> {
+    const draft: Record<string, string | string[] | boolean> = {};
+    for (const field of [...form.elements] as Field[]) {
+      if (!field.name) continue;
+      if (field.getAttribute('type') === 'checkbox') draft[field.name] = field.checked;
+      else if (field.multiple) draft[field.name] = [...field.selectedOptions].map(option => option.value);
+      else draft[field.name] = field.value;
+    }
+    return draft;
+  }
+  function restoreDraft(form: Field, draft: Record<string, string | string[] | boolean>): void {
+    for (const field of [...form.elements] as Field[]) {
+      if (!field.name || !(field.name in draft)) continue;
+      const value = draft[field.name];
+      if (field.getAttribute('type') === 'checkbox') field.checked = Boolean(value);
+      else if (field.multiple && Array.isArray(value)) [...field.options].forEach(option => { option.selected = value.includes(option.value); });
+      else if (typeof value === 'string' && (field.tagName !== 'SELECT' || [...field.options].some(o => o.value === value))) field.value = value;
+    }
+  }
+
   /* ---- the windows ------------------------------------------------------ */
   const WINDOWS: Record<string, () => void | Promise<void>> = {
     register: () => openModal('Nishon qo‘shish', `
-      <div class="facets" role="tablist">
-        <button class="chip" data-tab="project" aria-pressed="true">Manba loyihasi</button>
-        <button class="chip" data-tab="remote" aria-pressed="false">Masofaviy repozitoriy</button>
-        <button class="chip" data-tab="image" aria-pressed="false">Docker image</button>
-        <button class="chip" data-tab="web" aria-pressed="false">Sayt / API</button>
-        <button class="chip" data-tab="remove" aria-pressed="false">Ro‘yxatdan chiqarish</button>
+      <div class="facets" role="tablist" aria-label="Nishon turi">
+        <button class="chip" role="tab" data-tab="project" aria-selected="true" aria-pressed="true">Manba loyihasi</button>
+        <button class="chip" role="tab" data-tab="remote" aria-selected="false" aria-pressed="false">Masofaviy repozitoriy</button>
+        <button class="chip" role="tab" data-tab="image" aria-selected="false" aria-pressed="false">Docker image</button>
+        <button class="chip" role="tab" data-tab="web" aria-selected="false" aria-pressed="false">Sayt / API</button>
+        <button class="chip" role="tab" data-tab="remove" aria-selected="false" aria-pressed="false">Ro‘yxatdan chiqarish</button>
       </div>
       <form id="reg-project" data-panel="project">
         <div class="reg-gate" id="reg-gate" hidden><p>Xavfsizlik uchun brauzerdan manba papkasini ro‘yxatga olish <strong>o‘chirilgan</strong>. Yoqilsa, server uy papkangizdagi papkalarni ko‘rsatadi va siz tanlagan papkani o‘qib indekslaydi — bu ongli qaror. Ko‘p foydalanuvchi serverda yoqmang; qayta ishga tushirilganda o‘zi o‘chadi.</p><button type="button" class="primary" id="reg-enable"><svg class="ic"><use href="#i-check"/></svg> Ro‘yxatga olishni yoqish</button></div>
@@ -115,7 +147,7 @@
         <label>Ruxsat bergan mas’ul<input name="owner" required maxlength="120" placeholder="Ism va lavozim"></label>
         <label>So‘rovlar orasidagi kechikish (soniya)<input name="rate_delay" type="number" min="0.5" max="30" step="0.5" placeholder="0.5"></label>
         <fieldset class="window-fields"><legend>Ruxsat oynasi (ixtiyoriy)</legend>
-          <label>Kunlar<input name="window_days" placeholder="mon,tue,wed,thu,fri"></label>
+          <label>Kunlar<input name="window_days" placeholder="du-ju yoki du,se,ch"></label>
           <label>Boshlanish<input name="window_start" type="time"></label>
           <label>Tugash<input name="window_end" type="time"></label>
           <label>Vaqt zonasi<input name="window_tz" placeholder="+05:00" maxlength="40"></label>
@@ -135,7 +167,7 @@
         <p class="modal-feedback"></p>
       </form>`, (box: Field) => {
       box.querySelectorAll('[data-tab]').forEach((tab: Field) => tab.addEventListener('click', () => {
-        box.querySelectorAll('[data-tab]').forEach((t: ApiData) => t.setAttribute('aria-pressed', String(t === tab)));
+        box.querySelectorAll('[data-tab]').forEach((t: ApiData) => { t.setAttribute('aria-pressed', String(t === tab)); t.setAttribute('aria-selected', String(t === tab)); });
         box.querySelectorAll('[data-panel]').forEach((p: ApiData) => { p.hidden = p.dataset.panel !== tab.dataset.tab; });
       }));
       box.querySelectorAll('[data-close]').forEach((b: ApiData) => b.addEventListener('click', closeModal));
@@ -303,7 +335,7 @@
             const result = await api('/api/reset/results', {confirm: true});
             box.querySelector('#clear-feedback').textContent = `Tozalandi: ${result.total} ta yozuv o‘chirildi. Dashboard yangilandi.`;
             document.dispatchEvent(new CustomEvent('view-shown', {detail: 'readiness'}));
-          } catch (error) { showError(error); }
+          } catch (error) { box.querySelector('#clear-feedback').textContent = 'Tozalanmadi: ' + messageOf(error); }
         });
         box.querySelector('#settings-nvd').addEventListener('submit', (event: Event) => {
           event.preventDefault();
@@ -312,8 +344,10 @@
           submit(box, '/api/settings/nvd-key', {key: value}, () => 'Saqlandi. Keyingi CVE tekshiruvida ishlatiladi.');
           (event.target as Field).reset();
         });
-        box.querySelector('[data-clear]').addEventListener('click', () =>
-          submit(box, '/api/settings/nvd-key', {key: ''}, () => 'Kalit o‘chirildi.'));
+        box.querySelector('[data-clear]').addEventListener('click', () => {
+          if (!confirm('Saqlangan NVD API kaliti o‘chirilsinmi? Keyingi CVE tekshiruvlari kalitsiz (sekinroq) ishlaydi.')) return;
+          submit(box, '/api/settings/nvd-key', {key: ''}, () => 'Kalit o‘chirildi.');
+        });
         const notifyForm = box.querySelector('#settings-notify');
         notifyForm.addEventListener('submit', (event: Event) => {
           event.preventDefault();
@@ -373,16 +407,34 @@
         <div class="modal-actions"><button class="secondary" id="export-sbom">Loyiha SBOM (CycloneDX) ↓</button></div>
         <h3>Hisobot bo‘yicha</h3>
         <table class="kv"><tbody>
-          <tr><td>Umumiy tekshiruv</td><td>SARIF · Markdown · JSON — “Umumiy tekshiruv” bo‘limidagi hisobot ustida</td></tr>
-          <tr><td>Repository</td><td>SARIF · JSON</td></tr>
-          <tr><td>Kod, CVE, IaC, Sayt</td><td>JSON · Markdown</td></tr>
+          <tr><td>Topilmalar jadvali</td><td>CSV — Topilmalar sahifasidagi filtr bilan, “Jadvalni CSV yuklab olish”</td></tr>
+          <tr><td>To‘liq tekshiruv</td><td>SARIF · Markdown · JSON — “To‘liq tekshiruv” bo‘limidagi hisobot ustida</td></tr>
+          <tr><td>Compose va tarmoq</td><td>SARIF · JSON</td></tr>
+          <tr><td>Kod, CVE, IaC, Sayt</td><td>JSON · Markdown — har bir bo‘limdagi hisobot ustida</td></tr>
           <tr><td>Docker image</td><td>JSON · CycloneDX SBOM</td></tr>
         </tbody></table>
 `, (box: Field) => {
-        box.querySelector('#export-sbom').addEventListener('click', () => {
+        box.querySelector('#export-sbom').addEventListener('click', async () => {
           const project = box.querySelector('#export-project').value;
           if (!project) { feedback(box, 'Avval loyiha tanlang.', false); return; }
-          window.location.href = '/api/images/sbom?project=' + encodeURIComponent(project);
+          // Fetched first: navigating to it sent the browser to a raw JSON error
+          // page whenever the project had no image report (UI review 2026-11-04).
+          feedback(box, 'SBOM tayyorlanmoqda…', true);
+          try {
+            const response = await fetch('/api/images/sbom?project=' + encodeURIComponent(project), {credentials: 'same-origin'});
+            if (!response.ok) {
+              const body = await response.json().catch(() => ({}));
+              feedback(box, body.error || 'SBOM tayyorlanmadi (HTTP ' + response.status + ').', false);
+              return;
+            }
+            const name = /filename="?([^";]+)"?/.exec(response.headers.get('Content-Disposition') || '')?.[1] || project + '-sbom.json';
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(await response.blob());
+            link.download = name;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+            feedback(box, 'Yuklab olindi: ' + name, true);
+          } catch (error) { feedback(box, messageOf(error), false); }
         });
       });
     },
@@ -397,7 +449,7 @@
       catch (error) { /* empty lists simply render as no options */ }
       const opts = (rows: ApiData[], avail = false) => '<option value="">— tanlanmagan —</option>' +
         (rows || []).filter((t: ApiData) => !avail || t.available).map((t: ApiData) => `<option value="${e(t.id)}">${e(t.name)}</option>`).join('');
-      openModal('Loyiha ustasi — barcha qatlamni bitta loyihaga bog‘lash', `
+      openModal('Yangi loyiha yaratish — barcha qatlamlarni bitta loyihaga bog‘lash', `
         <form id="wizard-project">
           <label>Loyiha ID<input name="id" required maxlength="40" placeholder="masalan: mening-app"></label>
           <label>Nomi<input name="name" required maxlength="120" placeholder="Ko‘rinadigan nom"></label>
@@ -405,7 +457,7 @@
           <p class="hint-text">Har qatlam uchun ro‘yxatga olingan nishonni tanlang. Bo‘sh qatlam loyihaga bog‘lanmaydi (skanda o‘tkazib yuboriladi). Bu forma faqat guruhlaydi — skan qilmaydi va umumiy ball chiqarmaydi.</p>
           <label>Manba kodi <small>(Kod + CVE)</small><select name="code">${opts(sources, true)}</select></label>
           <label>Konfiguratsiya <small>(IaC)</small><select name="iac">${opts(iacs, true)}</select></label>
-          <label>Repository <small>(Compose)</small><select name="repository">${opts(repositories)}</select></label>
+          <label>Compose va tarmoq <small>(Compose)</small><select name="repository">${opts(repositories)}</select></label>
           <label>Docker image <small>(bir nechta tanlash mumkin)</small><select name="images" multiple size="3">${(images || []).map((t: ApiData) => `<option value="${e(t.id)}">${e(t.name)}</option>`).join('')}</select></label>
           <button type="button" class="wiz-toggle" data-new="image">＋ Yangi image</button>
           <div class="wiz-new" data-newfor="image" hidden>
@@ -424,8 +476,20 @@
           <p class="modal-feedback"></p>
         </form>
 `, (box: Field) => {
-        box.querySelector('#wizard-register').addEventListener('click', () => WINDOWS.register());
         const wizForm = box.querySelector('#wizard-project');
+        // Registering another kind of target needs the full "Nishon qo'shish"
+        // window, which replaces this one. What was typed here is kept and put
+        // back, and that window offers the way back (it used to be lost).
+        box.querySelector('#wizard-register').addEventListener('click', () => {
+          wizardDraft = draftOf(wizForm);
+          WINDOWS.register();
+          const back = document.createElement('button');
+          back.type = 'button';
+          back.className = 'link-button wizard-back';
+          back.textContent = '← «Yangi loyiha» oynasiga qaytish (kiritganlaringiz saqlangan)';
+          back.addEventListener('click', () => WINDOWS.projectWizard());
+          $('modal-body').prepend(back);
+        });
         // Per-layer "＋ Yangi" toggles reveal that layer's registration fields.
         const newMode: Record<string, boolean> = {image: false, web: false};
         box.querySelectorAll('.wiz-toggle').forEach((btn: ApiData) => btn.addEventListener('click', () => {
@@ -434,6 +498,11 @@
           (box.querySelector(`[data-newfor="${which}"]`) as Field).hidden = !newMode[which];
           btn.textContent = (newMode[which] ? '− ' : '＋ ') + (which === 'image' ? 'Yangi image' : 'Yangi sayt / API');
         }));
+        if (wizardDraft) {
+          restoreDraft(wizForm, wizardDraft);
+          if (wizardDraft.image_reference) (box.querySelector('[data-new="image"]') as Field).click();
+          if (wizardDraft.web_url) (box.querySelector('[data-new="web"]') as Field).click();
+        }
         wizForm.addEventListener('submit', async (event: Event) => {
           event.preventDefault();
           const button = wizForm.querySelector('[data-submit]');
@@ -471,6 +540,7 @@
             if (!Object.keys(stages).length) { feedback(box, 'Kamida bitta qatlam uchun nishon tanlang yoki qo‘shing.', false); return; }
             const created = await api('/api/portfolio/register', {id: projId, name: form.get('name').trim(), owner: form.get('owner').trim(), stages});
             feedback(box, `Loyiha yaratildi: ${created.name}. Umumiy tekshiruv formasi to‘ldirildi.`, true);
+            wizardDraft = null;
             document.dispatchEvent(new CustomEvent('assessment-project', {detail: created.id}));
             document.dispatchEvent(new CustomEvent('registry-changed'));
             setTimeout(closeModal, 900);
@@ -488,6 +558,33 @@
 
   /* ---- keyboard -------------------------------------------------------- */
   const GOTO: Record<string, string> = {t: 'findings', l: 'portfolio', u: 'assessments', b: 'readiness', p: 'project'};
+  // The shortcuts existed but were written down nowhere (UI review 2026-11-04).
+  function showShortcuts() {
+    openModal('Tezkor tugmalar', `<table class="kv"><tbody>
+      <tr><td><kbd>/</kbd></td><td>Qidiruv maydoniga o‘tish</td></tr>
+      <tr><td><kbd>g</kbd> keyin <kbd>b</kbd></td><td>Bosh sahifa</td></tr>
+      <tr><td><kbd>g</kbd> keyin <kbd>t</kbd></td><td>Topilmalar</td></tr>
+      <tr><td><kbd>g</kbd> keyin <kbd>u</kbd></td><td>To‘liq tekshiruv</td></tr>
+      <tr><td><kbd>g</kbd> keyin <kbd>p</kbd></td><td>Loyiha tafsiloti</td></tr>
+      <tr><td><kbd>g</kbd> keyin <kbd>l</kbd></td><td>Loyihalar qamrovi</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Oyna yoki tafsilotni yopish</td></tr>
+      <tr><td><kbd>?</kbd></td><td>Shu ro‘yxat</td></tr>
+    </tbody></table>`, null);
+  }
+  $('shortcuts-help').addEventListener('click', showShortcuts);
+
+  /* Phones: the section list folds behind one button instead of filling the
+     first screen (about 990 px of navigation before any content). */
+  const sidebar = document.querySelector('.sidebar');
+  const navToggle = document.querySelector('.nav-toggle');
+  navToggle?.addEventListener('click', () => {
+    const open = !sidebar?.classList.contains('nav-open');
+    sidebar?.classList.toggle('nav-open', open);
+    navToggle.setAttribute('aria-expanded', String(open));
+  });
+  $('main-nav').addEventListener('click', event => {
+    if ((event.target as Element).closest('button')) { sidebar?.classList.remove('nav-open'); navToggle?.setAttribute('aria-expanded', 'false'); }
+  });
   let pendingGoto = false;
   document.addEventListener('keydown', event => {
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((event.target as Field).tagName) || (event.target as Field).isContentEditable;
@@ -498,6 +595,7 @@
     }
     if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
     if (event.key === '/') { event.preventDefault(); $('global-search').focus(); return; }
+    if (event.key === '?') { event.preventDefault(); showShortcuts(); return; }
     if (pendingGoto && GOTO[event.key]) { pendingGoto = false; view(GOTO[event.key]); return; }
     pendingGoto = event.key === 'g';
   });
@@ -513,7 +611,7 @@
   }
   $('global-search').addEventListener('input', () => {
     clearTimeout(typingTimer);
-    typingTimer = setTimeout(runSearch, 250);
+    if (!$('findings-view').hidden) typingTimer = setTimeout(runSearch, 250);
   });
   $('commandbar').addEventListener('submit', event => { event.preventDefault(); runSearch(); });
 
@@ -522,9 +620,8 @@
      lists the same rows as the dashboard feed (server: dashboard.recent_scans)
      and opens the stage a row belongs to. Refreshed whenever a view is shown,
      so a scan finished in one section appears without a page reload. */
-  const STAGE_TITLE: Record<string, string> = {code: 'Kod', dependencies: 'CVE', iac: 'IaC', images: 'Image', web: 'Sayt', repository: 'Compose'};
-  const STATE_TITLE: Record<string, string> = {completed: 'tugadi', partial: 'qisman', failed: 'yiqildi', running: 'ishlamoqda', queued: 'navbatda',
-                       cancelled: 'bekor qilindi', no_supported_packages: 'manifest yo‘q'};
+  const STAGE_TITLE = STAGE_SHORT;
+  const STATE_TITLE = RUN_STATE;
   // Fed by the overview's own /api/dashboard answer (dashboard-data) instead of a
   // second identical request; other views refresh it at most every 20 seconds.
   const HISTORY_TTL = 20000;

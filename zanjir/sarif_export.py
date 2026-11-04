@@ -56,11 +56,39 @@ def _iac_entries(findings):
                     f.get('cwe_ids'), f.get('path'), f.get('line'), f.get('fingerprint')) for f in findings]
 
 
+def _split_location(value):
+    """'app/config.py:7' -> ('app/config.py', 7); a plain path keeps line None."""
+    path, sep, line = str(value or '').rpartition(':')
+    if sep and line.isdigit() and path:
+        return path, int(line)
+    return (str(value), None) if value else (None, None)
+
+
+def _chain_location(evidence):
+    """The file a chain finding points at, whichever rule made it.
+
+    Only SX-001's `gitleaks_path` used to be read, so SX-002..007 left the
+    export with no location at all and code-scanning services drop a result
+    without one (UI review 2026-11-04: SX-007 on the bundled sample).
+    """
+    if evidence.get('gitleaks_path'):
+        return evidence['gitleaks_path'], evidence.get('gitleaks_line')
+    for key in ('code_path', 'entry_path', 'manifest'):
+        if evidence.get(key):
+            return _split_location(evidence[key])
+    if evidence.get('build_context'):
+        # The build folder, not a guessed Dockerfile name inside it.
+        return str(evidence['build_context']).rstrip('/'), None
+    return None, None
+
+
 def _chain_entries(findings):
-    return [_entry(f['rule_id'], f.get('title'), _level(f.get('level')), f.get('cwe_ids'),
-                    f.get('evidence', {}).get('gitleaks_path'), f.get('evidence', {}).get('gitleaks_line'),
-                    f.get('fingerprint'))
-            for f in findings]
+    entries = []
+    for f in findings:
+        path, line = _chain_location(f.get('evidence') or {})
+        entries.append(_entry(f['rule_id'], f.get('title'), _level(f.get('level')), f.get('cwe_ids'),
+                              path, line, f.get('fingerprint')))
+    return entries
 
 
 _STAGE_CONVERTERS = {'code': _code_entries, 'dependencies': _dependencies_entries,

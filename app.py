@@ -481,6 +481,14 @@ class Handler(BaseHTTPRequestHandler):
                     offset=int(one('offset') or 0), limit=int(one('limit') or 50)))
             except (ValueError, TypeError) as error:
                 return self.send(400, {'error': str(error) or 'Filtr qiymati noto‘g‘ri.'})
+        if path == '/api/findings/export.csv':
+            query = parse_qs(urlsplit(self.path).query)
+            one = lambda key: query.get(key, [''])[0]
+            try:
+                body = findings_index.export_csv(one('q')[:200], {key: one(key) for key in findings_index.FILTERS})
+            except (ValueError, TypeError) as error:
+                return self.send(400, {'error': str(error) or 'Filtr qiymati noto‘g‘ri.'})
+            return self.send(200, body.encode('utf-8'), 'text/csv; charset=utf-8', attachment='threatchain-topilmalar.csv')
         if path.startswith('/api/findings/'):
             # ?project= disambiguates a fingerprint shared across projects (a
             # dependency CVE on a common package). Optional; absent = old behaviour.
@@ -586,11 +594,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200,scanners.history())
         if path.startswith('/api/scanners/reports/'):
             parts=path.split('/')
-            if len(parts) not in (5,6) or (len(parts)==6 and parts[5]!='download'):
+            if len(parts) not in (5,6) or (len(parts)==6 and parts[5] not in {'download','markdown'}):
                 return self.send(404,{'error':'Hisobot topilmadi.'})
             paging=bool(set(parse_qs(urlsplit(self.path).query))&{'offset','limit'})
             try:report=scanners.read_report(parts[4]) if len(parts)==6 or paging else scanners.read_view(parts[4])
             except ValueError as error:return self.send(404,{'error':str(error)})
+            if len(parts)==6 and parts[5]=='markdown':
+                return self.send(200,scanners.markdown(report).encode('utf-8'),'text/markdown; charset=utf-8',
+                                 attachment=f'threatchain-code-{report["id"]}.md')
             if report.get('state') in ('queued','running'):
                 report={**report,'active_here':report['id'] in scanners.CANCEL}
             return self.send(200,report,attachment=f'threatchain-code-{report["id"]}.json' if len(parts)==6 else None)
@@ -847,7 +858,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(202,dependencies.start(payload['target']))
                 if path=='/api/dependencies/cancel' and set(payload)=={'report_id'}:
                     return self.send(200,dependencies.cancel(payload['report_id']))
-                if path=='/api/dependencies/review':return self.send(200,dependencies.review(payload))
+                # Stored in the one decision store the board and dashboard read (triage.from_legacy).
+                if path=='/api/dependencies/review':return self.send(200,triage.from_legacy('dependencies',payload))
                 if path=='/api/dependencies/compare' and set(payload)=={'before','after'}:
                     return self.send(200,dependencies.compare(dependencies.read(payload['before']),dependencies.read(payload['after'])))
                 return self.send(400,{'error':'Amal yoki maydonlar noto‘g‘ri. Faqat ro‘yxatdagi loyiha tekshiriladi.'})
@@ -862,7 +874,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(400,{'error':'profile_id kerak.'})
                 report=repo_store.scan_profile(payload['profile_id'])
             elif path == '/api/repository/review':
-                report=repo_store.save_review(payload)
+                report=triage.from_legacy('repository', payload)
             else:
                 if set(payload)!={'before','after'}:
                     return self.send(400,{'error':'before va after kerak.'})
@@ -1061,6 +1073,15 @@ def main():
     findings_store.persist(DATA / 'findings-board' / 'board.sqlite3')
     for row in recovery.recover():
         print(f"Tugamay qolgan skan yopildi: {row['stage']}/{row['id']}", file=sys.stderr, flush=True)
+    # Decisions made on the old Compose/CVE review forms are imported into the
+    # one store once (a marker beside each source prevents a second import), so
+    # they show on the findings board and the dashboard after an upgrade.
+    try:
+        moved = triage.migrate()
+        if moved['count']:
+            print(f"Eski qarorlar yagona do‘konga ko‘chirildi: {moved['count']} ta", file=sys.stderr, flush=True)
+    except (OSError, ValueError) as error:
+        print(f'Eski qarorlar ko‘chirilmadi: {error}', file=sys.stderr, flush=True)
     jobs.start_worker()
     scheme = 'https' if TLS[0] else 'http'
     shown = PUBLIC_HOSTS[0] if PUBLIC_HOSTS else f'127.0.0.1:{server.server_port}'

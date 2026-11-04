@@ -3,13 +3,14 @@
 // 5 s while the view is open and the tab is visible -- never in the background.
 (() => {
   const e = escapeHTML;
-  const KINDS: Record<string, string> = {code: 'Kod va sirlar', dependencies: 'Kutubxona (CVE)', images: 'Docker image', iac: 'IaC', web: 'Sayt va API'};
+  const KINDS: Record<string, string> = {code: STAGE_LONG.code, dependencies: STAGE_LONG.dependencies, images: STAGE_LONG.images,
+                                         iac: STAGE_LONG.iac, web: STAGE_LONG.web};
   const STAGE: Record<string, string> = {code: 'code', dependencies: 'dependencies', images: 'images', iac: 'iac', web: 'web'};
   const STATES: Record<string, string[]> = {
-    queued: ['', 'Navbatda'], waiting: ['amber', 'Ruxsat oynasini kutmoqda'], running: ['', 'Ishlayapti'],
-    completed: ['green', 'Tugadi'], partial: ['amber', 'Qisman'], failed: ['red', 'Bajarilmadi'],
-    cancelled: ['', 'Bekor qilindi'], interrupted: ['red', 'Server to‘xtaganda uzildi'],
-    no_supported_packages: ['amber', 'Manifest yo‘q'],
+    queued: ['', RUN_STATE.queued], waiting: ['amber', RUN_STATE.waiting], running: ['', RUN_STATE.running],
+    completed: ['green', RUN_STATE.completed], partial: ['amber', RUN_STATE.partial], failed: ['red', RUN_STATE.failed],
+    cancelled: ['', RUN_STATE.cancelled], interrupted: ['red', RUN_STATE.interrupted],
+    no_supported_packages: ['amber', RUN_STATE.no_supported_packages],
   };
   const NOTIFY: Record<string, string> = {on_change: 'natija o‘zgarsa', always: 'har safar', never: 'xabar yo‘q'};
   let targets: Record<string, ApiData> = {};
@@ -23,8 +24,16 @@
 
   function fillTargets(kindSelect: ApiData, targetSelect: ApiData) {
     const list = targets[STAGE[kindSelect.value]] || [];
+    const previous = targetSelect.value;
     targetSelect.innerHTML = list.length ? list.map((id: string) => `<option>${e(id)}</option>`).join('')
-      : '<option value="">Ro‘yxatda nishon yo‘q</option>';
+      : '<option value="" disabled selected>Bu turda ro‘yxatga olingan nishon yo‘q</option>';
+    if (list.includes(previous)) targetSelect.value = previous;
+    const submit = targetSelect.closest('form')?.querySelector('button[type="submit"], button:not([type])');
+    if (submit) submit.disabled = !list.length;
+  }
+  async function loadTargets() {
+    const data = await api('/api/portfolio/targets');
+    targets = Object.fromEntries(data.stages.map((stage: ApiData) => [stage.key, stage.targets]));
   }
 
   function renderJobs(data: ApiData) {
@@ -43,7 +52,7 @@
         <td>${e(job.report_id || '')}</td><td>${action}</td></tr>`;
     }).join('');
     $('jobs-list').innerHTML = rows ? `<div class="table-wrap"><table><thead><tr><th>Holat</th><th>Tur</th><th>Nishon</th><th>Manba</th>
-      <th>Qo‘shilgan</th><th>Eng erta</th><th>Izoh</th><th>Hisobot</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+      <th>Qo‘shilgan</th><th>Eng erta boshlanish</th><th>Izoh</th><th>Hisobot</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
       : '<p class="muted">Navbat bo‘sh.</p>';
     $('jobs-note').textContent = `${data.note} Bir vaqtda: ${data.max_parallel} ta skan.` +
       (data.worker_running ? '' : ' Diqqat: navbat ishchisi ishlamayapti (server app.py orqali ishga tushirilganmi?).');
@@ -69,8 +78,12 @@
   }
 
   async function start() {
-    const data = await api('/api/portfolio/targets');
-    targets = Object.fromEntries(data.stages.map((stage: ApiData) => [stage.key, stage.targets]));
+    await loadTargets();
+    onRegistryChange(async () => {
+      await loadTargets();
+      fillTargets($('job-kind'), $('job-target'));
+      fillTargets($('schedule-kind'), $('schedule-target'));
+    });
     for (const [kind, target] of [['job-kind', 'job-target'], ['schedule-kind', 'schedule-target']]) {
       $(kind).innerHTML = Object.entries<ApiData>(KINDS).map(([key, label]) => `<option value="${key}">${e(label)}</option>`).join('');
       $(kind).addEventListener('change', () => fillTargets($(kind), $(target)));

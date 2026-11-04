@@ -2,10 +2,9 @@
 "use strict";
 (() => {
   let running = false;
-  const labels = { queued: "Navbatda", running: "Tekshirilmoqda", completed: "Tekshiruv tugadi", partial: "Qisman bajarildi", failed: "Tekshiruv tugallanmadi", cancelled: "Bekor qilingan" };
+  const labels = RUN_STATE;
   const e = escapeHTML;
   const owaspBadges = (tags) => (tags || []).map((o) => `<span class="badge neutral" title="${e(o.name)}">${e(o.code)}</span>`).join(" ");
-  const severityBadge = (s) => s ? `<span class="badge ${s === "ERROR" ? "red" : s === "WARNING" ? "amber" : "neutral"}">${e(s)}</span>` : "";
   const rank = { ERROR: 0, WARNING: 1, INFO: 2 };
   const bySeverity = (a, b) => (rank[a.severity] ?? 3) - (rank[b.severity] ?? 3);
   const PER_PAGE = 25;
@@ -23,8 +22,8 @@
     page = Math.min(page, pages - 1);
     const body = $("code-findings");
     if (!body) return;
-    body.innerHTML = matched.length ? `<div class="scanner-table"><table><thead><tr><th>Vosita</th><th>Daraja</th><th>Fayl va satr</th><th>Kuzatuv</th><th>CWE / OWASP</th><th>Holat</th></tr></thead><tbody>${matched.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE).map((f) => `<tr><td>${e(f.tool)}</td><td>${severityBadge(f.severity) || "—"}</td><td>${e(f.path)}:${e(f.line)}</td><td><strong>${e(f.rule_id)}</strong><p>${e(f.message)}</p>${f.data_flow ? `<p class="muted">Ma’lumot oqimi: <code>${e(f.data_flow.source)}</code> → <code>${e(f.data_flow.sink)}</code> · ${e(f.data_flow.steps)} qadam${f.data_flow.cross_file ? ' · <span class="badge amber">fayllararo</span>' : ""}</p>` : ""}</td><td>${e((f.cwe_ids || []).join(", ") || "—")} ${owaspBadges(f.owasp_top10_2025)}</td><td>Qo‘lda tekshirish kerak${f.secret_value ? "<br>Qiymat yashirilgan" : ""}</td></tr>`).join("")}</tbody></table></div>` : '<p class="empty">Ushbu filtrga mos kuzatuv yo‘q.</p>';
-    $("code-page").textContent = `${matched.length} ta kuzatuv · ${page + 1}/${pages} sahifa`;
+    body.innerHTML = matched.length ? `<div class="scanner-table"><table><thead><tr><th>Vosita</th><th>Daraja</th><th>Fayl va satr</th><th>Kuzatuv</th><th>CWE / OWASP</th><th>Holat</th></tr></thead><tbody>${matched.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE).map((f) => `<tr><td>${e(f.tool)}</td><td>${severityBadge(f.severity) || "—"}</td><td>${e(f.path)}:${e(f.line)}</td><td><strong>${e(f.rule_id)}</strong><p>${e(f.message)}</p>${f.data_flow ? `<p class="muted">Ma’lumot oqimi: <code>${e(f.data_flow.source)}</code> → <code>${e(f.data_flow.sink)}</code> · ${e(f.data_flow.steps)} qadam${f.data_flow.cross_file ? ' · <span class="badge amber">fayllararo</span>' : ""}</p>` : ""}</td><td>${e((f.cwe_ids || []).join(", ") || "—")} ${owaspBadges(f.owasp_top10_2025)}</td><td>Qo‘lda tekshirish kerak${f.secret_value ? "<br>Qiymat yashirilgan" : ""}</td></tr>`).join("")}</tbody></table></div>` : '<p class="empty">Ushbu filtrga mos topilma yo‘q.</p>';
+    $("code-page").textContent = `${matched.length} ta topilma · ${page + 1}/${pages} sahifa`;
     $("code-prev").disabled = page === 0;
     $("code-next").disabled = (page + 1) * PER_PAGE >= matched.length;
   }
@@ -35,14 +34,14 @@
       const names = { helm_template: "Helm shabloni", other: "Boshqa sintaksis" };
       const gaps = Object.entries(item.error_files || {}).map(([key, g]) => `<details class="gap-detail"><summary>${e(names[key] || key)}: ${e(g.count)} ta fayl tahlil qilinmadi</summary><p class="muted">${e(g.action)}</p><ul>${g.files.map((f) => `<li><code>${e(f)}</code></li>`).join("")}</ul></details>`).join("");
       const kinds = !gaps && item.error_kinds && Object.keys(item.error_kinds).length ? `<p class="muted">Tahlil qilinmagan: ${e(Object.entries(item.error_kinds).map(([k, v]) => k + " — " + v).join("; "))}</p>` : "";
-      return `<article class="scanner-card"><h3>${e({ semgrep: "Semgrep", gitleaks: "Gitleaks", pmd: "PMD · Apex" }[name] || name)}</h3><strong>${e(labels[item.state] || item.state)}</strong><p>${e(item.count || 0)} ta kuzatuv${item.version ? " · v" + e(item.version) : ""}</p><p class="muted">${e(item.rule_set || item.message || "")}</p>${pack}${kinds}${gaps}</article>`;
+      return `<article class="scanner-card"><h3>${e({ semgrep: "Semgrep", gitleaks: "Gitleaks", pmd: "PMD · Apex" }[name] || name)}</h3><strong>${e(labels[item.state] || item.state)}</strong><p>${e(item.count || 0)} ta topilma${item.version ? " · v" + e(item.version) : ""}</p><p class="muted">${e(item.rule_set || item.message || "")}</p>${pack}${kinds}${gaps}</article>`;
     }).join("");
     const verification = report.verification_summary;
     const findings = report.findings || [];
     if (!current || current.id !== report.id) page = 0;
     current = report;
     $("code-result").className = "";
-    $("code-result").innerHTML = `<div class="scanner-summary"><strong>${e(labels[report.state] || report.state)}</strong><span>${e(report.target)} · ${e(time(report.created_at))}</span><a href="/api/scanners/reports/${encodeURIComponent(report.id)}/download">JSON hisobot ↓</a></div><div class="scanner-cards">${tools}${verification ? `<article class="scanner-card"><h3>Tasdiqlash</h3><strong>${e(verification.confirmed_by_evidence)} / ${e(verification.total)}</strong><p>Statik kuzatuv doim qo‘lda tekshirishni talab qiladi</p></article>` : ""}</div>${report.message ? '<p class="baseline-note">' + e(report.message) + "</p>" : ""}${report.coverage ? `<p class="muted">${e(report.coverage.files)} ta fayl nusxasi · ${e(report.coverage.scope)}<br>O‘tkazib yuborilgan: ${e(JSON.stringify(report.coverage.skipped))}</p>` : ""}<p id="code-baseline" class="muted"></p>${findings.length ? `<div class="dep-filters"><label>Qidirish<input id="code-search" type="search" placeholder="Qoida, fayl yoki matn" value="${e(filter)}"></label><label>Daraja<select id="code-severity">${[["all", "Barchasi"], ["ERROR", "ERROR"], ["WARNING", "WARNING"], ["INFO", "INFO"], ["NONE", "Darajasiz"]].map(([v, t]) => `<option value="${v}" ${severity === v ? "selected" : ""}>${e(t)}</option>`).join("")}</select></label></div><div id="code-findings"></div><div class="scanner-summary"><button id="code-prev" class="secondary">← Oldingi</button><span id="code-page"></span><button id="code-next" class="secondary">Keyingi →</button></div>` : `<p>${["queued", "running"].includes(report.state) ? "Natija kutilmoqda…" : report.state === "completed" ? "Ushbu qamrovda kuzatuv topilmadi." : "Natija yo‘qligi muvaffaqiyatli tekshiruv degani emas."}</p>`}`;
+    $("code-result").innerHTML = `<div class="scanner-summary"><strong>${e(labels[report.state] || report.state)}</strong><span>${e(report.target)} · ${e(time(report.created_at))}</span><a href="/api/scanners/reports/${encodeURIComponent(report.id)}/download">JSON hisobot ↓</a><a href="/api/scanners/reports/${encodeURIComponent(report.id)}/markdown">Hisobot (Markdown) ↓</a></div><div class="scanner-cards">${tools}${verification ? `<article class="scanner-card"><h3>Tasdiqlash</h3><strong>${e(verification.confirmed_by_evidence)} / ${e(verification.total)}</strong><p>Statik topilma doim qo‘lda tekshirishni talab qiladi</p></article>` : ""}</div>${report.message ? '<p class="baseline-note">' + e(report.message) + "</p>" : ""}${report.coverage ? `<p class="muted">${e(report.coverage.files)} ta fayl nusxasi · ${e(report.coverage.scope)}<br>O‘tkazildi: ${e(report.coverage.skipped?.excluded ?? 0)} ta chiqarilgan, ${e(report.coverage.skipped?.binary ?? 0)} ta binar, ${e(report.coverage.skipped?.large ?? 0)} ta katta, ${e(report.coverage.skipped?.links ?? 0)} ta havola</p>` : ""}<p id="code-baseline" class="muted"></p>${findings.length ? `<div class="dep-filters"><label>Qidirish<input id="code-search" type="search" placeholder="Qoida, fayl yoki matn" value="${e(filter)}"></label><label>Daraja<select id="code-severity">${[["all", "Barchasi"], ["ERROR", severityLabel("ERROR")], ["WARNING", severityLabel("WARNING")], ["INFO", severityLabel("INFO")], ["NONE", "Baholanmagan"]].map(([v, t]) => `<option value="${v}" ${severity === v ? "selected" : ""}>${e(t)}</option>`).join("")}</select></label></div><div id="code-findings"></div><div class="scanner-summary"><button id="code-prev" class="secondary">← Oldingi</button><span id="code-page"></span><button id="code-next" class="secondary">Keyingi →</button></div>` : `<p>${["queued", "running"].includes(report.state) ? "Natija kutilmoqda…" : report.state === "completed" ? "Ushbu qamrovda topilma yo‘q." : "Natija yo‘qligi muvaffaqiyatli tekshiruv degani emas."}</p>`}`;
     if (!["queued", "running"].includes(report.state)) fillBaseline("code", report.id, "code-baseline");
     if (findings.length) {
       $("code-search").addEventListener("input", (event) => {
@@ -120,13 +119,24 @@
       }
     });
     try {
-      const targets = await api("/api/scanners/targets");
-      $("code-target").innerHTML = targets.map((t) => `<option value="${e(t.id)}" ${t.available ? "" : "disabled"}>${e(t.name)}${t.available ? "" : " · manba yo‘q"}</option>`).join("");
+      await fillTargetSelect(
+        "code-target",
+        "/api/scanners/targets",
+        (t) => t.name + (t.available ? "" : " · manba yo‘q"),
+        { button: "code-scan", usable: (t) => t.available, empty: "Ro‘yxatda manba yo‘q — chapdan «Nishon qo‘shish»" }
+      );
       const history = await loadHistory();
       if (history.length) {
         if (["queued", "running"].includes(history[0].state)) follow(history[0].id).catch(showError);
         else render(await api("/api/scanners/reports/" + history[0].id));
       } else $("code-result").textContent = "Loyihani tanlab birinchi tekshiruvni boshlang.";
+    } catch (error) {
+      showError(error);
+    }
+  }
+  whenShown(["code"], initCode);
+  async function loadPilot() {
+    try {
       const pilot = await api("/api/scanners/pilot");
       const names = { baseline_bad: "Tekshiruv o‘chiq: ishonchsiz sertifikat qabul qilindi", fixed_bad: "Tekshiruv yoqilgan: ishonchsiz sertifikat rad etildi", fixed_good: "Ishonchli sertifikat va to‘g‘ri nom bilan aloqa ishladi", fixed_wrong_name: "Noto‘g‘ri xizmat nomi rad etildi" };
       $("pilot-result").className = "";
@@ -135,5 +145,5 @@
       showError(error);
     }
   }
-  whenShown(["code"], initCode);
+  whenShown(["samples"], loadPilot);
 })();

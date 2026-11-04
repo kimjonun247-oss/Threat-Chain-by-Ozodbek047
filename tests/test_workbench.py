@@ -280,9 +280,12 @@ class FrontendContractTests(unittest.TestCase):
         """
         html = (DIST / 'index.html').read_text(encoding='utf-8')
         app = (DIST / 'app.js').read_text(encoding='utf-8')
-        listed = re.search(r"for \(const item of \[([^\]]+)\]\)", app)
+        # The list became `const VIEWS = [...]` when every view got an address.
+        listed = re.search(r"const VIEWS = \[([^\]]+)\]", app)
         self.assertIsNotNone(listed, 'view() dagi bo‘limlar ro‘yxati topilmadi')
-        for name in re.findall(r"'([a-z]+)'", listed.group(1)):
+        names = re.findall(r"['\"]([a-z]+)['\"]", listed.group(1))
+        self.assertGreaterEqual(len(names), 10)
+        for name in names:
             self.assertIn(f'id="{name}-view"', html, name)
 
     def test_d_every_view_in_the_nav_has_a_section(self):

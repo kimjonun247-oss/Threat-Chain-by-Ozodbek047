@@ -31,7 +31,7 @@ import uuid
 from pathlib import Path
 
 from .engine import ROOT, DATA
-from . import images, priority, repo_store, run_index, scanners, taxonomy, triage, fixes
+from . import images, priority, repo_store, run_index, scanners, taxonomy, triage, fixes, report_text
 from . import findings as findings_mod
 from . import verification as verification_mod
 
@@ -280,18 +280,20 @@ def cancel(rid):
 
 
 def markdown(report):
-    def cell(value):
-        return str(value).replace('|', '\\|').replace('\n', ' ').replace('\r', ' ')
-    lines = ['# ThreatChain — konfiguratsiya (IaC) tekshiruvi', '',
+    cell = report_text.cell
+    lines = [f'# {report_text.PRODUCT} — konfiguratsiya (IaC) tekshiruvi', '',
              f"Loyiha: {cell(report.get('target'))}", f"Hisobot: {report['id']}",
-             f"Vaqt: {report['created_at']}", f"Holat: {report['state']}", '',
+             f"Vaqt: {report_text.when(report['created_at'])}", f"Holat: {report_text.state(report['state'])}",
+             f"Og‘irlik bo‘yicha: {report_text.severity_counts(report.get('findings') or [])}", '',
              report.get('limits', ''), '',
-             '| Tekshiruv | Og‘irlik | Fayl | CWE / OWASP | Sarlavha |',
+             '| Og‘irlik | Tekshiruv | Fayl | CWE / OWASP | Sarlavha |',
              '|---|---|---|---|---|']
-    for finding in report.get('findings') or []:
+    if not report.get('findings'):
+        lines.extend(['', 'Bu hisobotda topilma yo‘q. Bu xavfsizlik xulosasi emas: qamrov va holatni yuqorida tekshiring.'])
+    for finding in report_text.by_severity(report.get('findings') or []):
         owasp = ', '.join(o['code'] for o in finding.get('owasp_top10_2025') or [])
         location = finding.get('path') + (f":{finding['line']}" if finding.get('line') else '')
-        lines.append(f"| {cell(finding['rule_id'])} | {cell(finding['severity'])} | {cell(location)} | "
+        lines.append(f"| {cell(report_text.severity(finding))} | {cell(finding['rule_id'])} | {cell(location)} | "
                      f"{cell(', '.join(finding.get('cwe_ids') or []) + (' ' + owasp if owasp else '') or '—')} | "
                      f"{cell(finding.get('title'))} |")
     if report.get('untagged_checks'):

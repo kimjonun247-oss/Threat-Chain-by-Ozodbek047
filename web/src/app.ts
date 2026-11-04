@@ -1,12 +1,17 @@
 'use strict';
 const $ = (id: string): Field => document.getElementById(id) as Field;
-const state: DashboardState = { busy: false, repository:null, reviews:{}, projects:[], project:'crapi' };
+const state: DashboardState = { busy: false, repository:null, projects:[], project:'' };
 const HTML_ESCAPES: Record<string, string> = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
 // A form's fields as FormData. Every element passed here is a <form>.
 const formData = (form: Element): FormData => new FormData(form as HTMLFormElement);
 const messageOf = (error: unknown): string => error instanceof Error ? error.message : String(error);
 const escapeHTML = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, c => HTML_ESCAPES[c]);
-const time = (value: string | number | Date): string => new Date(value).toLocaleString('uz-UZ', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+const time = (value: string | number | Date): string => {
+  const moment = new Date(value);
+  if (Number.isNaN(moment.getTime())) return String(value ?? '—');
+  const two = (n: number) => String(n).padStart(2, '0');
+  return `${two(moment.getDate())}.${two(moment.getMonth() + 1)}.${moment.getFullYear()} ${two(moment.getHours())}:${two(moment.getMinutes())}`;
+};
 // Identical GETs issued while one is still in flight share its answer. On page
 // load three modules asked for /api/scanners/targets at the same moment and each
 // paid the full server cost; POSTs are never shared.
@@ -24,6 +29,53 @@ function whenShown(names: string[], start: () => void): void {
   const run = () => { if (!started) { started = true; start(); } };
   document.addEventListener('view-shown', event => { if (names.includes((event as CustomEvent).detail)) run(); });
   if (names.some(name => $(name + '-view') && !$(name + '-view').hidden)) run();
+}
+// Target dropdowns. Each view used to fill its own once, the first time it was
+// shown, so a target registered in "Nishon qo'shish" appeared nowhere until the
+// page was reloaded -- the dashboard's own first-run steps broke there (UI review
+// 2026-11-04). A dropdown filled through this helper is refilled whenever a
+// target is registered or removed, keeps the user's choice when it still exists,
+// never preselects a disabled entry, and keeps its scan button disabled while
+// nothing usable is selected.
+const TARGET_REFILLS: Array<() => Promise<unknown>> = [];
+document.addEventListener('registry-changed', () => {
+  TARGET_REFILLS.forEach(refill => refill().catch(showError));
+});
+function onRegistryChange(refill: () => Promise<unknown>): void {
+  TARGET_REFILLS.push(refill);
+}
+interface TargetSelectOptions {
+  button?: string;          // id of the button that acts on the selection
+  empty: string;            // shown when there is nothing to choose
+  usable?: (row: ApiData) => boolean;
+  prefer?: string;          // chosen on first fill when present
+}
+async function fillTargetSelect(selectId: string, url: string, label: (row: ApiData) => string,
+                                options: TargetSelectOptions): Promise<ApiData[]> {
+  const select = $(selectId);
+  const usable = options.usable || (() => true);
+  const sync = () => {
+    const chosen = select.selectedOptions[0];
+    if (options.button) $(options.button).disabled = !select.value || !chosen || chosen.disabled;
+  };
+  const refill = async () => {
+    const previous = select.value;
+    const rows: ApiData[] = await api(url);
+    select.innerHTML = rows.map(row => `<option value="${escapeHTML(row.id)}" ${usable(row) ? '' : 'disabled'}>${escapeHTML(label(row))}</option>`).join('')
+      || `<option value="" disabled>${escapeHTML(options.empty)}</option>`;
+    const values = [...select.options].filter(o => !o.disabled && o.value).map(o => o.value);
+    select.value = values.includes(previous) ? previous
+      : options.prefer && values.includes(options.prefer) ? options.prefer : (values[0] ?? '');
+    if (!values.length) select.selectedIndex = 0;
+    sync();
+    return rows;
+  };
+  if (!select.dataset.refill) {
+    select.dataset.refill = '1';
+    onRegistryChange(refill);
+    select.addEventListener('change', sync);
+  }
+  return refill();
 }
 // Follow a running scan with as little load as possible on this server -- which
 // shares the CPU with the scanners it is reporting on: poll the small ?status=1
@@ -105,15 +157,47 @@ function syncTarget(selectId: string, value: string) {
   const select = $(selectId);
   if (select && typeof value === 'string' && [...select.options].some(option => option.value === value)) select.value = value;
 }
-function showError(error: unknown) { $('error').textContent = messageOf(error); $('error').hidden = false; }
+function showError(error: unknown) {
+  const close = document.createElement('button');
+  close.type = 'button'; close.className = 'error-close'; close.setAttribute('aria-label', 'Xabarni yopish'); close.textContent = '✕';
+  close.addEventListener('click', () => { $('error').hidden = true; });
+  const text = document.createElement('span');
+  text.textContent = messageOf(error);
+  $('error').replaceChildren(text, close);
+  $('error').hidden = false;
+}
 function busy(value: boolean, message = '') {
   state.busy = value;
   for (const id of ['repo-scan','project']) { const el=$(id); if (el) el.disabled = value; }
   $('progress').textContent = message;
 }
-function view(name: string) {
-  for (const item of ['repository','code','dependencies','iac','readiness','images','web','assessments','portfolio','findings','project','jobs']) $(item+'-view').hidden = item !== name;
-  $('environment-label').textContent = name === 'assessments' ? 'UMUMIY TEKSHIRUV · AI ISHLATILMAYDI' : name === 'web' ? 'RUXSATLI SAYT · NUCLEI · GET' : name === 'readiness' ? 'PILOT · BOSHLASH' : name === 'images' ? 'IMAGE · TRIVY' : name === 'dependencies' ? 'CVE · OSV · KEV · NVD · EPSS' : name === 'code' ? 'KOD · SIRLAR · CWE/OWASP' : name === 'findings' ? 'TOPILMALAR · BARCHA SKANERLAR' : name === 'project' ? 'LOYIHA · BARCHA QATLAMLAR' : name === 'iac' ? 'IAC · TRIVY CONFIG · FAQAT O‘QISH' : name === 'portfolio' ? 'PORTFEL · UMUMIY BALL YO‘Q' : name === 'jobs' ? 'NAVBAT · JADVAL · XABARNOMA' : 'REPOSITORY · FAQAT O‘QISH';
+// Every view has an address (#/code, #/findings?severity=HIGH ...): Back works,
+// a link can be shared, and a reload stays where it was. Only the findings board
+// used to write the URL, and a shared findings link still landed on the home
+// page because start-up always opened it (UI review 2026-11-04).
+const VIEWS = ['repository','code','dependencies','iac','readiness','images','web','assessments','portfolio','findings','project','jobs','samples'];
+// The last address of each view, so returning to it keeps its filters.
+const LAST_ADDRESS: Record<string, string> = {};
+function viewFromAddress(): string {
+  const match = location.hash.match(/^#\/?([a-z]+)/);
+  return match && VIEWS.includes(match[1]) ? match[1] : 'readiness';
+}
+/** Open the findings board with exactly these filters. */
+function openFindings(filters: Record<string, string>): void {
+  const query = new URLSearchParams(filters).toString();
+  LAST_ADDRESS.findings = '#/findings' + (query ? '?' + query : '');
+  history.pushState(null, '', LAST_ADDRESS.findings);
+  view('findings', false);
+}
+window.addEventListener('popstate', () => view(viewFromAddress(), false));
+function view(name: string, remember = true) {
+  if (!VIEWS.includes(name)) name = 'readiness';
+  if (remember) {
+    const address = LAST_ADDRESS[name] || '#/' + name;
+    if (location.hash.replace(/\?.*$/, '') !== '#/' + name) history.pushState(null, '', address);
+  }
+  for (const item of VIEWS) $(item+'-view').hidden = item !== name;
+  $('error').hidden = true;      // an error belongs to the view it was raised on
   document.querySelectorAll('[data-view]').forEach(button => {
     const active = button.dataset.view === name;
     button.classList.toggle('active', active);
@@ -203,7 +287,6 @@ async function fillBaseline(stage: string, reportId: string, elementId: string) 
     box.innerHTML = `<span class="muted">${escapeHTML(messageOf(error))}</span>`;
   }
 }
-const reviewNames: Record<string, string>={new:'Yangi',investigating:'Tekshirilmoqda',accepted_risk:'Xavf qabul qilingan',false_positive:'Noto‘g‘ri signal deb baholangan'};
 function owaspBadges(tags: ApiData) {
   return (tags||[]).map((o: ApiData)=>`<span class="badge neutral" title="${escapeHTML(o.name)}">${escapeHTML(o.code)}</span>`).join(' ');
 }
@@ -219,29 +302,36 @@ function sourceLink(report: ApiData, evidence: ApiData) {
   }
   return label;
 }
+// Evidence values are small objects ({host_ip, published, ...}); shown as
+// "host_ip: 0.0.0.0 · published: 8080" instead of raw JSON.
+function evidenceText(value: unknown): string {
+  if (value === null || value === undefined) return '—';
+  if (typeof value !== 'object') return String(value);
+  if (Array.isArray(value)) return value.map(evidenceText).join(', ');
+  return Object.entries(value as Record<string, unknown>).map(([key, item]) => key + ': ' + evidenceText(item)).join(' · ');
+}
 function renderRepository(report: ApiData) {
   state.repository=report;
   const s=report.summary;
   const verification=report.verification_summary||{confirmed_by_evidence:0,manual_review_required:s.findings,total:s.findings};
   const facts=Object.fromEntries(report.evidence.map((e: ApiData)=>[e.id,e]));
   $('repository-result').className='';
-  $('repository-result').innerHTML=`<div class="repo-provenance"><span class="badge">SOURCE SNAPSHOT</span><strong>${escapeHTML(report.repository.commit?.slice(0,12)||'Local snapshot')}</strong><span>${time(report.created_at)} · ${(report.duration_ms/1000).toFixed(2)} s</span><span class="badge amber">Amalda tasdiqlangan: ${s.runtime_confirmed}</span></div>
+  $('repository-result').innerHTML=`<div class="repo-provenance"><span class="badge">MANBA NUSXASI</span><strong>${escapeHTML(report.repository.commit?.slice(0,12)||'Lokal nusxa')}</strong><span>${time(report.created_at)} · ${(report.duration_ms/1000).toFixed(2)} s</span><span class="badge amber">Amalda tasdiqlangan: ${s.runtime_confirmed}</span></div>
     <div class="metrics"><div class="metric"><span>Compose xizmatlari</span><strong>${s.services}</strong><small>${report.files.length} ta fayldan dalil olindi</small></div><div class="metric"><span>Host portlari</span><strong>${s.published_ports}</strong><small>Shundan ${s.loopback_ports} tasi loopback</small></div><div class="metric"><span>Ko‘rib chiqish kerak</span><strong>${s.findings}</strong><small>${verification.confirmed_by_evidence} tasdiqlangan / ${verification.manual_review_required} qo‘lda tekshirish</small></div></div>
     <div class="baseline-note">${s.loopback_ports===s.published_ports && s.published_ports?'Berilgan konfiguratsiyadagi barcha host portlari localhost’ga bog‘langan. Ular internetga ochiq deb belgilanmadi.':'Host interfeyslarini alohida tekshiring; real firewall va daemon sozlamasi o‘qilmagan.'}</div>
     <div class="export-row"><p>Manba nusxasi: <strong>${escapeHTML(report.repository.repository)}</strong></p><a href="/api/repository/reports/${report.id}/download" download>JSON hisobot ↓</a><a href="/api/repository/reports/${report.id}/sarif" download>SARIF eksport ↓</a></div>
-    <div class="section-heading"><h2>Dalil bilan bog‘langan kuzatuvlar</h2><button id="compare-repository" class="link-button">Oldingi tahlil bilan solishtirish →</button></div><div id="repository-comparison"></div>
+    <div class="section-heading"><h2>Dalil bilan bog‘langan topilmalar</h2><button id="compare-repository" class="link-button">Oldingi tahlil bilan solishtirish →</button></div><div id="repository-comparison"></div>
     ${report.findings.length?report.findings.map((f: ApiData,index: number)=>{
-      const review=state.reviews[report.input_sha256+':'+f.fingerprint]||{};
-      return `<details class="repo-finding" ${index===0?'open':''}><summary><span class="badge ${f.level==='error'?'red':f.level==='warning'?'amber':''}">${escapeHTML(f.rule_id)}</span><span><strong>${escapeHTML(f.title)}</strong><small>${escapeHTML(f.service_id)} · ${escapeHTML(reviewNames[review.status||'new'])}</small></span><span class="finding-chevron">⌄</span></summary><div class="finding-body"><p>${escapeHTML(f.detail)}</p><p>${(f.cwe_ids||[]).map(escapeHTML).join(', ')||'CWE aniqlanmagan'} ${owaspBadges(f.owasp_top10_2025)} ${verifiedBadge(f)}</p><p class="evidence-label">Manba dalili — fayl, qator va konfiguratsiya tuzilishi. Parol, token yoki boshqa maxfiy qiymat emas, faqat xatoning aniq joyini ko‘rsatadi.</p><div class="repo-evidence">${f.evidence_ids.map((id: string)=>{const e=facts[id];return `<div><span>${escapeHTML(id)}</span><div><strong>${escapeHTML(e.label)}</strong><p>${escapeHTML(typeof e.value==='object'?JSON.stringify(e.value):e.value)}</p><small>${sourceLink(report,e)}</small></div></div>`;}).join('')}</div><p class="remediation"><strong>Tavsiya:</strong> ${escapeHTML(f.remediation)}</p><form class="review-form" data-fingerprint="${f.fingerprint}"><label>Holat<select name="status">${Object.entries<ApiData>(reviewNames).map(([v,label])=>`<option value="${v}" ${review.status===v?'selected':''}>${label}</option>`).join('')}</select></label><label>Mas’ul<input name="owner" maxlength="120" placeholder="Jamoa yoki mas’ul" value="${escapeHTML(review.owner||'')}"></label><label class="review-note">Qaror asosi<textarea name="note" maxlength="1000" rows="2" placeholder="Tekshiruv yoki qarorning sababini yozing">${escapeHTML(review.note||'')}</textarea></label><button class="secondary" type="submit">Qarorni saqlash</button><p class="review-feedback" role="status">${review.updated_at?'Saqlangan: '+time(review.updated_at):'Qo‘lda baholash statik dalilni o‘zgartirmaydi.'}</p></form></div></details>`;}).join(''):'<div class="empty">Joriy qoidalar bo‘yicha kuzatuv topilmadi. Bu umumiy xavfsizlik xulosasi emas.</div>'}
+      return `<details class="repo-finding" ${index===0?'open':''}><summary><span class="badge ${f.level==='error'?'red':f.level==='warning'?'amber':''}">${escapeHTML(f.rule_id)}</span><span><strong>${escapeHTML(f.title)}</strong><small>${escapeHTML(f.service_id)} · <span data-decision-label>${escapeHTML(decisionLabel(f))}</span></small></span><span class="finding-chevron">⌄</span></summary><div class="finding-body"><p>${escapeHTML(f.detail)}</p><p>${(f.cwe_ids||[]).map(escapeHTML).join(', ')||'CWE aniqlanmagan'} ${owaspBadges(f.owasp_top10_2025)} ${verifiedBadge(f)}</p><p class="evidence-label">Manba dalili — fayl, qator va konfiguratsiya tuzilishi. Parol, token yoki boshqa maxfiy qiymat emas, faqat xatoning aniq joyini ko‘rsatadi.</p><div class="repo-evidence">${f.evidence_ids.map((id: string)=>{const e=facts[id];return `<div><span>${escapeHTML(id)}</span><div><strong>${escapeHTML(e.label)}</strong><p>${escapeHTML(evidenceText(e.value))}</p><small>${sourceLink(report,e)}</small></div></div>`;}).join('')}</div><p class="remediation"><strong>Tavsiya:</strong> ${escapeHTML(f.remediation)}</p>${decisionForm(f)}</div></details>`;}).join(''):'<div class="empty">Joriy qoidalar bo‘yicha topilma yo‘q. Bu umumiy xavfsizlik xulosasi emas.</div>'}
     <details class="source-details"><summary>Xizmatlar va host portlari (${s.services})</summary><div class="table-wrap"><table><thead><tr><th>Xizmat</th><th>Host → konteyner</th><th>Compose tarmog‘i</th></tr></thead><tbody>${report.services.map((service: ApiData)=>`<tr><td>${escapeHTML(service.id)}</td><td>${service.ports.map((p: ApiData)=>escapeHTML((p.host_ip||'default')+':'+p.published+' → '+p.target+'/'+p.protocol)).join('<br>')||'Host porti berilmagan'}</td><td>${escapeHTML(service.networks.join(', ')||'Noma’lum / maxsus rejim')}</td></tr>`).join('')}</tbody></table></div></details>
-    <details class="source-details"><summary>Proxy bog‘lanishlari (${s.proxy_routes})</summary><p class="muted">Bu konfiguratsiyada e’lon qilingan yo‘llar; runtime reachability yoki autentifikatsiya isbotlanmagan. depends_on aloqa yo‘li sifatida ishlatilmaydi.</p><div class="table-wrap"><table><thead><tr><th>Proxy : port</th><th>Yo‘l</th><th>Target</th><th>Protokol</th></tr></thead><tbody>${report.edges.map((e: ApiData)=>`<tr><td>${escapeHTML(e.from)} : ${escapeHTML(e.listen)}</td><td>${escapeHTML(e.location)}</td><td>${escapeHTML(e.to)} : ${e.target_port}</td><td>${escapeHTML(e.scheme)}</td></tr>`).join('')}</tbody></table></div></details>
+    <details class="source-details"><summary>Proxy bog‘lanishlari (${s.proxy_routes})</summary><p class="muted">Bu konfiguratsiyada e’lon qilingan yo‘llar; ish vaqtida yetib borish yoki autentifikatsiya isbotlanmagan. depends_on aloqa yo‘li sifatida ishlatilmaydi.</p><div class="table-wrap"><table><thead><tr><th>Proxy : port</th><th>Yo‘l</th><th>Manzil xizmat</th><th>Protokol</th></tr></thead><tbody>${report.edges.map((e: ApiData)=>`<tr><td>${escapeHTML(e.from)} : ${escapeHTML(e.listen)}</td><td>${escapeHTML(e.location)}</td><td>${escapeHTML(e.to)} : ${e.target_port}</td><td>${escapeHTML(e.scheme)}</td></tr>`).join('')}</tbody></table></div></details>
     <details class="source-details"><summary>Qamrov, cheklovlar va fayl xeshlari</summary><ul class="muted">${[...report.unknowns,...report.limits].map(u=>`<li>${escapeHTML(u)}</li>`).join('')}</ul><p class="hash">Input SHA-256: ${escapeHTML(report.input_sha256)}</p>${report.files.map((f: ApiData)=>`<p class="hash">${escapeHTML(f.path)}<br>${f.sha256}</p>`).join('')}</details>`;
   showFixPlan(report.fix_plan,'repository-comparison');
-  $('repository-result').querySelectorAll('.review-form').forEach(form=>form.addEventListener('submit',async event=>{
-    event.preventDefault(); const button=form.querySelector('button'); button.disabled=true;
-    try{const saved=await api('/api/repository/review',{report_id:report.id,fingerprint:form.dataset.fingerprint,status:form.elements.status.value,owner:form.elements.owner.value,note:form.elements.note.value});state.reviews[report.input_sha256+':'+form.dataset.fingerprint]=saved;form.querySelector('.review-feedback').textContent='Qaror saqlandi · '+time(saved.updated_at);(form.closest('details') as Field).querySelector('summary small').textContent=report.findings.find((f: ApiData)=>f.fingerprint===form.dataset.fingerprint).service_id+' · '+reviewNames[saved.status];}
-    catch(error){form.querySelector('.review-feedback').textContent=messageOf(error);}finally{button.disabled=false;}
-  }));
+  bindDecisionForms($('repository-result'),'repository',report.id,(fingerprint,status)=>{
+    const form=$('repository-result').querySelector(`form[data-decision="${CSS.escape(fingerprint)}"]`);
+    const label=form?.closest('details')?.querySelector('[data-decision-label]');
+    if(label)label.textContent=TRIAGE_STATUS[status];
+  });
   $('compare-repository').addEventListener('click',async()=>{
     try{const reports=await api('/api/repository/reports?profile_id='+encodeURIComponent(report.profile_id));const index=reports.findIndex((r: ApiData)=>r.id===report.id);const previous=reports[index+1];if(!previous){$('repository-comparison').textContent='Shu loyihaning oldingi hisoboti hali yo‘q. Qayta tahlildan keyin solishtirish mumkin.';return;}const result=await api('/api/repository/compare',{before:previous.id,after:report.id});$('repository-comparison').innerHTML=`<p class="baseline-note">Yangi: ${result.added.length} · Joriy tahlilda yo‘q: ${result.absent.length} · Saqlangan: ${result.unchanged.length}<br>${escapeHTML(result.caution)}${result.coverage_changed?' Qamrov ham o‘zgargan — alohida tekshiring.':''}</p>`;}catch(error){showError(error);}
   });
@@ -250,8 +340,8 @@ async function loadRepository(){
   busy(true);state.repository=null;
   $('repository-result').textContent='Tanlangan loyiha natijasi yuklanmoqda…';
   const project=state.projects.find(p=>p.id===state.project);
-  $('project-scope').textContent=project?`${project.mode==='bundled_sample'?'Tayyor o‘quv namunasi':'Ro‘yxatdan o‘tgan lokal loyiha'} · ${project.compose} · ${project.proxy_bindings} ta proxy mapping${project.owner?' · Mas’ul: '+project.owner:''}`:'';
-  try{const [reports,reviews]=await Promise.all([api('/api/repository/reports?profile_id='+encodeURIComponent(state.project)),api('/api/repository/reviews')]);state.reviews=reviews;
+  $('project-scope').textContent=project?`${project.mode==='bundled_sample'?'Tayyor o‘quv namunasi':'Ro‘yxatdan o‘tgan lokal loyiha'} · ${project.compose} · ${project.proxy_bindings} ta proxy yo‘nalishi${project.owner?' · Mas’ul: '+project.owner:''}`:'';
+  try{const reports=await api('/api/repository/reports?profile_id='+encodeURIComponent(state.project));
   if(reports.length)renderRepository(await api('/api/repository/reports/'+reports[0].id));else{$('repository-result').className='empty';$('repository-result').textContent='Bu loyiha uchun hali hisobot yo‘q. Birinchi tahlilni boshlang.';}}
   finally{busy(false);}
 }
@@ -261,7 +351,7 @@ async function scanRepository(profileId=state.project){
   state.project=profileId;$('project').value=profileId;
   state.repository=null;$('repository-result').textContent='Tanlangan loyiha tahlil qilinmoqda…';
   $('error').hidden=true;view('repository');busy(true,'Tanlangan loyihaning lokal manba fayllari o‘qilmoqda…');
-  const project=state.projects.find(p=>p.id===profileId);$('project-scope').textContent=`${project.name} · ${project.compose} · ${project.proxy_bindings} ta proxy mapping`;
+  const project=state.projects.find(p=>p.id===profileId);$('project-scope').textContent=`${project.name} · ${project.compose} · ${project.proxy_bindings} ta proxy yo‘nalishi`;
   try{const report=await api('/api/repository/scan',{profile_id:profileId});renderRepository(report);return {id:report.id,profile_id:profileId,summary:report.summary};}catch(error){showError(error);throw error;}finally{busy(false);}
 }
 async function init() {
@@ -269,13 +359,17 @@ async function init() {
   $('repo-scan').addEventListener('click',()=>scanRepository().catch(()=>{}));
   $('project').addEventListener('change',()=>{state.project=$('project').value;loadRepository().catch(showError);});
   whenShown(['repository'], loadProjects);
+  onRegistryChange(async()=>{if(state.projects.length)await loadProjects();});
 }
 async function loadProjects() {
   try {
     state.projects=await api('/api/repository/profiles');
     $('project').innerHTML=state.projects.map(p=>`<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)}</option>`).join('');
-    state.project=state.projects.some(p=>p.id==='crapi')?'crapi':state.projects[0]?.id;$('project').value=state.project;
-    await loadRepository(); registerTools();
+    const keep=state.projects.some(p=>p.id===state.project);
+    state.project=keep?state.project:state.projects[0]?.id;$('project').value=state.project;
+    $('repo-scan').disabled=!state.project;
+    if(!state.project){$('repository-result').className='empty';$('repository-result').textContent='Ro‘yxatda Compose loyihasi yo‘q. Chapdan «Nishon qo‘shish» orqali qo‘shing.';return;}
+    await loadRepository(); if(!keep)registerTools();
   } catch(error) { showError(error); }
 }
 function registerTools() {

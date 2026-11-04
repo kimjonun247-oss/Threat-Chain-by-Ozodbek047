@@ -1787,3 +1787,42 @@ def start(target,background=True,full=False):
         threading.Thread(target=execute,args=(target,rid,full),daemon=True).start()
         return {'id':rid,'state':'queued'}
     return execute(target,rid,full)
+
+
+MARKDOWN_LIMIT = 2000
+
+
+def markdown(report):
+    """A code report a person can read: one table, worst first.
+
+    The export window promised a Markdown version of the code report and the
+    route answered 404 (UI review 2026-11-04). No secret value and no source
+    line goes into it -- the same rule as the JSON export.
+    """
+    from . import report_text
+    cell = report_text.cell
+    findings = report.get('findings') or []
+    coverage = report.get('coverage') or {}
+    skipped = coverage.get('skipped') or {}
+    tools = report.get('tools') or {}
+    lines = [f'# {report_text.PRODUCT} — kod va sirlar tekshiruvi', '',
+             f"Loyiha: {cell(report.get('target') or '—')}", f"Hisobot: {report['id']}",
+             f"Vaqt: {report_text.when(report.get('created_at'))}", f"Holat: {report_text.state(report.get('state'))}",
+             f"Og‘irlik bo‘yicha: {report_text.severity_counts(findings)}",
+             f"Qamrov: {coverage.get('files', '—')} ta fayl · o‘tkazildi: {skipped.get('excluded', 0)} ta chiqarilgan, "
+             f"{skipped.get('binary', 0)} ta binar, {skipped.get('large', 0)} ta katta, {skipped.get('links', 0)} ta havola",
+             *[f"{name.capitalize()}: {report_text.state(tool.get('state'))} · {tool.get('count', 0)} ta topilma"
+               + (f" · {tool['errors']} ta xato" if tool.get('errors') else '') for name, tool in tools.items()],
+             '', report.get('limits', ''), '',
+             '| Og‘irlik | Vosita | Qoida | Fayl:Qator | CWE | Xabar |', '|---|---|---|---|---|---|']
+    if not findings:
+        lines += ['', 'Bu hisobotda topilma yo‘q. Bu xavfsizlik xulosasi emas: qamrov va holatni yuqorida tekshiring.']
+    ordered = report_text.by_severity(findings)
+    for f in ordered[:MARKDOWN_LIMIT]:
+        lines.append('| ' + ' | '.join(cell(v) for v in (
+            report_text.severity(f), f.get('tool', '—'), f.get('rule_id', '—'),
+            f"{f.get('path', '—')}:{f.get('line', '—')}", ', '.join(f.get('cwe_ids') or []) or '—',
+            f.get('message', ''))) + ' |')
+    if len(ordered) > MARKDOWN_LIMIT:
+        lines += ['', f'... va yana {len(ordered) - MARKDOWN_LIMIT} ta topilma. To‘liq ro‘yxat JSON eksportida.']
+    return '\n'.join(lines) + '\n'

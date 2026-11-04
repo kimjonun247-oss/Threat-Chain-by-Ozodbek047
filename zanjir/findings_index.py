@@ -155,7 +155,13 @@ def _self():
 
 
 def chain_rows(stage):
-    """Cross-scanner chain findings, which live on the assessment, not a stage."""
+    """Cross-scanner chain findings, which live on the assessment, not a stage.
+
+    Each row carries its original finding under `_finding`, which the board
+    store takes off and keeps beside the row, so the detail panel can show what
+    the chain is and how to fix it. It stored none before, and every chain's
+    panel said "Asl yozuv topilmadi" (UI review 2026-11-04).
+    """
     if stage != 'repository':
         return []
     from . import pipeline
@@ -165,13 +171,14 @@ def chain_rows(stage):
             if entry.get('state') not in USABLE:
                 continue
             report = pipeline.read(entry['id'])
-            target = next((s.get('target') for s in report.get('stages') or []
-                           if s.get('kind') == 'repository' and s.get('target')), '')
-            project = project_of('repository', target) if target else ''
+            kind, target = triage.chain_subject(report)
+            target = target or ''
+            project = project_of(kind, target) if target else ''
             for finding in report.get('chain_findings') or []:
-                rows.append({**row('chain', {'id': report['id'], 'state': report.get('state'), 'target': target},
-                                   finding, project),
-                             'rule_id': finding.get('rule_id'), 'subject': finding.get('service_id') or ''})
+                item = {**row('chain', {'id': report['id'], 'state': report.get('state'), 'target': target},
+                              finding, project),
+                        'rule_id': finding.get('rule_id'), 'subject': finding.get('service_id') or ''}
+                rows.append({**item, '_finding': {k: v for k, v in finding.items() if k != 'triage'}})
             if rows:
                 break                     # the newest assessment that produced chains
     except (OSError, ValueError, KeyError):
@@ -193,6 +200,55 @@ def registered(stage):
 # severity, then overdue, then known-exploited, then how long a finding has
 # been open -- an order, never a composite number.
 FILTERS = ('stage', 'project', 'target', 'severity', 'owasp', 'status', 'state')
+EXPORT_LIMIT = 100000
+EXPORT_PAGE = 2000
+
+
+def export_csv(query='', filters=None):
+    """The board as it is filtered on screen, as CSV a spreadsheet opens.
+
+    The board -- the one list across every scanner -- could not be taken out
+    of the dashboard at all (UI review 2026-11-04). Words, not codes: the
+    reader is a person with a spreadsheet. A UTF-8 byte-order mark makes
+    Excel read the Uzbek letters correctly. Cells that a spreadsheet would run
+    as a formula (=, +, -, @) are prefixed with an apostrophe.
+    """
+    import csv
+    import io
+    from . import findings_store, report_text
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(['Og‘irlik', 'Qatlam', 'Loyiha', 'Nishon', 'Qoida', 'Sarlavha', 'Joy', 'CWE', 'Holat',
+                     'Mas’ul', 'Muddat o‘tganmi', 'Birinchi ko‘rilgan', 'Hisobot', 'Identifikator'])
+    status = {'untriaged': 'Ko‘rilmagan', 'investigating': 'Tekshirilmoqda', 'confirmed': 'Tasdiqlangan',
+              'fix_planned': 'Tuzatish rejalashtirilgan', 'false_positive': 'Yolg‘on signal',
+              'accepted_risk': 'Xavf qabul qilingan', 'fixed': 'Tuzatilgan'}
+
+    def safe(value):
+        text = '' if value is None else str(value)
+        return "'" + text if text[:1] in ('=', '+', '-', '@', '\t', '\r') else text
+
+    offset, total, written = 0, None, 0
+    while total is None or (offset < total and written < EXPORT_LIMIT):
+        data = findings_store.search(_self(), query, filters, offset, EXPORT_PAGE)
+        total = data['total']
+        if not data['rows']:
+            break
+        for row in data['rows'][:EXPORT_LIMIT - written]:
+            writer.writerow([safe(v) for v in (
+                report_text.SEVERITY.get(row.get('severity_scale') or '', report_text.UNRATED),
+                report_text.stage(row.get('stage')), row.get('project') or '—', row.get('target'),
+                row.get('rule_id'), row.get('title'), row.get('subject'), ', '.join(row.get('cwe_ids') or []),
+                status.get(row.get('status') or 'untriaged', row.get('status')), row.get('owner') or '',
+                'Ha' if row.get('overdue') else 'Yo‘q',
+                report_text.when(row['first_seen']) if row.get('first_seen') else '',
+                row.get('report_id'), row.get('fingerprint'))])
+            written += 1
+        offset += EXPORT_PAGE
+    if total and written < total:
+        writer.writerow([f'... yana {total - written} ta topilma eksport chegarasidan ({EXPORT_LIMIT}) tashqarida; '
+                         'filtr bilan toraytiring.'])
+    return '\ufeff' + out.getvalue()
 FACET_KEYS = ('severity', 'stage', 'project', 'owasp', 'status')
 
 

@@ -270,7 +270,7 @@ def compare(stage, report_id, baseline_id=None):
         resolved = baseline_id if baseline_id and baseline_id != 'last-green' else \
             last_green_assessment(current.get('selection'), report_id)
         if not resolved:
-            raise NoBaseline('Bir xil tanlovdagi tugagan (completed) oldingi umumiy tekshiruv topilmadi. '
+            raise NoBaseline('Solishtirish uchun bir xil tanlovdagi oldingi tugagan to‘liq tekshiruv yo‘q. '
                              'Birinchi skanning solishtiradigan asosi bo‘lmaydi.')
         before = pipeline.read(resolved)
         if (before.get('selection') or {}) != (current.get('selection') or {}):
@@ -281,7 +281,7 @@ def compare(stage, report_id, baseline_id=None):
     resolved = baseline_id if baseline_id and baseline_id != 'last-green' else \
         since_last_green(stage, target, report_id)
     if not resolved:
-        raise NoBaseline(f'{target} uchun tugagan (completed) oldingi skan topilmadi. '
+        raise NoBaseline(f'{target} uchun solishtiriladigan oldingi tugagan tekshiruv yo‘q. '
                          'Birinchi skanning solishtiradigan asosi bo‘lmaydi.')
     before = read_for_diff(stage, resolved)
     if target_of(before, stage) != target:

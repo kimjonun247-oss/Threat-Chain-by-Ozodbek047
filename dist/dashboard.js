@@ -3,16 +3,8 @@
 (() => {
   const e = escapeHTML;
   const SEV = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNRATED"];
-  const SEV_LABEL = { CRITICAL: "Kritik", HIGH: "Yuqori", MEDIUM: "O‘rta", LOW: "Past", UNRATED: "Info" };
-  const STATUS = {
-    untriaged: "Ko‘rilmagan",
-    investigating: "Tekshirilmoqda",
-    confirmed: "Tasdiqlangan",
-    fix_planned: "Tuzatish rejada",
-    false_positive: "Noto‘g‘ri signal",
-    accepted_risk: "Xavf qabul qilingan",
-    fixed: "Tuzatilgan"
-  };
+  const SEV_LABEL = SEVERITY_LABEL;
+  const STATUS = TRIAGE_STATUS;
   const OWASP = {
     A01: "A01 · Kirish nazorati",
     A02: "A02 · Noto‘g‘ri sozlash",
@@ -26,13 +18,13 @@
     A10: "A10 · Istisno holatlar"
   };
   const STAGE = {
-    code: ["Kod", "i-code"],
-    repository: ["Compose", "i-server"],
-    dependencies: ["CVE", "i-package"],
-    iac: ["IaC", "i-sliders"],
-    images: ["Image", "i-box"],
-    web: ["Sayt", "i-globe"],
-    chain: ["Zanjir", "i-link"]
+    code: [STAGE_SHORT.code, "i-code"],
+    repository: [STAGE_SHORT.repository, "i-server"],
+    dependencies: [STAGE_SHORT.dependencies, "i-package"],
+    iac: [STAGE_SHORT.iac, "i-sliders"],
+    images: [STAGE_SHORT.images, "i-box"],
+    web: [STAGE_SHORT.web, "i-globe"],
+    chain: [STAGE_SHORT.chain, "i-link"]
   };
   const STATE_ICON = {
     completed: "i-check",
@@ -44,33 +36,15 @@
     no_supported_packages: "i-check"
   };
   const icon = (name, cls) => `<svg class="ic ${cls || ""}"><use href="#${name}"/></svg>`;
-  function tile(value, label, glyph, tone, goto, gotoLabel) {
+  function tile(value, label, glyph, tone, goto, gotoLabel, filter = "") {
     return `<article class="tile">
       <div class="tile-top"><span class="tile-badge ${tone}">${icon(glyph)}</span>
         <span class="tile-num"><b>${e(value)}</b><small>${e(label)}</small></span></div>
-      ${goto ? `<button class="tile-foot" data-goto="${e(goto)}">${e(gotoLabel)} ${icon("i-chevron")}</button>` : `<p class="tile-foot tile-foot-flat">${e(gotoLabel)}</p>`}
+      ${goto ? `<button class="tile-foot" data-goto="${e(goto)}" data-filter="${e(filter)}">${e(gotoLabel)} ${icon("i-chevron")}</button>` : `<p class="tile-foot tile-foot-flat">${e(gotoLabel)}</p>`}
     </article>`;
   }
   function legend(counts) {
     return `<ul class="sev-legend">${SEV.map((key) => `<li><span class="dot sev-dot-${key}"></span>${e(SEV_LABEL[key])} <b>${counts[key] || 0}</b></li>`).join("")}</ul>`;
-  }
-  function pie(counts) {
-    const total = SEV.reduce((sum, key) => sum + (counts[key] || 0), 0);
-    if (!total) return `<p class="cell-sub">Topilma yo‘q.</p>`;
-    const R = 35, C = 2 * Math.PI * R;
-    let offset = 0;
-    const slices = SEV.map((key) => {
-      const value = counts[key] || 0;
-      if (!value) return "";
-      const length = C * value / total;
-      const slice = `<circle class="slice sev-ring-${key}" cx="70" cy="70" r="${R}"
-        stroke-dasharray="${length.toFixed(3)} ${(C - length).toFixed(3)}"
-        stroke-dashoffset="${(-offset).toFixed(3)}"><title>${e(SEV_LABEL[key])}: ${value}</title></circle>`;
-      offset += length;
-      return slice;
-    }).join("");
-    return `<div class="pie-wrap"><svg viewBox="0 0 140 140" class="pie" role="img"
-      aria-label="Og‘irlik bo‘yicha taqsimot">${slices}</svg></div>`;
   }
   function stacks(rows) {
     if (!rows.length) return `<p class="cell-sub">Ma’lumot yo‘q.</p>`;
@@ -110,13 +84,13 @@
   function matrix(projects) {
     const stages = Object.keys(STAGE).filter((s) => s !== "chain");
     return `<div class="table-wrap"><table class="stage-matrix">
-      <thead><tr><th>Loyiha</th>${stages.map((s) => `<th title="${e(STAGE[s][0])}">${icon(STAGE[s][1])}</th>`).join("")}</tr></thead>
+      <thead><tr><th>Loyiha</th>${stages.map((s) => `<th>${icon(STAGE[s][1])}<span class="matrix-label">${e(STAGE[s][0])}</span></th>`).join("")}</tr></thead>
       <tbody>${projects.map((p) => `<tr><td>${e(p.name)}</td>${stages.map((s) => {
       const state = p.stages[s];
       const good = state === "completed" || state === "no_supported_packages";
       const bad = state === "never_scanned" || state === "not_registered";
       return `<td class="${good ? "state-clean" : bad ? "state-never" : "state-partial"}"
-          title="${e(STAGE[s][0])}: ${e(state)}">${icon(STATE_ICON[state] || "i-alert")}</td>`;
+          title="${e(STAGE[s][0])}: ${e(RUN_STATE[state] || state)}">${icon(STATE_ICON[state] || "i-alert")}<span class="sr-only">${e(RUN_STATE[state] || state)}</span></td>`;
     }).join("")}</tr>`).join("")}</tbody></table></div>`;
   }
   function assessment(run) {
@@ -139,14 +113,6 @@
           <span class="feed-count">${stage.count ?? "—"}</span></li>`;
     }).join("")}</ul>`;
   }
-  function recent(rows) {
-    if (!rows.length) return `<p class="cell-sub">Hali skan yo‘q.</p>`;
-    return `<ul class="feed">${rows.slice(0, 8).map((r) => `<li>
-      ${icon(STAGE[r.stage] ? STAGE[r.stage][1] : "i-list")}
-      <span><b>${e(STAGE[r.stage] ? STAGE[r.stage][0] : r.stage)}</b> · ${e(r.target)}
-      <span class="cell-sub">${e(time(r.created_at))}</span></span>
-      <span class="feed-count ${r.state === "completed" ? "" : "state-partial"}">${r.count ?? "—"}</span></li>`).join("")}</ul>`;
-  }
   async function load(btn) {
     if (btn) {
       btn.classList.add("spinning");
@@ -157,48 +123,43 @@
       document.dispatchEvent(new CustomEvent("dashboard-data", { detail: d }));
       const s = d.system, t = d.totals, c = d.coverage, st = t.status || {};
       const gaps = c.unscanned + c.incomplete;
-      const decided = t.findings - (st.untriaged || 0);
+      const named = (x) => (STAGE_SHORT[x.stage] || x.stage) + " · " + x.target;
+      const closed = (st.false_positive || 0) + (st.accepted_risk || 0) + (st.fixed || 0);
       $("dash").innerHTML = `
-      <p class="refresh-stamp">${e((/* @__PURE__ */ new Date()).toLocaleTimeString())}</p>
-      <div class="tile-row">
-        ${tile(t.findings, "Jami topilma", "i-shield", "tone-teal", "findings", "Ro‘yxatni ochish")}
-        ${tile(t.severity.CRITICAL, "Kritik topilma", "i-alert", "tone-red", "findings", "Topilmalar")}
-        ${tile(t.severity.HIGH, "Yuqori topilma", "i-flag", "tone-orange", "findings", "Topilmalar")}
-        ${tile(t.overdue, "SLA muddati o‘tgan", "i-clock", "tone-red", "findings", "Topilmalar")}
-      </div>
-      <div class="tile-row">
-        ${tile(st.untriaged || 0, "Ko‘rilmagan", "i-list", "tone-yellow", "findings", "Topilmalar")}
-        ${tile(decided, "Qaror qabul qilingan", "i-check", "tone-green", "findings", "Topilmalar")}
-        ${tile(st.false_positive || 0, "Noto‘g‘ri signal", "i-x", "tone-gray", "findings", "Topilmalar")}
-        ${tile(t.stages.chain || 0, "Zanjir topilmasi", "i-link", "tone-blue", "findings", "Topilmalar")}
-      </div>
-      <div class="tile-row">
-        ${tile(d.projects.length, "Loyiha", "i-grid", "tone-teal", "portfolio", "Loyihalar")}
-        ${tile(c.scanned, "Tekshirilgan nishon", "i-target", "tone-green", "portfolio", "Qamrov")}
-        ${tile(gaps, "Tekshirilmagan qatlam", "i-alert", "tone-orange", "portfolio", "Qamrov")}
+      <p class="refresh-stamp">Yangilandi: ${e((/* @__PURE__ */ new Date()).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit", hour12: false }))}</p>
+      <div class="tile-row tile-hero">
         ${tile(
-        s.rules.semgrep + s.rules.chain + s.rules.cross_scanner + (s.rules.custom || 0),
-        "Faol qoida",
-        "i-sliders",
-        "tone-blue",
-        "",
-        "Semgrep · RP · SX"
+        `${t.severity.CRITICAL || 0} / ${t.severity.HIGH || 0}`,
+        "Kritik / yuqori topilma",
+        "i-alert",
+        "tone-red",
+        "findings",
+        "Eng xavflilarini ko‘rish",
+        (t.severity.CRITICAL ? "severity=CRITICAL" : "severity=HIGH") + "&state=open"
       )}
+        ${tile(t.overdue, "Tuzatish muddati o‘tgan", "i-clock", "tone-red", "findings", "Muddati o‘tganlar", "state=overdue")}
+        ${tile(gaps, "Natija bermagan nishon", "i-alert", "tone-orange", "portfolio", "Nima tekshirilmaganini ko‘rish")}
       </div>
-      ${gaps ? `<p class="coverage-note">${icon("i-alert")} ${e(gaps)} ta nishon natija bermadi: ${e(c.unscanned_targets.map((x) => x.stage + "/" + x.target).join(", ") || "—")}</p>` : ""}
+      <div class="tile-row tile-minor">
+        ${tile(t.findings, "Jami topilma", "i-shield", "tone-teal", "findings", "Hammasi")}
+        ${tile(st.untriaged || 0, "Ko‘rilmagan", "i-list", "tone-yellow", "findings", "Ko‘rilmaganlar", "status=untriaged")}
+        ${tile(closed, "Yopilgan", "i-check", "tone-green", "findings", "Yopilganlar", "state=closed")}
+        ${tile(t.stages.chain || 0, "Zanjir topilmasi", "i-link", "tone-blue", "findings", "Zanjirlar", "stage=chain")}
+      </div>
+      ${gaps ? `<p class="coverage-note">${icon("i-alert")} ${[
+        c.unscanned ? `${e(c.unscanned)} ta nishon hech tekshirilmagan: ${e((c.unscanned_targets || []).map(named).join(", ") || "—")}` : "",
+        c.incomplete ? `${e(c.incomplete)} ta tekshiruv natijasiz tugagan: ${e((c.incomplete_targets || []).map(named).join(", ") || "—")}` : ""
+      ].filter(Boolean).join(". ")}. Bu “toza” degani emas.</p>` : ""}
       <div class="dash-grid wide">
-        <section class="card"><h3>${icon("i-shield")} Og‘irlik bo‘yicha taqsimot</h3>
-          ${legend(t.severity)}${pie(t.severity)}</section>
-        <section class="card"><h3>${icon("i-list")} Skaner bo‘yicha og‘irlik</h3>
-          <p class="card-sub">Har bir qator o‘z ichida 100% taqsimlangan; o‘ngdagi son — o‘sha skanerning umumiy topilmasi.</p>
+        <section class="card"><h3>${icon("i-list")} Og‘irlik — skaner bo‘yicha</h3>
+          <p class="card-sub">Har bir qator o‘z ichida 100% taqsimlangan; o‘ngdagi son — o‘sha skanerning topilmalari.</p>
           ${legend(t.severity)}${stacks(d.severity_by_stage || [])}</section>
       </div>
       <div class="dash-grid wide">
-        <section class="card"><h3>${icon("i-play")} Oxirgi umumiy tekshiruv</h3>${assessment(d.last_assessment)}</section>
+        <section class="card"><h3>${icon("i-play")} Oxirgi to‘liq tekshiruv</h3>${assessment(d.last_assessment)}</section>
         <section class="card"><h3>${icon("i-grid")} Loyiha × qatlam qamrovi</h3>${matrix(d.projects)}</section>
       </div>
       <div class="dash-grid wide">
-        <section class="card"><h3>${icon("i-clock")} Oxirgi skanlar</h3>${recent(d.recent)}</section>
         <section class="card"><h3>${icon("i-check")} Qaror holati</h3>
           ${bars(Object.entries(st).map(([k, v]) => [k, v, STATUS[k] || k]))}</section>
       </div>
@@ -207,14 +168,11 @@
           <p class="card-sub">Topilmalar CWE raqami orqali toifalanadi.</p>
           ${bars(Object.entries(t.owasp).filter(([k]) => k !== "—").sort((a, b) => a[0].localeCompare(b[0])).map(([k, v]) => [k, v, OWASP[k] || k]), null, true)}</section>
       </div>
-      <section class="card"><h3>${icon("i-gear")} Tizim</h3>
+      <section class="card"><h3>${icon("i-gear")} Skanerlar</h3>
         ${tools(s.tools)}
         <ul class="chips-row">
-          <li class="chip-static">v${e(s.version)}</li>
-          <li class="chip-static">Python ${e(s.python)}</li>
-          <li class="chip-static">${e(s.free_disk_gb)} GB</li>
-          <li class="chip-static">${e(s.rules.semgrep)} qoida · ${e(s.rules.languages)} til</li>
-          <li class="chip-static">RP ${e(s.rules.chain)} · SX ${e(s.rules.cross_scanner)}</li>
+          <li class="chip-static">Semgrep ${e(s.rules.semgrep)} qoida · ${e(s.rules.languages)} til</li>
+          <li class="chip-static">Compose ${e(s.rules.chain)} · Zanjir ${e(s.rules.cross_scanner)} qoida</li>
           <li class="chip-static ${s.nvd_key ? "ok" : "bad"}">${icon(s.nvd_key ? "i-check" : "i-x")} NVD</li>
         </ul>
         ${s.disk_warning ? `<p class="coverage-note">${icon("i-alert")} ${e(s.disk_warning)}</p>` : ""}
@@ -231,10 +189,11 @@
   }
   $("dash").addEventListener("click", (event) => {
     const link = event.target.closest("[data-goto]");
-    if (link) view(link.dataset.goto ?? "");
+    if (!link) return;
+    if (link.dataset.goto === "findings") openFindings(Object.fromEntries(new URLSearchParams(link.dataset.filter || "")));
+    else view(link.dataset.goto ?? "");
   });
   $("readiness-refresh").addEventListener("click", (event) => load(event.currentTarget));
-  $("open-assessment").addEventListener("click", () => view("assessments"));
   document.addEventListener("view-shown", (event) => {
     if (event.detail === "readiness") load();
   });

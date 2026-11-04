@@ -163,6 +163,7 @@ def overview():
             'scanned': len(coverage['scanned']), 'unscanned': len(coverage['unscanned']),
             'incomplete': len(coverage.get('incomplete') or []),
             'unscanned_targets': [{'stage': c['stage'], 'target': c['target']} for c in coverage['unscanned']],
+            'incomplete_targets': [{'stage': c['stage'], 'target': c['target']} for c in coverage.get('incomplete') or []],
             'truncated': coverage['truncated'],
         },
         'projects': [{'id': p['id'], 'name': p['name'], 'gaps': len(p.get('gaps') or []),

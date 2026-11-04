@@ -23,7 +23,6 @@ type Field = HTMLInputElement & HTMLSelectElement & HTMLTextAreaElement &
 interface DashboardState {
   busy: boolean;
   repository: ApiData | null;
-  reviews: Record<string, ApiData>;
   projects: ApiData[];
   project: string;
 }

@@ -2,22 +2,8 @@
 "use strict";
 (() => {
   const e = escapeHTML;
-  const STAGE_NAMES = {
-    code: "Kod va sirlar",
-    repository: "Repository (Compose)",
-    dependencies: "CVE va kutubxonalar",
-    iac: "Konfiguratsiya (IaC)",
-    images: "Docker image",
-    web: "Sayt va API"
-  };
-  const STATE_TEXT = {
-    completed: "Tugagan",
-    partial: "Qisman qamrov",
-    failed: "Tugallanmagan",
-    never_scanned: "Hech qachon tekshirilmagan",
-    not_registered: "Ro‘yxatga olinmagan",
-    cancelled: "Bekor qilingan"
-  };
+  const STAGE_NAMES = STAGE_LONG;
+  const STATE_TEXT = RUN_STATE;
   let projects = [];
   function stateClass(state) {
     if (state === "never_scanned" || state === "not_registered") return "state-never";
@@ -74,10 +60,10 @@
     const open = (findings.rows || []).length;
     $("project-result").innerHTML = `
       <div class="scanner-cards">
-        <article class="scanner-card"><h3>Topilmalar</h3><strong>${e(findings.total)}</strong><p>Qo‘shilmagan</p></article>
+        <article class="scanner-card"><h3>Topilmalar</h3><strong>${e(findings.total)}</strong><p>Barcha qatlamlarda</p></article>
         <article class="scanner-card"><h3>Kritik / yuqori</h3><strong>${e(severity.CRITICAL || 0)} / ${e(severity.HIGH || 0)}</strong></article>
-        <article class="scanner-card"><h3>Muddati o‘tgan</h3><strong>${e(triage?.overdue ?? "—")}</strong><p>SLA: ${e(Object.entries(triage?.sla_days || {}).map(([k, v]) => k + " " + v + "k").join(" · ") || "—")}</p></article>
-        <article class="scanner-card"><h3>Tekshirilmagan qatlam</h3><strong class="${gaps.length ? "state-never" : "state-clean"}">${e(gaps.length)}</strong><p>${e(gaps.map((g) => STAGE_NAMES[g] || g).join(", ") || "Hammasi tekshirilgan")}</p></article>
+        <article class="scanner-card"><h3>Muddati o‘tgan</h3><strong>${e(triage?.overdue ?? "—")}</strong><p>Tuzatish muddati: ${e(Object.entries(triage?.sla_days || {}).map(([k, v]) => (SEVERITY_LABEL[k] || k) + " " + v + " kun").join(" · ") || "—")}</p></article>
+        <article class="scanner-card"><h3>Natija bermagan qatlam</h3><strong class="${gaps.length ? "state-never" : "state-clean"}">${e(gaps.length)}</strong><p>${e(gaps.map((g) => STAGE_NAMES[g] || g).join(", ") || "Hammasi tekshirilgan")}</p></article>
       </div>
       ${gaps.length ? `<div class="coverage-note"><p><strong>Tekshirilmagan qatlam toza emas:</strong> ${e(gaps.map((g) => STAGE_NAMES[g] || g).join(", "))}</p></div>` : ""}
       <h3 class="section-heading">Qatlamlar matritsasi</h3>
@@ -85,13 +71,11 @@
       <h3 class="section-heading">Trend — ${e(STAGE_NAMES[firstScanned?.[0] ?? ""] || "—")}</h3>
       ${sparkline(trend)}
       <h3 class="section-heading">Eng og‘ir ochiq topilmalar</h3>
-      ${open ? findings.rows.map((row) => `<p><span class="sev sev-${e(row.severity_scale || "UNRATED")}">${e(row.severity_scale || "INFO")}</span> <strong>${e(row.title || row.rule_id)}</strong><span class="cell-sub">${e(row.subject)} · ${e(row.target)}</span></p>`).join("") : '<p class="cell-sub">Ko‘rsatiladigan topilma yo‘q.</p>'}
+      ${open ? findings.rows.map((row) => `<p><span class="sev sev-${e(row.severity_scale || "UNRATED")}">${e(SEVERITY_LABEL[row.severity_scale || "UNRATED"])}</span> <strong>${e(row.title || row.rule_id)}</strong><span class="cell-sub">${e(row.subject)} · ${e(row.target)}</span></p>`).join("") : '<p class="cell-sub">Ko‘rsatiladigan topilma yo‘q.</p>'}
       <p><button class="secondary" id="project-open-findings">Bu loyihaning barcha topilmalari →</button></p>
       <p class="baseline-note">${e(project.unknown_targets?.length ? "Diqqat: " + project.unknown_targets.join(", ") + " nishonlari hech bir ro‘yxatda topilmadi." : "")}</p>`;
     $("project-open-findings").addEventListener("click", () => {
-      location.hash = "#/findings?project=" + encodeURIComponent(id);
-      view("findings");
-      document.dispatchEvent(new CustomEvent("view-shown", { detail: "findings" }));
+      openFindings({ project: id });
     });
   }
   document.addEventListener("view-shown", async (event) => {

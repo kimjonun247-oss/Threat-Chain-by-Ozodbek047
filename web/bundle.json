@@ -1,7 +1,9 @@
 {
   "_comment": "Order of the dashboard scripts and styles. Read by web/build.mjs (which builds dist/bundle.js and dist/bundle.css) and by app.py (which serves them).",
   "bundle.js": [
+    "labels.js",
     "app.js",
+    "decision.js",
     "shell.js",
     "dashboard.js",
     "findings.js",

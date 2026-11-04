@@ -46,7 +46,7 @@ MULTI = {'images'}
 
 # The bundled crAPI sample, grouped in code for the same reason crapi_root() is:
 # it ships with the application and its per-stage ids are historical.
-BUNDLED = {'crapi': {'name': 'OWASP crAPI · to‘liq namuna', 'owner': 'Bundled sample', 'bundled': True,
+BUNDLED = {'crapi': {'name': 'OWASP crAPI · to‘liq namuna', 'owner': 'Tayyor namuna', 'bundled': True,
                      'stages': {'code': 'crapi-full', 'repository': 'crapi', 'dependencies': 'crapi-full',
                                 'web': 'pilot-crapi',
                                 'images': ['pilot-crapi-identity', 'pilot-crapi-community', 'pilot-crapi-workshop',

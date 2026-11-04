@@ -112,8 +112,9 @@ class PipelineStageTests(unittest.TestCase):
     def test_f_stage_rows_render_the_iac_stage(self):
         headers, rows = pipeline.stage_rows('iac', [{'rule_id': 'DS-0002', 'severity': 'HIGH',
                                                      'path': 'Dockerfile', 'line': 3, 'title': 'root'}])
-        self.assertEqual(headers, ('Tekshiruv', 'Og‘irlik', 'Fayl', 'Sarlavha'))
-        self.assertEqual(rows, [('DS-0002', 'HIGH', 'Dockerfile:3', 'root')])
+        # Every stage table leads with the severity on the one scale, in words.
+        self.assertEqual(headers, ('Og‘irlik', 'Tekshiruv', 'Fayl', 'Sarlavha'))
+        self.assertEqual(rows, [('Yuqori', 'DS-0002', 'Dockerfile:3', 'root')])
 
 
 class SbomTests(unittest.TestCase):

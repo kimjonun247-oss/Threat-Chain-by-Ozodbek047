@@ -172,7 +172,7 @@ def listing():
     return {'jobs': list(reversed(jobs))[:200], 'schedules': schedules(),
             'max_parallel': max_parallel(), 'worker_running': bool(_WORKER['thread'] and _WORKER['thread'].is_alive()),
             'note': ('Bir turdagi skan bir vaqtda bittadan ishlaydi; qolganlari navbatda kutadi. Web nishon ruxsat '
-                     'oynasidan tashqarida bo‘lsa, ish oyna ochilguncha "waiting" holatida turadi.')}
+                     'oynasidan tashqarida bo‘lsa, ish oyna ochilguncha «Ruxsat oynasini kutmoqda» holatida turadi.')}
 
 
 def max_parallel():

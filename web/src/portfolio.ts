@@ -6,16 +6,16 @@
   // exactly the projects a portfolio view exists to find.
   const CELL: Record<string, { cls: string; label: string; hint: string; }> = {
     never_scanned:  {cls: 'gap',   label: 'Tekshirilmagan', hint: 'Bu bosqich hech qachon ishga tushirilmagan. Bu “toza” degani emas.'},
-    not_registered: {cls: 'unset', label: 'Bog‘lanmagan',   hint: 'Bu bosqichga nishon bog‘lanmagan.'},
-    completed:      {cls: 'done',  label: 'Tugagan',        hint: 'Tekshiruv to‘liq bajarildi.'},
+    not_registered: {cls: 'unset', label: RUN_STATE.not_registered, hint: 'Bu qatlamga nishon ulanmagan.'},
+    completed:      {cls: 'done',  label: RUN_STATE.completed,        hint: 'Tekshiruv to‘liq bajarildi.'},
     partial:        {cls: 'part',  label: 'Qisman',         hint: 'Qamrov bo‘shlig‘i bor; hisobotni oching.'},
-    failed:         {cls: 'part',  label: 'Tugallanmagan',  hint: 'Tekshiruv tugamadi; natija yo‘qligi toza degani emas.'},
-    cancelled:      {cls: 'part',  label: 'Bekor qilingan', hint: 'Tekshiruv bekor qilindi.'},
-    no_supported_packages: {cls: 'gap', label: 'Manifest yo‘q', hint: 'Tekshiruv tugadi, lekin o‘qiladigan lock/manifest fayli topilmadi. Bu “zaiflik yo‘q” degani emas.'},
+    failed:         {cls: 'part',  label: RUN_STATE.failed,  hint: 'Tekshiruv tugamadi; natija yo‘qligi toza degani emas.'},
+    cancelled:      {cls: 'part',  label: RUN_STATE.cancelled, hint: 'Tekshiruv bekor qilindi.'},
+    no_supported_packages: {cls: 'gap', label: 'Paket fayli yo‘q', hint: 'Tekshiruv tugadi, lekin o‘qiladigan lock/manifest fayli topilmadi. Bu “zaiflik yo‘q” degani emas.'},
   };
   const cell = (s: ApiData) => {
     const meta = CELL[s.state] || {cls: 'part', label: s.state || '—', hint: ''};
-    const count = s.count === null || s.count === undefined ? '' : `<strong>${e(s.count)}</strong> kuzatuv`;
+    const count = s.count === null || s.count === undefined ? '' : `<strong>${e(s.count)}</strong> topilma`;
     const many = s.targets.length > 1
       ? `<small>${e(s.scanned_targets)}/${e(s.targets.length)} nishon natija berdi</small>` : '';
     const missed = (s.unscanned_targets || []).length
@@ -35,7 +35,7 @@
     stageList = data.stages;
     const rows = data.projects;
     $('portfolio-result').className = rows.length ? '' : 'empty';
-    $('portfolio-result').innerHTML = rows.length ? `<div class="scanner-table"><table class="pf-table"><thead><tr><th>Loyiha</th>${data.stages.map((s: ApiData)=>`<th>${e(s.title)}</th>`).join('')}</tr></thead><tbody>${rows.map((p: ApiData)=>`<tr><th scope="row"><strong>${e(p.name)}</strong><small>${e(p.id)}</small>${p.owner?`<small>${e(p.owner)}</small>`:''}${p.bundled?'<small class="pf-tag">bundled namuna</small>':p.single_stage?'<small class="pf-tag">Yakka nishon</small>':p.derived?'<small class="pf-tag">ID mosligidan avtomatik</small>':''}${p.gaps.length?`<small class="gap-note">${e(p.gaps.length)} ta qatlam ochiq</small>`:''}${(p.unknown_targets||[]).length?`<small class="unknown-note">Ro‘yxatda yo‘q nishon: ${e(p.unknown_targets.join(', '))}</small>`:''}</th>${data.stages.map((s: ApiData)=>cell(p.stages[s.key])).join('')}</tr>`).join('')}</tbody></table></div><p class="muted">${e(data.note)}</p>`
+    $('portfolio-result').innerHTML = rows.length ? `<div class="scanner-table"><table class="pf-table"><thead><tr><th>Loyiha</th>${data.stages.map((s: ApiData)=>`<th>${e(s.title)}</th>`).join('')}</tr></thead><tbody>${rows.map((p: ApiData)=>`<tr><th scope="row"><strong>${e(p.name)}</strong><small>${e(p.id)}</small>${p.owner?`<small>${e(p.owner)}</small>`:''}${p.bundled?'<small class="pf-tag">tayyor namuna</small>':p.single_stage?'<small class="pf-tag">Bitta nishonli loyiha</small>':p.derived?'<small class="pf-tag" title="Nishonlar bir xil ID orqali bitta loyihaga guruhlandi">Avtomatik guruhlangan</small>':''}${p.gaps.length?`<small class="gap-note">${e(p.gaps.length)} ta qatlam tekshirilmagan</small>`:''}${(p.unknown_targets||[]).length?`<small class="unknown-note">Ro‘yxatda yo‘q nishon: ${e(p.unknown_targets.join(', '))}</small>`:''}</th>${data.stages.map((s: ApiData)=>cell(p.stages[s.key])).join('')}</tr>`).join('')}</tbody></table></div><p class="muted">${e(data.note)}</p>`
       : 'Hali guruhlangan loyiha yo‘q.';
     const project = $('trend-project');
     const keep = project.value;
@@ -76,13 +76,6 @@
     } catch (error) { showError(error); }
   }
 
-  async function buildStagePicker() {
-    try {
-      const data = await api('/api/portfolio/targets');
-      $('pf-stages').innerHTML = data.stages.map((s: ApiData)=>`<label>${e(s.title)}${s.multi?' (bir nechtasini tanlash mumkin)':''}<select id="pf-stage-${e(s.key)}" ${s.multi?'multiple size="4"':''}>${s.multi?'':'<option value="">Bog‘lanmagan</option>'}${s.targets.map((t: ApiData)=>`<option value="${e(t)}">${e(t)}</option>`).join('')}</select></label>`).join('');
-    } catch (error) { showError(error); }
-  }
-
   $('portfolio-refresh').addEventListener('click', event => {
     const btn = event.currentTarget as HTMLButtonElement;
     btn.classList.add('spinning'); btn.disabled = true;
@@ -90,28 +83,11 @@
   });
   $('trend-project').addEventListener('change', async () => { await loadOverview(); loadTrend(); });
   $('trend-stage').addEventListener('change', loadTrend);
-  $('pf-save').addEventListener('click', async () => {
-    const status = $('pf-status');
-    status.className = 'rule-status'; status.textContent = 'Saqlanmoqda…';
-    const stages: Record<string, ApiData> = {};
-    for (const s of stageList) {
-      const el = $('pf-stage-' + s.key);
-      if (!el) continue;
-      const value = el.multiple ? [...el.selectedOptions].map(o=>o.value) : el.value;
-      if (el.multiple ? value.length : value) stages[s.key] = value;
-    }
-    try {
-      const r = await api('/api/portfolio/register', {id: $('pf-id').value.trim(), name: $('pf-name').value.trim(), owner: $('pf-owner').value.trim(), stages});
-      status.className = 'rule-status ok'; status.textContent = `Saqlandi: ${r.name}`;
-      await loadOverview(); loadTrend();
-    } catch (error) { status.className = 'rule-status bad'; status.textContent = messageOf(error); }
-  });
-
-  // The first visit also builds the stage picker; later visits only refresh.
-  let built=false;
+  // A project is created in the "Yangi loyiha yaratish" window (shell.ts); a
+  // second form here did the same with other fields (UI review 2026-11-04).
   document.addEventListener('view-shown',event=>{
     if((event as CustomEvent).detail!=='portfolio')return;
-    const first=!built;built=true;
-    loadOverview().then(loadTrend).then(()=>{ if (first) return buildStagePicker(); }).catch(showError);
+    loadOverview().then(loadTrend).catch(showError);
   });
+  onRegistryChange(async()=>{if(!$('portfolio-view').hidden){await loadOverview();loadTrend();}});
 })();
