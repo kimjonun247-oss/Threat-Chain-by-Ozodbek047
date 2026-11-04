@@ -84,8 +84,12 @@ class ApiTests(unittest.TestCase):
             patcher.stop()
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
-    def call(self, method, path, payload=None, headers=None):
-        connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=15)
+    # A hang detector, not a latency assertion: 15 s made these tests fail at random
+    # under load (a full suite run, a slow CI runner) though the server answered.
+    CLIENT_TIMEOUT = 60
+
+    def call(self, method, path, payload=None, headers=None, timeout=None):
+        connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=timeout or self.CLIENT_TIMEOUT)
         try:
             body = json.dumps(payload) if payload is not None else None
             sent = {'Content-Type': 'application/json'} if body is not None else {}
@@ -330,7 +334,9 @@ class WriteBoundaryTests(ApiTests):
                 '    metadata:\n'
                 '      cwe: "CWE-78"\n'
                 '    pattern: eval(...)\n')
-        status, _, body = self.call('POST', '/api/rules/validate', {'text': rule})
+        # Validation starts the real Semgrep, which the server allows 120 s
+        # (custom_rules); the client has to wait at least that long.
+        status, _, body = self.call('POST', '/api/rules/validate', {'text': rule}, timeout=150)
         self.assertEqual(status, 200, body[:300])
         self.assertTrue(json.loads(body)['valid'])
 

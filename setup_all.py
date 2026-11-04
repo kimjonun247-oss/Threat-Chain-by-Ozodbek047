@@ -54,8 +54,16 @@ def run(step, force):
     started = time.monotonic()
     done = subprocess.run(command, cwd=ROOT, capture_output=True, text=True,
                           encoding='utf-8', errors='replace', timeout=1800)
-    return {'ok': done.returncode == 0, 'seconds': round(time.monotonic() - started, 1),
-            'output': (done.stdout or done.stderr or '').strip().splitlines()[-1:] or ['']}
+    lines = (done.stdout or '').strip().splitlines()
+    errors = (done.stderr or '').strip().splitlines()
+    if done.returncode == 0:
+        output = lines[-1:] or errors[-1:] or ['']
+    else:
+        # The reason a step failed is on stderr. `stdout or stderr` dropped it whenever
+        # the step had printed anything first (setup_scanners prints the Gitleaks line,
+        # then fails on Semgrep), so a CI log showed a success line next to BAJARILMADI.
+        output = errors[-8:] or lines[-8:] or ['']
+    return {'ok': done.returncode == 0, 'seconds': round(time.monotonic() - started, 1), 'output': output}
 
 
 def main():
@@ -78,6 +86,9 @@ def main():
         state = 'tayyor' if row['ok'] else 'BAJARILMADI'
         took = f" · {row['seconds']} s" if row['seconds'] is not None else ''
         print(f"  {state}{took} · {row['output'][0][:110]}", flush=True)
+        if not row['ok']:
+            for line in row['output'][1:]:
+                print(f"      {line[:200]}", flush=True)
 
     print()
     by_key = {s['key']: s for s in STEPS}
