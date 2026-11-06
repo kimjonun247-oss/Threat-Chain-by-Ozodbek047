@@ -149,16 +149,21 @@
   }
   async function loadAssessmentTargets() {
     const [sources, webs, images, repositories, iacs, portfolio] = await Promise.all([api("/api/scanners/targets"), api("/api/web/targets"), api("/api/images/targets"), api("/api/repository/profiles"), api("/api/iac/targets"), api("/api/portfolio")]);
+    const keep = (id, html, fallback = "") => {
+      const box = $(id);
+      const before = box.value;
+      box.innerHTML = html;
+      const values = [...box.options].map((o) => o.value);
+      box.value = values.includes(before) && before ? before : values.includes(fallback) ? fallback : values[0] ?? "";
+    };
     webTargets = webs;
-    $("web-target").innerHTML = optionRows(webs);
+    keep("web-target", optionRows(webs));
     scope();
-    const codeValue = $("assessment-target").value;
-    $("assessment-target").innerHTML = NONE + optionRows(sources.filter((s) => s.available));
-    $("assessment-target").value = codeValue || "crapi-full";
-    $("assessment-web").innerHTML = NONE + optionRows(webs);
-    $("assessment-image").innerHTML = NONE + optionRows(images);
-    $("assessment-repository").innerHTML = NONE + optionRows(repositories);
-    $("assessment-iac").innerHTML = NONE + optionRows((iacs || []).filter((t) => t.available));
+    keep("assessment-target", NONE + optionRows(sources.filter((s) => s.available)), "crapi-full");
+    keep("assessment-web", NONE + optionRows(webs));
+    keep("assessment-image", NONE + optionRows(images));
+    keep("assessment-repository", NONE + optionRows(repositories));
+    keep("assessment-iac", NONE + optionRows((iacs || []).filter((t) => t.available)));
     assessmentProjects = portfolio && portfolio.projects || [];
     const chosen = $("assessment-project").value;
     $("assessment-project").innerHTML = '<option value="">— qatlamlarni qo‘lda tanlash —</option>' + optionRows(assessmentProjects);

@@ -59,8 +59,16 @@ class StageStateTests(Base):
         self.assertEqual(pf.stage_state(rows, ['a', 'b'])['state'], 'partial')
 
     def test_a_failed_scan_is_never_reported_as_completed(self):
+        # Nor as "partial": when every target failed, nothing was analysed.
         rows = [row('a', '2026-01-01T00:00:00+00:00', state='failed', count=0)]
-        self.assertEqual(pf.stage_state(rows, ['a'])['state'], 'partial')
+        self.assertEqual(pf.stage_state(rows, ['a'])['state'], 'failed')
+        rows = [row('a', '2026-01-01T00:00:00+00:00', state='cancelled', count=0)]
+        self.assertEqual(pf.stage_state(rows, ['a'])['state'], 'cancelled')
+
+    def test_a_failed_target_next_to_a_finished_one_is_partial(self):
+        rows = [row('a', '2026-01-02T00:00:00+00:00', state='failed', count=0),
+                row('b', '2026-01-01T00:00:00+00:00', state='completed', count=3)]
+        self.assertEqual(pf.stage_state(rows, ['a', 'b'])['state'], 'partial')
 
     def test_multi_target_total_uses_each_targets_latest_scan_only(self):
         # Three scans of 'a' must not be counted three times.

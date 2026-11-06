@@ -55,8 +55,12 @@ async function fillTargetSelect(selectId: string, url: string, label: (row: ApiD
   const select = $(selectId);
   const usable = options.usable || (() => true);
   const sync = () => {
+    if (!options.button) return;
+    const button = $(options.button);
     const chosen = select.selectedOptions[0];
-    if (options.button) $(options.button).disabled = !select.value || !chosen || chosen.disabled;
+    const nothing = !select.value || !chosen || chosen.disabled;
+    if (nothing) { button.disabled = true; button.dataset.emptyLock = '1'; }
+    else if (button.dataset.emptyLock) { delete button.dataset.emptyLock; button.disabled = false; }
   };
   const refill = async () => {
     const previous = select.value;
@@ -179,7 +183,7 @@ const VIEWS = ['repository','code','dependencies','iac','readiness','images','we
 // The last address of each view, so returning to it keeps its filters.
 const LAST_ADDRESS: Record<string, string> = {};
 function viewFromAddress(): string {
-  const match = location.hash.match(/^#\/?([a-z]+)/);
+  const match = location.hash.match(/^#\/([a-z]+)/);
   return match && VIEWS.includes(match[1]) ? match[1] : 'readiness';
 }
 /** Open the findings board with exactly these filters. */
@@ -189,7 +193,11 @@ function openFindings(filters: Record<string, string>): void {
   history.pushState(null, '', LAST_ADDRESS.findings);
   view('findings', false);
 }
-window.addEventListener('popstate', () => view(viewFromAddress(), false));
+window.addEventListener('popstate', () => { if (location.hash.startsWith('#/') || !location.hash) view(viewFromAddress(), false); });
+// The first view is opened once every script has registered its listeners: run
+// earlier (from pilot-dashboard.ts), a reload on #/iac or #/portfolio fired
+// view-shown before those two views listened, and they stayed empty.
+document.addEventListener('DOMContentLoaded', () => view(viewFromAddress(), false));
 function view(name: string, remember = true) {
   if (!VIEWS.includes(name)) name = 'readiness';
   if (remember) {
@@ -198,6 +206,7 @@ function view(name: string, remember = true) {
   }
   for (const item of VIEWS) $(item+'-view').hidden = item !== name;
   $('error').hidden = true;      // an error belongs to the view it was raised on
+  if (name !== 'findings') $('drawer').hidden = true;   // the detail panel belongs to the board
   document.querySelectorAll('[data-view]').forEach(button => {
     const active = button.dataset.view === name;
     button.classList.toggle('active', active);
@@ -359,9 +368,11 @@ async function init() {
   $('repo-scan').addEventListener('click',()=>scanRepository().catch(()=>{}));
   $('project').addEventListener('change',()=>{state.project=$('project').value;loadRepository().catch(showError);});
   whenShown(['repository'], loadProjects);
-  onRegistryChange(async()=>{if(state.projects.length)await loadProjects();});
+  onRegistryChange(async()=>{if(projectsLoaded)await loadProjects();});
 }
+let projectsLoaded=false;
 async function loadProjects() {
+  projectsLoaded=true;
   try {
     state.projects=await api('/api/repository/profiles');
     $('project').innerHTML=state.projects.map(p=>`<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)}</option>`).join('');

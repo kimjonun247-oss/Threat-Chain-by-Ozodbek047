@@ -38,5 +38,5 @@
   $('image-scan').addEventListener('click',async()=>{try{const row=await api('/api/images/scan',{target:$('image-target').value,online:true});await follow(row.id);}catch(error){showError(error);}});
   $('image-cancel').addEventListener('click',async()=>{try{await api('/api/images/cancel',{report_id:job});}catch(error){showError(error);}});
   async function init(){try{await fillTargetSelect('image-target','/api/images/targets',(t: ApiData)=>t.name,{button:'image-scan',prefer:'pilot-crapi-web',empty:'Ro‘yxatda image yo‘q — chapdan «Nishon qo‘shish» → Docker image'});const rows=await history();if(rows.length){if(['queued','running'].includes(rows[0].state))follow(rows[0].id).catch(showError);else render(await api('/api/images/reports/'+rows[0].id));}}catch(error){showError(error);}}
-  whenShown(['images'], init);view(viewFromAddress(),false);  // the view in the address, else the overview
+  whenShown(['images'], init);  // the first view is opened by app.ts on DOMContentLoaded
 })();

@@ -292,8 +292,17 @@ def stage_state(rows, targets):
     # 'no_supported_packages' finished: the dependency stage read the project and
     # found no lockfile. It stays visible as its own state, not as "unfinished".
     incomplete = sorted(t for t, r in newest.items() if r.get('state') not in {'completed', 'no_supported_packages'})
+    # Every target failed (or was cancelled): say so. Folding that into
+    # "partial" showed a failed scan as "Qisman · 0 topilma" and hid that
+    # nothing was analysed (UI review 2026-11-06). A mix is still partial.
+    if states and states <= {'failed', 'cancelled'}:
+        folded = 'cancelled' if states == {'cancelled'} else 'failed'
+    elif states & {'partial', 'failed', 'cancelled'}:
+        folded = 'partial'
+    else:
+        folded = latest.get('state')
     return {'targets': targets, 'scanned': True,
-            'state': 'partial' if states & {'partial', 'failed', 'cancelled'} else latest.get('state'),
+            'state': folded,
             'count': sum(counts) if counts else None,
             'last_scan': latest.get('created_at'), 'report_id': latest.get('id'),
             'scanned_targets': len(newest) - len(incomplete), 'attempted_targets': len(newest),

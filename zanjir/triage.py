@@ -499,8 +499,13 @@ def from_legacy(stage, payload):
                             if f.get('id') == payload['finding_id']), None)
         if not fingerprint:
             raise ValueError('Topilma ushbu hisobotga tegishli emas.')
-    return apply({'stage': stage, 'report_id': payload['report_id'], 'fingerprint': fingerprint,
-                  'status': status, 'owner': payload['owner'], 'note': payload['note']})
+    stored = apply({'stage': stage, 'report_id': payload['report_id'], 'fingerprint': fingerprint,
+                    'status': status, 'owner': payload['owner'], 'note': payload['note']})
+    # An old client reads the saved record itself (status, owner, note,
+    # updated_at); the new fields ride along for anyone who wants them.
+    record = (stored.get('decisions') or {}).get(fingerprint) or {}
+    return {**stored, **record, 'report_id': payload['report_id'],
+            **({'finding_id': payload['finding_id']} if stage == 'dependencies' else {'fingerprint': fingerprint})}
 
 
 MARKER = 'reviews.migrated.json'
@@ -533,11 +538,22 @@ def migrate(dry_run=False):
     if reviews.is_file() and not (store.REPO_RUNS / MARKER).is_file():
         try:
             data = json.loads(reviews.read_text(encoding='utf-8'))
+            readable = True
         except (OSError, ValueError):
+            data, readable = {}, False
+            notes.append('repository/reviews.json o‘qilmadi; keyingi ishga tushishda yana uriniladi')
+        if not isinstance(data, dict):
             data = {}
-            notes.append('repository/reviews.json o‘qilmadi')
-        for key, row in (data or {}).items():
-            snapshot, _, fingerprint = str(key).partition(':')
+            notes.append('repository/reviews.json formati noto‘g‘ri (lug‘at emas); o‘tkazib yuborildi')
+        # The same finding may have a review per source snapshot. The newest one
+        # is the current opinion: imported first, it wins, because an existing
+        # decision is never overwritten (an import oldest-first kept the oldest).
+        rows = [(str(key), row) for key, row in data.items() if isinstance(row, dict)]
+        notes += [f'repository: {str(key)[:20]} yozuvi lug‘at emas; o‘tkazildi'
+                  for key, row in data.items() if not isinstance(row, dict)]
+        rows.sort(key=lambda pair: str(pair[1].get('updated_at') or ''), reverse=True)
+        for key, row in rows:
+            snapshot, _, fingerprint = key.partition(':')
             try:
                 report = store.get_report(str(row.get('report_id') or ''))
                 target = report.get('profile_id')
@@ -545,10 +561,12 @@ def migrate(dry_run=False):
                         'repository', target, imported, dry_run)
             except (OSError, ValueError):
                 notes.append(f'repository: {fingerprint[:12]} uchun hisobot topilmadi')
-        if not dry_run:
+        # An unreadable file (locked, a cloud placeholder) is tried again next
+        # time; only a file that was actually read is marked as imported.
+        if not dry_run and readable:
             repo_store_write(store.REPO_RUNS / MARKER, imported, 'repository-runs/reviews.json')
 
-    for path in sorted(dependencies.RUNS.rglob('reviews.json')):
+    for path in sorted(dependencies.RUNS.rglob('reviews.json'), reverse=True):
         if (path.parent / MARKER).is_file():
             continue
         try:
@@ -556,6 +574,9 @@ def migrate(dry_run=False):
             report = json.loads((path.parent / 'report.json').read_text(encoding='utf-8'))
         except (OSError, ValueError):
             notes.append(f'{path.parent.name}: review yoki hisobot o‘qilmadi')
+            continue
+        if not isinstance(data, dict) or not isinstance(report, dict) or not isinstance(data.get('findings') or {}, dict):
+            notes.append(f'{path.parent.name}: review formati noto‘g‘ri; o‘tkazildi')
             continue
         target = report.get('target')
         # Reports written before B1 carry no fingerprint, so it is recomputed
@@ -576,6 +597,9 @@ def migrate(dry_run=False):
             continue
         found = []
         for finding_id, row in (data.get('findings') or {}).items():
+            if not isinstance(row, dict):
+                notes.append(f'{path.parent.name}: {str(finding_id)[:12]} yozuvi lug‘at emas')
+                continue
             fingerprint = identity.get(finding_id)
             if not fingerprint:
                 notes.append(f'{path.parent.name}: {str(finding_id)[:12]} hisobotda yo‘q')

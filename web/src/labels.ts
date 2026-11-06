@@ -51,3 +51,31 @@ function severityTone(raw: unknown): string {
 function severityBadge(raw: unknown): string {
   return raw ? `<span class="badge ${severityTone(raw)}">${escapeHTML(severityLabel(raw))}</span>` : '';
 }
+/** Why a scan did not finish, in words, with the scanner's own message folded away.
+
+   A failed code scan used to print "[Errno 2] No such file or directory: 'C:\…'"
+   as the page text (English, a local path, one unbreakable line that widened
+   a phone screen to 1069 px), and a failed CVE report showed no reason at all. */
+function failureNote(report: ApiData): string {
+  if (!report || !['failed', 'cancelled', 'partial', 'interrupted'].includes(report.state)) {
+    return report?.message ? `<p class="baseline-note">${escapeHTML(report.message)}</p>` : '';
+  }
+  const lead = report.state === 'cancelled' ? 'Tekshiruv bekor qilindi.'
+    : report.state === 'partial' ? 'Tekshiruv qisman bajarildi: ba’zi qismlar tekshirilmadi.'
+    : 'Tekshiruv xato bilan tugadi.';
+  const detail = [report.progress, report.message, report.error].filter((text, i, all) => text && all.indexOf(text) === i);
+  return `<div class="error-note"><p><strong>${escapeHTML(lead)}</strong> Bu natija “toza” degani emas — qayta tekshiring.</p>` +
+    (detail.length ? `<details class="raw-evidence"><summary>Texnik sabab</summary><p class="wrap-anywhere">${detail.map(text => escapeHTML(text)).join('<br>')}</p></details>` : '') +
+    '</div>';
+}
+/** This browser's UTC offset, e.g. "+05:00".
+
+   A schedule or scan window left without a time zone used to be stored as
+   UTC while the field suggested "+05:00": 02:30 then ran at 07:30 in
+   Tashkent. An empty field now means the operator's own time. */
+function localOffset(): string {
+  const minutes = -new Date().getTimezoneOffset();
+  const sign = minutes < 0 ? '-' : '+';
+  const abs = Math.abs(minutes);
+  return `${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
+}

@@ -70,3 +70,17 @@ function severityTone(raw) {
 function severityBadge(raw) {
   return raw ? `<span class="badge ${severityTone(raw)}">${escapeHTML(severityLabel(raw))}</span>` : "";
 }
+function failureNote(report) {
+  if (!report || !["failed", "cancelled", "partial", "interrupted"].includes(report.state)) {
+    return report?.message ? `<p class="baseline-note">${escapeHTML(report.message)}</p>` : "";
+  }
+  const lead = report.state === "cancelled" ? "Tekshiruv bekor qilindi." : report.state === "partial" ? "Tekshiruv qisman bajarildi: ba’zi qismlar tekshirilmadi." : "Tekshiruv xato bilan tugadi.";
+  const detail = [report.progress, report.message, report.error].filter((text, i, all) => text && all.indexOf(text) === i);
+  return `<div class="error-note"><p><strong>${escapeHTML(lead)}</strong> Bu natija “toza” degani emas — qayta tekshiring.</p>` + (detail.length ? `<details class="raw-evidence"><summary>Texnik sabab</summary><p class="wrap-anywhere">${detail.map((text) => escapeHTML(text)).join("<br>")}</p></details>` : "") + "</div>";
+}
+function localOffset() {
+  const minutes = -(/* @__PURE__ */ new Date()).getTimezoneOffset();
+  const sign = minutes < 0 ? "-" : "+";
+  const abs = Math.abs(minutes);
+  return `${sign}${String(Math.floor(abs / 60)).padStart(2, "0")}:${String(abs % 60).padStart(2, "0")}`;
+}

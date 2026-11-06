@@ -1080,8 +1080,8 @@ def main():
         moved = triage.migrate()
         if moved['count']:
             print(f"Eski qarorlar yagona do‘konga ko‘chirildi: {moved['count']} ta", file=sys.stderr, flush=True)
-    except (OSError, ValueError) as error:
-        print(f'Eski qarorlar ko‘chirilmadi: {error}', file=sys.stderr, flush=True)
+    except Exception as error:      # never a reason not to start the server
+        print(f'Eski qarorlar ko‘chirilmadi ({type(error).__name__}): {error}', file=sys.stderr, flush=True)
     jobs.start_worker()
     scheme = 'https' if TLS[0] else 'http'
     shown = PUBLIC_HOSTS[0] if PUBLIC_HOSTS else f'127.0.0.1:{server.server_port}'

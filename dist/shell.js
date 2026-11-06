@@ -145,7 +145,7 @@
           <label>Kunlar<input name="window_days" placeholder="du-ju yoki du,se,ch"></label>
           <label>Boshlanish<input name="window_start" type="time"></label>
           <label>Tugash<input name="window_end" type="time"></label>
-          <label>Vaqt zonasi<input name="window_tz" placeholder="+05:00" maxlength="40"></label>
+          <label>Vaqt zonasi<input name="window_tz" placeholder="${localOffset()} (bo‘sh — shu kompyuter vaqti)" maxlength="40"></label>
           <label>Kunlik so‘rov limiti<input name="daily_budget" type="number" min="1" max="100000" step="1" placeholder="cheklanmagan"></label>
         </fieldset>
         <label><input name="authenticated" type="checkbox"> Nishon autentifikatsiya talab qiladi</label>
@@ -253,7 +253,7 @@
         const window2 = start && end ? {
           start,
           end,
-          timezone: form.get("window_tz").trim() || "UTC",
+          timezone: form.get("window_tz").trim() || localOffset(),
           ...form.get("window_days").trim() ? { days: form.get("window_days").split(",").map((d) => d.trim()).filter(Boolean) } : {}
         } : null;
         submit(box, "/api/registry/web", {
@@ -671,8 +671,12 @@
   let typingTimer = null;
   function runSearch() {
     clearTimeout(typingTimer);
-    document.dispatchEvent(new CustomEvent("search-requested", { detail: $("global-search").value.trim() }));
-    view("findings");
+    const term = $("global-search").value.trim();
+    if (!$("findings-view").hidden) {
+      document.dispatchEvent(new CustomEvent("search-requested", { detail: term }));
+      return;
+    }
+    openFindings(term ? { q: term } : {});
   }
   $("global-search").addEventListener("input", () => {
     clearTimeout(typingTimer);

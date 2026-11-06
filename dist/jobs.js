@@ -121,7 +121,7 @@
           target: form.get("target"),
           days: form.get("days").trim() || "mon-sun",
           at: form.get("at"),
-          timezone: form.get("timezone").trim() || "UTC",
+          timezone: form.get("timezone").trim() || localOffset(),
           notify: form.get("notify")
         });
         $("schedule-feedback").textContent = `Saqlandi. Keyingi ishga tushish: ${row.next_run ? time(row.next_run) : "—"}`;

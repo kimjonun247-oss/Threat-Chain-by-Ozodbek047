@@ -106,5 +106,4 @@
     }
   }
   whenShown(["images"], init);
-  view(viewFromAddress(), false);
 })();

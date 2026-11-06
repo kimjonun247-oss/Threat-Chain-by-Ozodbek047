@@ -26,6 +26,16 @@
   const STATUS_NAMES = TRIAGE_STATUS;
   const icon = (name) => `<svg class="ic"><use href="#${name}"/></svg>`;
   const state = { filters: {}, offset: 0, limit: 50, data: null, selected: /* @__PURE__ */ new Set() };
+  const origin = /* @__PURE__ */ new Map();
+  function pick(row) {
+    if (!row) return;
+    state.selected.add(row.fingerprint);
+    origin.set(row.fingerprint, row.stage + "|" + row.report_id);
+  }
+  function unpick(fingerprint) {
+    state.selected.delete(fingerprint);
+    origin.delete(fingerprint);
+  }
   function readUrl() {
     const params = new URLSearchParams(location.hash.replace(/^#\/?findings\??/, ""));
     state.filters = {};
@@ -136,13 +146,14 @@
     $("findings-facets").querySelectorAll("[data-facet]").forEach((chip) => chip.addEventListener("click", () => toggle(chip.dataset.facet ?? "", chip.dataset.value ?? "")));
     $("findings-table").querySelectorAll("[data-open]").forEach((button) => button.addEventListener("click", () => drawer(button.dataset.open ?? "", button.dataset.project ?? "")));
     $("findings-table").querySelectorAll("[data-select]").forEach((box) => box.addEventListener("change", () => {
-      if (box.checked) state.selected.add(box.dataset.select ?? "");
-      else state.selected.delete(box.dataset.select ?? "");
+      const fp = box.dataset.select ?? "";
+      if (box.checked) pick(data.rows.find((r) => r.fingerprint === fp));
+      else unpick(fp);
       box.closest("tr")?.classList.toggle("selected", box.checked);
       bulk();
     }));
     $("findings-all")?.addEventListener("change", (event) => {
-      data.rows.forEach((row) => event.target.checked ? state.selected.add(row.fingerprint) : state.selected.delete(row.fingerprint));
+      data.rows.forEach((row) => event.target.checked ? pick(row) : unpick(row.fingerprint));
       paint();
     });
     bulk();
@@ -211,6 +222,7 @@
     return `<details class="raw-evidence"><summary>Skanerning asl yozuvi (texnik)</summary><table class="kv"><tbody>${rows}</tbody></table>${nested}</details>`;
   }
   async function drawer(fingerprint, project = "") {
+    if ($("drawer").hidden) drawerReturn = document.activeElement;
     $("drawer").hidden = false;
     $("drawer").focus();
     $("drawer-body").innerHTML = "<p>Yuklanmoqda…</p>";
@@ -271,17 +283,17 @@
       $("drawer-body").innerHTML = `<p class="error">${e(messageOf(error))}</p>`;
     }
   }
+  let drawerReturn = null;
   $("drawer-close").addEventListener("click", () => {
     $("drawer").hidden = true;
+    if (drawerReturn && document.contains(drawerReturn)) drawerReturn.focus();
   });
   async function bulkDecide(status) {
     const chosen = [...state.selected];
     const byReport = {};
     chosen.forEach((fp) => {
-      const row = state.data.rows.find((r) => r.fingerprint === fp);
-      if (!row) return;
-      const key = row.stage + "|" + row.report_id;
-      (byReport[key] = byReport[key] || []).push(fp);
+      const key = origin.get(fp);
+      if (key) (byReport[key] = byReport[key] || []).push(fp);
     });
     window.openModal("Ommaviy qaror", `
       <form id="bulk-decision">
@@ -311,6 +323,7 @@
             });
           }
           state.selected.clear();
+          origin.clear();
           window.closeModal();
           await load();
         } catch (error) {
@@ -325,6 +338,7 @@
   $("findings-bulk").querySelectorAll("[data-bulk]").forEach((button) => button.addEventListener("click", () => bulkDecide(button.dataset.bulk ?? "")));
   $("findings-clear-selection").addEventListener("click", () => {
     state.selected.clear();
+    origin.clear();
     paint();
   });
   $("findings-refresh").addEventListener("click", (event) => {
@@ -339,6 +353,7 @@
   $("findings-reset").addEventListener("click", () => {
     state.filters = {};
     state.offset = 0;
+    $("global-search").value = "";
     load();
   });
   $("findings-prev").addEventListener("click", () => {

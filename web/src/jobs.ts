@@ -112,7 +112,7 @@
         const row = await api('/api/schedules', {
           id: form.get('id').trim(), kind: form.get('kind'), target: form.get('target'),
           days: form.get('days').trim() || 'mon-sun', at: form.get('at'),
-          timezone: form.get('timezone').trim() || 'UTC', notify: form.get('notify'),
+          timezone: form.get('timezone').trim() || localOffset(), notify: form.get('notify'),
         });
         $('schedule-feedback').textContent = `Saqlandi. Keyingi ishga tushish: ${row.next_run ? time(row.next_run) : '—'}`;
         await load();

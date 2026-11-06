@@ -136,8 +136,12 @@ class LegacyHttpTests(Base):
     def test_a_both_old_endpoints_write_where_the_board_reads(self):
         status, body = self.post('/api/repository/review', self.decision(report_id=COMPOSE['id'], fingerprint=REPO_FP))
         self.assertEqual(status, 200, body)
+        # An old client reads the saved record itself: status and updated_at.
+        self.assertEqual(body['status'], 'accepted_risk')
+        self.assertTrue(body['updated_at'])
         status, body = self.post('/api/dependencies/review', self.decision(report_id=CVE['id'], finding_id='GHSA-1'))
         self.assertEqual(status, 200, body)
+        self.assertEqual((body['status'], body['finding_id']), ('accepted_risk', 'GHSA-1'))
         self.assertEqual(sorted(triage.read('demo')['decisions']), sorted([REPO_FP, DEP_FP]))
 
     def test_b_the_triage_endpoint_takes_a_chain_decision(self):

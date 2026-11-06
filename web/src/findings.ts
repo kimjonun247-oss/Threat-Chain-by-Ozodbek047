@@ -32,6 +32,14 @@
   const state: {filters: Record<string, string>; offset: number; limit: number; data: ApiData; selected: Set<string>} =
     {filters: {}, offset: 0, limit: 50, data: null, selected: new Set()};
 
+  // fingerprint -> "stage|report_id" of every selected row, on any page.
+  const origin = new Map<string, string>();
+  function pick(row: ApiData) {
+    if (!row) return;
+    state.selected.add(row.fingerprint);
+    origin.set(row.fingerprint, row.stage + '|' + row.report_id);
+  }
+  function unpick(fingerprint: string) { state.selected.delete(fingerprint); origin.delete(fingerprint); }
   function readUrl() {
     const params = new URLSearchParams(location.hash.replace(/^#\/?findings\??/, ''));
     state.filters = {};
@@ -142,12 +150,13 @@
       button.addEventListener('click', () => drawer(button.dataset.open ?? '', button.dataset.project ?? '')));
     $('findings-table').querySelectorAll('[data-select]').forEach(box =>
       box.addEventListener('change', () => {
-        if (box.checked) state.selected.add(box.dataset.select ?? ''); else state.selected.delete(box.dataset.select ?? '');
+        const fp = box.dataset.select ?? '';
+        if (box.checked) pick(data.rows.find((r: ApiData) => r.fingerprint === fp)); else unpick(fp);
         box.closest('tr')?.classList.toggle('selected', box.checked);
         bulk();
       }));
     $('findings-all')?.addEventListener('change', event => {
-      data.rows.forEach((row: ApiData) => (event.target as Field).checked ? state.selected.add(row.fingerprint) : state.selected.delete(row.fingerprint));
+      data.rows.forEach((row: ApiData) => (event.target as Field).checked ? pick(row) : unpick(row.fingerprint));
       paint();
     });
     bulk();
@@ -203,6 +212,7 @@
   }
 
   async function drawer(fingerprint: string, project = '') {
+    if ($('drawer').hidden) drawerReturn = document.activeElement as HTMLElement;
     $('drawer').hidden = false;
     $('drawer').focus();
     $('drawer-body').innerHTML = '<p>Yuklanmoqda…</p>';
@@ -263,16 +273,15 @@
       });
     } catch (error) { $('drawer-body').innerHTML = `<p class="error">${e(messageOf(error))}</p>`; }
   }
-  $('drawer-close').addEventListener('click', () => { $('drawer').hidden = true; });
+  let drawerReturn: HTMLElement | null = null;
+  $('drawer-close').addEventListener('click', () => { $('drawer').hidden = true; if (drawerReturn && document.contains(drawerReturn)) drawerReturn.focus(); });
 
   async function bulkDecide(status: string) {
     const chosen = [...state.selected];
     const byReport: Record<string, ApiData> = {};
     chosen.forEach(fp => {
-      const row = state.data.rows.find((r: ApiData) => r.fingerprint === fp);
-      if (!row) return;
-      const key = row.stage + '|' + row.report_id;
-      (byReport[key] = byReport[key] || []).push(fp);
+      const key = origin.get(fp);
+      if (key) (byReport[key] = byReport[key] || []).push(fp);
     });
     window.openModal('Ommaviy qaror', `
       <form id="bulk-decision">
@@ -295,7 +304,7 @@
             await api('/api/triage/bulk', {stage, report_id: reportId, fingerprints, status,
                                            owner: form.get('owner').trim(), note: form.get('note').trim()});
           }
-          state.selected.clear();
+          state.selected.clear(); origin.clear();
           window.closeModal();
           await load();
         } catch (error) {
@@ -308,13 +317,13 @@
 
   $('findings-bulk').querySelectorAll('[data-bulk]').forEach(button =>
     button.addEventListener('click', () => bulkDecide(button.dataset.bulk ?? '')));
-  $('findings-clear-selection').addEventListener('click', () => { state.selected.clear(); paint(); });
+  $('findings-clear-selection').addEventListener('click', () => { state.selected.clear(); origin.clear(); paint(); });
   $('findings-refresh').addEventListener('click', event => {
     const btn = event.currentTarget as HTMLButtonElement;
     btn.classList.add('spinning'); btn.disabled = true;
     Promise.resolve(load()).finally(() => { btn.classList.remove('spinning'); btn.disabled = false; });
   });
-  $('findings-reset').addEventListener('click', () => { state.filters = {}; state.offset = 0; load(); });
+  $('findings-reset').addEventListener('click', () => { state.filters = {}; state.offset = 0; $('global-search').value = ''; load(); });
   $('findings-prev').addEventListener('click', () => { state.offset = Math.max(0, state.offset - state.limit); load(); });
   $('findings-next').addEventListener('click', () => { state.offset += state.limit; load(); });
 

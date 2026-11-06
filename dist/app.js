@@ -42,8 +42,17 @@ async function fillTargetSelect(selectId, url, label, options) {
   const select = $(selectId);
   const usable = options.usable || (() => true);
   const sync = () => {
+    if (!options.button) return;
+    const button = $(options.button);
     const chosen = select.selectedOptions[0];
-    if (options.button) $(options.button).disabled = !select.value || !chosen || chosen.disabled;
+    const nothing = !select.value || !chosen || chosen.disabled;
+    if (nothing) {
+      button.disabled = true;
+      button.dataset.emptyLock = "1";
+    } else if (button.dataset.emptyLock) {
+      delete button.dataset.emptyLock;
+      button.disabled = false;
+    }
   };
   const refill = async () => {
     const previous = select.value;
@@ -176,7 +185,7 @@ function busy(value, message = "") {
 const VIEWS = ["repository", "code", "dependencies", "iac", "readiness", "images", "web", "assessments", "portfolio", "findings", "project", "jobs", "samples"];
 const LAST_ADDRESS = {};
 function viewFromAddress() {
-  const match = location.hash.match(/^#\/?([a-z]+)/);
+  const match = location.hash.match(/^#\/([a-z]+)/);
   return match && VIEWS.includes(match[1]) ? match[1] : "readiness";
 }
 function openFindings(filters) {
@@ -185,7 +194,10 @@ function openFindings(filters) {
   history.pushState(null, "", LAST_ADDRESS.findings);
   view("findings", false);
 }
-window.addEventListener("popstate", () => view(viewFromAddress(), false));
+window.addEventListener("popstate", () => {
+  if (location.hash.startsWith("#/") || !location.hash) view(viewFromAddress(), false);
+});
+document.addEventListener("DOMContentLoaded", () => view(viewFromAddress(), false));
 function view(name, remember = true) {
   if (!VIEWS.includes(name)) name = "readiness";
   if (remember) {
@@ -194,6 +206,7 @@ function view(name, remember = true) {
   }
   for (const item of VIEWS) $(item + "-view").hidden = item !== name;
   $("error").hidden = true;
+  if (name !== "findings") $("drawer").hidden = true;
   document.querySelectorAll("[data-view]").forEach((button) => {
     const active = button.dataset.view === name;
     button.classList.toggle("active", active);
@@ -396,10 +409,12 @@ async function init() {
   });
   whenShown(["repository"], loadProjects);
   onRegistryChange(async () => {
-    if (state.projects.length) await loadProjects();
+    if (projectsLoaded) await loadProjects();
   });
 }
+let projectsLoaded = false;
 async function loadProjects() {
+  projectsLoaded = true;
   try {
     state.projects = await api("/api/repository/profiles");
     $("project").innerHTML = state.projects.map((p) => `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)}</option>`).join("");
